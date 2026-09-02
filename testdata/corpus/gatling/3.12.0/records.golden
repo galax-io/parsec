@@ -1,0 +1,70 @@
+HEADER class="io.galaxio.parsec.corpus.CorpusSimulation" run="corpussimulation" start=1788379676999 description="" version=3.12.0
+ASSERTION payload="AAEBAAICAAAAAAAAAPA/"
+ASSERTION payload="AAEBAAMCAAAAAAAAAPA/"
+ASSERTION payload="AAMAAQdHRVQgL29rAwABAgMAAAAAAABM7UA="
+5 USER scenario="Corpus recording" event=START timestamp=1788379677532
+6 USER scenario="Corpus recording" event=START timestamp=1788379677532
+7 USER scenario="Corpus recording" event=START timestamp=1788379677532
+8 REQUEST groups=[] name="GET /ok" start=1788379677529 end=1788379677534 status=OK message=""
+9 REQUEST groups=[] name="GET /ok" start=1788379677529 end=1788379677534 status=OK message=""
+10 REQUEST groups=[] name="GET /ok" start=1788379677529 end=1788379677534 status=OK message=""
+11 REQUEST groups=["outer"] name="GET /ok" start=1788379677645 end=1788379677645 status=OK message=""
+12 REQUEST groups=["outer"] name="GET /ok" start=1788379677645 end=1788379677645 status=OK message=""
+13 REQUEST groups=["outer"] name="GET /ok" start=1788379677645 end=1788379677645 status=OK message=""
+14 USER scenario="Corpus recording" event=START timestamp=1788379678024
+15 REQUEST groups=[] name="GET /ok" start=1788379678022 end=1788379678027 status=OK message=""
+16 REQUEST groups=["outer"] name="GET /ok" start=1788379678131 end=1788379678133 status=OK message=""
+17 USER scenario="Corpus recording" event=START timestamp=1788379678524
+18 REQUEST groups=[] name="GET /ok" start=1788379678522 end=1788379678529 status=OK message=""
+19 REQUEST groups=["outer"] name="GET /ok" start=1788379678632 end=1788379678634 status=OK message=""
+20 USER scenario="Corpus recording" event=START timestamp=1788379679025
+21 REQUEST groups=[] name="GET /ok" start=1788379679023 end=1788379679029 status=OK message=""
+22 REQUEST groups=["outer"] name="GET /ok" start=1788379679132 end=1788379679134 status=OK message=""
+23 REQUEST groups=["outer" "inner  with comma"] name="GET /slow" start=1788379677646 end=1788379679147 status=OK message=""
+24 REQUEST groups=["outer" "inner  with comma"] name="GET /slow" start=1788379677645 end=1788379679147 status=OK message=""
+25 REQUEST groups=["outer" "inner  with comma"] name="GET /slow" start=1788379677645 end=1788379679147 status=OK message=""
+26 REQUEST groups=["outer" "inner  with comma"] name="GET /fail" start=1788379679147 end=1788379679148 status=KO message="status.find.is(200), but actually found 500"
+27 REQUEST groups=["outer" "inner  with comma"] name="GET /fail" start=1788379679147 end=1788379679148 status=KO message="status.find.is(200), but actually found 500"
+28 REQUEST groups=["outer" "inner  with comma"] name="GET /fail" start=1788379679147 end=1788379679148 status=KO message="status.find.is(200), but actually found 500"
+29 GROUP groups=["outer" "inner  with comma"] start=1788379677645 end=1788379679160 cumulated=1502 status=KO
+30 GROUP groups=["outer"] start=1788379677643 end=1788379679160 cumulated=1503 status=KO
+31 GROUP groups=["outer" "inner  with comma"] start=1788379677645 end=1788379679160 cumulated=1503 status=KO
+32 GROUP groups=["outer" "inner  with comma"] start=1788379677645 end=1788379679160 cumulated=1503 status=KO
+33 GROUP groups=["outer"] start=1788379677643 end=1788379679160 cumulated=1504 status=KO
+34 GROUP groups=["outer"] start=1788379677643 end=1788379679160 cumulated=1504 status=KO
+35 REQUEST groups=[] name="connect refused" start=1788379679262 end=1788379679264 status=KO message="j.n.ConnectException: Connection refused"
+36 REQUEST groups=[] name="connect refused" start=1788379679262 end=1788379679264 status=KO message="j.n.ConnectException: Connection refused"
+37 REQUEST groups=[] name="connect refused" start=1788379679262 end=1788379679264 status=KO message="j.n.ConnectException: Connection refused"
+38 REQUEST groups=[] name="unknown host" start=1788379679265 end=1788379679267 status=KO message="j.n.UnknownHostException: nonexistent.invalid"
+39 REQUEST groups=[] name="unknown host" start=1788379679265 end=1788379679267 status=KO message="j.n.UnknownHostException: nonexistent.invalid"
+40 REQUEST groups=[] name="unknown host" start=1788379679265 end=1788379679267 status=KO message="j.n.UnknownHostException: nonexistent.invalid: nodename nor servname provided, or not known"
+41 ERROR message="unresolvable url: No attribute named 'undefinedAttribute' is defined " timestamp=1788379679269
+42 ERROR message="unresolvable url: No attribute named 'undefinedAttribute' is defined " timestamp=1788379679269
+43 ERROR message="unresolvable url: No attribute named 'undefinedAttribute' is defined " timestamp=1788379679269
+44 USER scenario="Corpus recording" event=END timestamp=1788379679270
+45 USER scenario="Corpus recording" event=END timestamp=1788379679270
+46 USER scenario="Corpus recording" event=END timestamp=1788379679270
+47 REQUEST groups=["outer" "inner  with comma"] name="GET /slow" start=1788379678134 end=1788379679638 status=OK message=""
+48 REQUEST groups=["outer" "inner  with comma"] name="GET /fail" start=1788379679639 end=1788379679640 status=KO message="status.find.is(200), but actually found 500"
+49 GROUP groups=["outer" "inner  with comma"] start=1788379678133 end=1788379679641 cumulated=1505 status=KO
+50 GROUP groups=["outer"] start=1788379678130 end=1788379679641 cumulated=1507 status=KO
+51 REQUEST groups=[] name="connect refused" start=1788379679744 end=1788379679747 status=KO message="j.n.ConnectException: Connection refused"
+52 REQUEST groups=[] name="unknown host" start=1788379679748 end=1788379679748 status=KO message="j.n.UnknownHostException: nonexistent.invalid"
+53 ERROR message="unresolvable url: No attribute named 'undefinedAttribute' is defined " timestamp=1788379679749
+54 USER scenario="Corpus recording" event=END timestamp=1788379679750
+55 REQUEST groups=["outer" "inner  with comma"] name="GET /slow" start=1788379678635 end=1788379680139 status=OK message=""
+56 REQUEST groups=["outer" "inner  with comma"] name="GET /fail" start=1788379680140 end=1788379680141 status=KO message="status.find.is(200), but actually found 500"
+57 GROUP groups=["outer" "inner  with comma"] start=1788379678634 end=1788379680142 cumulated=1505 status=KO
+58 GROUP groups=["outer"] start=1788379678631 end=1788379680142 cumulated=1507 status=KO
+59 REQUEST groups=[] name="connect refused" start=1788379680245 end=1788379680247 status=KO message="j.n.ConnectException: Connection refused"
+60 REQUEST groups=[] name="unknown host" start=1788379680248 end=1788379680248 status=KO message="j.n.UnknownHostException: nonexistent.invalid"
+61 ERROR message="unresolvable url: No attribute named 'undefinedAttribute' is defined " timestamp=1788379680249
+62 USER scenario="Corpus recording" event=END timestamp=1788379680249
+63 REQUEST groups=["outer" "inner  with comma"] name="GET /slow" start=1788379679135 end=1788379680638 status=OK message=""
+64 REQUEST groups=["outer" "inner  with comma"] name="GET /fail" start=1788379680640 end=1788379680641 status=KO message="status.find.is(200), but actually found 500"
+65 GROUP groups=["outer" "inner  with comma"] start=1788379679135 end=1788379680642 cumulated=1504 status=KO
+66 GROUP groups=["outer"] start=1788379679131 end=1788379680642 cumulated=1506 status=KO
+67 REQUEST groups=[] name="connect refused" start=1788379680745 end=1788379680746 status=KO message="j.n.ConnectException: Connection refused"
+68 REQUEST groups=[] name="unknown host" start=1788379680747 end=1788379680747 status=KO message="j.n.UnknownHostException: nonexistent.invalid"
+69 ERROR message="unresolvable url: No attribute named 'undefinedAttribute' is defined " timestamp=1788379680748
+70 USER scenario="Corpus recording" event=END timestamp=1788379680748

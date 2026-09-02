@@ -2,7 +2,7 @@
 
 Load-test result primitives for Go.
 
-**Nothing is implemented yet.** The repository holds a scaffold and a backlog; this file says what is being built and why, not what works today. Progress is visible in the [milestones](https://github.com/galax-io/parsec/milestones), each small and ending in a tag.
+**The Gatling text decoder is the first piece to land.** Everything below it is still a backlog; this file says what is being built and why, and marks what works today. Progress is visible in the [milestones](https://github.com/galax-io/parsec/milestones), each small and ending in a tag.
 
 ## The problem
 
@@ -25,17 +25,23 @@ One canonical model for the results of a load test, a decoder per tool that prod
 
 The Gatling log format is internal to Gatling, undocumented, and has already changed once. Every read will be version-gated: a version below the supported range is refused, and an unknown newer one decodes with a warning.
 
-### Packages, once they exist
+### Packages
 
-    model/    canonical result types shared by every source
-    gatling/  text and binary codecs, version gate, run discovery
-    stats/    counts, timings, percentiles, ranges, per-interval series
+    gatling/       version type, version gate and the errors every Gatling codec shares  (v0.0.2)
+    gatling/text/  the text simulation.log codec for 3.11.5 and 3.12.0                   (v0.0.2)
+    model/         canonical result types shared by every source                         (planned)
+    stats/         counts, timings, percentiles, ranges, per-interval series             (planned)
 
-`model` and `gatling` will depend on the standard library only, and CI already checks that.
+`model` and `gatling` depend on the standard library only, and CI checks that.
 
 ## Status
 
-Empty by design. The public API becomes stable at v0.1.0; until then it may change between releases.
+`gatling/` and `gatling/text/` decode a Gatling 3.11.5 or 3.12.0 text `simulation.log` from a
+stream, in bounded memory, gated on the version the log names. They hand back the log's own wire
+records; the canonical model that every source converts into is v0.0.3. Everything else in the
+table above is unimplemented.
+
+The public API becomes stable at v0.1.0; until then it may change between releases.
 
 ## Licence
 

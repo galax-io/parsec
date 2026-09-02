@@ -16,3 +16,11 @@ scratchpad-*.log
 /bin/
 *.test
 *.out
+
+# sample Gatling simulation used to record the corpus (sbt project under testdata/)
+testdata/corpus/gatling/simulation/target/
+testdata/corpus/gatling/simulation/project/target/
+testdata/corpus/gatling/simulation/project/project/
+testdata/corpus/gatling/simulation/.bsp/
+testdata/corpus/gatling/simulation/.metals/
+testdata/corpus/gatling/simulation/.bloop/
