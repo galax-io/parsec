@@ -1,47 +1,50 @@
-# parsec Constitution
-
-parsec is the shared foundation for load-test results in Galaxio: one canonical model, one decoder per tool, one statistics engine. Three consumers depend on it — `galaxio-cli`, the Galaxio backend, and the comet sidecar — and none of them may need a second copy of this code.
-
-**Version**: 1.0.0 · **Ratified**: 2026-09-02 · **Last amended**: 2026-09-02
+# [PROJECT_NAME] Constitution
+<!-- Example: Spec Constitution, TaskFlow Constitution, etc. -->
 
 ## Core Principles
 
-### I. The model is the contract
+### [PRINCIPLE_1_NAME]
+<!-- Example: I. Library-First -->
+[PRINCIPLE_1_DESCRIPTION]
+<!-- Example: Every feature starts as a standalone library; Libraries must be self-contained, independently testable, documented; Clear purpose required - no organizational-only libraries -->
 
-Every source converts its own artefacts into the types in `model`, and every consumer reads only those types. A source that cannot supply a field declares that through `Capabilities`; it never substitutes a zero, an empty string, or a guess. Adding a tool must not change what an existing tool reports.
+### [PRINCIPLE_2_NAME]
+<!-- Example: II. CLI Interface -->
+[PRINCIPLE_2_DESCRIPTION]
+<!-- Example: Every library exposes functionality via CLI; Text in/out protocol: stdin/args → stdout, errors → stderr; Support JSON + human-readable formats -->
 
-### II. Decoders depend on the standard library only
+### [PRINCIPLE_3_NAME]
+<!-- Example: III. Test-First (NON-NEGOTIABLE) -->
+[PRINCIPLE_3_DESCRIPTION]
+<!-- Example: TDD mandatory: Tests written → User approved → Tests fail → Then implement; Red-Green-Refactor cycle strictly enforced -->
 
-`model` and `gatling` import nothing outside the standard library, and CI enforces it. The module as a whole allows one exception, a t-digest implementation for percentile estimation. Any further dependency is a recorded decision with its reasoning, not a convenience.
+### [PRINCIPLE_4_NAME]
+<!-- Example: IV. Integration Testing -->
+[PRINCIPLE_4_DESCRIPTION]
+<!-- Example: Focus areas requiring integration tests: New library contract tests, Contract changes, Inter-service communication, Shared schemas -->
 
-### III. Measurement truth
+### [PRINCIPLE_5_NAME]
+<!-- Example: V. Observability, VI. Versioning & Breaking Changes, VII. Simplicity -->
+[PRINCIPLE_5_DESCRIPTION]
+<!-- Example: Text I/O ensures debuggability; Structured logging required; Or: MAJOR.MINOR.BUILD format; Or: Start simple, YAGNI principles -->
 
-Successful and failed samples are accumulated separately, and a failure never contributes to a success statistic. Counts, minima, maxima, means and standard deviations are exact. Percentiles are estimates, documented as such, and the documentation states that they will not match a tool's own figures digit for digit. An event carries its own timestamp; the moment of processing is never substituted for it.
+## [SECTION_2_NAME]
+<!-- Example: Additional Constraints, Security Requirements, Performance Standards, etc. -->
 
-### IV. The log format is external
+[SECTION_2_CONTENT]
+<!-- Example: Technology stack requirements, compliance standards, deployment policies, etc. -->
 
-Gatling's `simulation.log` is undocumented, declared internal by its authors, and has already changed once. Every read is version-gated: below the supported range it is refused with a message naming both versions; above it, decoding proceeds with a warning, and refuses only when strictness is requested. A canary in CI runs against the newest Gatling release so the project learns about a format change before its users do.
+## [SECTION_3_NAME]
+<!-- Example: Development Workflow, Review Process, Quality Gates, etc. -->
 
-### V. Golden corpus or it did not happen
-
-Every decoder and statistics change is verified against recorded runs from real Gatling versions, covering both the text and the binary branch of the format. Expected statistics come from that run's own report, never from this library. Reading a file whole, in arbitrary chunks, and while it is still being written must all produce the same records.
-
-### VI. Stability is declared, not assumed
-
-Below v1.0.0 the public surface is what the README lists as stable; everything else is unexported or internal. A breaking change to that surface requires a minor bump and a changelog entry naming it. The supported Gatling range is part of the contract.
-
-## Code Conventions
-
-Go 1.25. `gofmt` and `gofumpt` clean, `go vet` and `golangci-lint` green, `go test -race -shuffle=on` on every commit. Standard-library testing with table-driven cases and golden files under `testdata`; no assertion library. `context.Context` is the first parameter where it applies. Constructors take functional options. `init()` is not used. Errors wrap with `%w` and are inspected with `errors.Is` and `errors.As`.
-
-Coverage floor: 90 percent for decoder packages, 80 percent for the module.
-
-## Quality Gates
-
-CI runs formatting, tidiness of `go.mod`, vet, lint, race-enabled tests, and the standard-library-only check for `model` and `gatling`. A weekly canary decodes a run produced by the newest Gatling release. A red build is never merged.
+[SECTION_3_CONTENT]
+<!-- Example: Code review requirements, testing gates, deployment approval process, etc. -->
 
 ## Governance
+<!-- Example: Constitution supersedes all other practices; Amendments require documentation, approval, migration plan -->
 
-This constitution governs. A change to it is a pull request that states what changed and why, and bumps the version above: major for a removed or reversed principle, minor for a new one, patch for wording.
+[GOVERNANCE_RULES]
+<!-- Example: All PRs/reviews must verify compliance; Complexity must be justified; Use [GUIDANCE_FILE] for runtime development guidance -->
 
-Work follows the organisation's spec-driven flow: a milestone states the problem, `/speckit.specify` turns it into a spec, and one issue becomes one commit and one pull request that closes it.
+**Version**: [CONSTITUTION_VERSION] | **Ratified**: [RATIFICATION_DATE] | **Last Amended**: [LAST_AMENDED_DATE]
+<!-- Example: Version: 2.1.1 | Ratified: 2025-06-13 | Last Amended: 2025-07-16 -->
