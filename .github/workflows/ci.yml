@@ -44,6 +44,34 @@ jobs:
       - name: test
         run: go test -race -shuffle=on ./...
 
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - name: end-to-end over the golden corpus
+        # An empty run fails: once a decoder package exists, at least one integration test
+        # must have run and passed. -count=1 never serves a cached verdict for tests that
+        # read real recordings.
+        run: |
+          set -euo pipefail
+          if [ -z "$(for pat in ./model/... ./gatling/...; do go list "$pat" 2>/dev/null || true; done)" ]; then
+            echo "no decoder package yet; the end-to-end suite has nothing to run"
+            exit 0
+          fi
+          if ! go test -tags=integration -race -shuffle=on -count=1 -json ./... > e2e.json; then
+            jq -r 'select(.Action == "output") | .Output' e2e.json | grep -E 'FAIL|panic|\.go:[0-9]+:' | tail -60
+            exit 1
+          fi
+          passed=$(jq -r 'select(.Action == "pass" and .Test != null) | .Test' e2e.json | wc -l | tr -d ' ')
+          echo "integration tests passed: $passed" | tee -a "$GITHUB_STEP_SUMMARY"
+          if [ "$passed" -eq 0 ]; then
+            echo "no integration test ran: the corpus is missing, not optional"
+            exit 1
+          fi
+
   deps:
     runs-on: ubuntu-latest
     steps:
@@ -66,3 +94,45 @@ jobs:
               fi
             fi
           done
+
+  vuln:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - name: govulncheck
+        # Run through go run at a pinned version so the tool never reaches go.mod.
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.7.0 ./...
+
+  coverage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - name: coverage floors — 90% per decoder package, 80% overall
+        run: |
+          set -euo pipefail
+          pkgs=$(for pat in ./model/... ./gatling/...; do go list "$pat" 2>/dev/null || true; done)
+          if [ -z "$pkgs" ]; then
+            echo "no decoder package yet; nothing to hold to the 90% floor"
+            exit 0
+          fi
+          {
+            echo "| package | coverage | floor |"
+            echo "|---|---|---|"
+          } >> "$GITHUB_STEP_SUMMARY"
+          for pkg in $pkgs; do
+            pct=$(go test -tags=integration -count=1 -cover "$pkg" | sed -nE 's/.*coverage: ([0-9.]+)% of statements.*/\1/p' | tail -1)
+            echo "$pkg: ${pct:-0}%"
+            echo "| $pkg | ${pct:-0}% | 90% |" >> "$GITHUB_STEP_SUMMARY"
+            awk -v p="${pct:-0}" -v pkg="$pkg" 'BEGIN { if (p + 0 < 90) { print pkg " coverage " p "% is below the 90% floor"; exit 1 } }'
+          done
+          go test -tags=integration -count=1 -coverpkg=./... -coverprofile=cover.out ./... > /dev/null
+          overall=$(go tool cover -func=cover.out | awk '/^total:/ { sub("%", "", $NF); print $NF }')
+          echo "overall: ${overall}%"
+          echo "| overall | ${overall}% | 80% |" >> "$GITHUB_STEP_SUMMARY"
+          awk -v p="$overall" 'BEGIN { if (p + 0 < 80) { print "overall coverage " p "% is below the 80% floor"; exit 1 } }'
