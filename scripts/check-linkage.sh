@@ -18,6 +18,7 @@ What each entity owes (this script enforces it):
 Usage:
   scripts/check-linkage.sh --pr <N>          # GATE one PR: milestone + Closes #issue + same milestone
   scripts/check-linkage.sh --for-tag vX.Y.Z  # GATE a release: tag-readiness of that version's milestone
+                                             #   resolves the milestone titled vX.Y.Z, else vX.Y.0
   scripts/check-linkage.sh [milestone]       # audit a milestone (default: lowest-numbered open)
   scripts/check-linkage.sh --tag [ms]        # also assert tag-readiness (all issues closed, all PRs merged)
   scripts/check-linkage.sh --help
@@ -38,6 +39,7 @@ REPO="${REPO:-$(gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null 
 
 TAG_MODE=0
 MS=""
+MILESTONES=""
 PR_NUM=""
 FOR_TAG=""
 while [ $# -gt 0 ]; do
@@ -80,23 +82,59 @@ if [ -n "$PR_NUM" ]; then
   printf 'FAIL: PR #%s is malformed — fix the above before merge.\n' "$PR_NUM"; exit 1
 fi
 
+# Find the milestone a release version belongs to. Anchored on a version boundary,
+# never a bare prefix: "v0.0.1" must not select "v0.0.10 Finding the run".
+milestone_for() { # milestone_for <vX.Y.Z> -> milestone number, or empty
+  local want="$1" re
+  re="^$(printf '%s' "$want" | sed 's/[.]/\\./g')"'([^0-9.-]|\.[^0-9]|$)'
+  printf '%s' "$MILESTONES" \
+    | jq -r --arg re "$re" 'map(select(.title | test($re))) | .[0].number // empty'
+}
+
 # Map a release version (vX.Y.Z) to its milestone, then assert tag-readiness on it.
-# Patch versions map to the vX.Y.0 milestone (e.g. v1.23.1 -> "v1.23.0 …").
+#
+# The exact version is tried first, and only then vX.Y.0. Both shapes are real:
+# during 0.0.x every patch carries its own milestone ("v0.0.1 Scaffold"), so asking
+# only for vX.Y.0 looks for a milestone nobody created and refuses the release for
+# a reason that has nothing to do with the release. Once a minor owns a milestone
+# and its patches ship under it, the fallback finds it (v1.23.1 -> "v1.23.0 …").
 if [ -n "$FOR_TAG" ]; then
-  v="${FOR_TAG#v}"; minor="v${v%.*}.0"
-  MS=$(gh api "repos/$REPO/milestones?state=all&per_page=100" \
-        | jq -r --arg t "$minor" 'map(select(.title | startswith($t))) | .[0].number // empty')
-  [ -n "$MS" ] || { echo "error: no milestone whose title starts with '$minor' for tag $FOR_TAG" >&2; exit 2; }
+  v="${FOR_TAG#v}"
+  exact="v$v"
+  minor="v${v%.*}.0"
+
+  MILESTONES=$(gh api --paginate --slurp "repos/$REPO/milestones?state=all&per_page=100" | jq 'add')
+
+  MS=$(milestone_for "$exact")
+  if [ -z "$MS" ] && [ "$minor" != "$exact" ]; then
+    MS=$(milestone_for "$minor")
+  fi
+
+  if [ -z "$MS" ]; then
+    if [ "$minor" = "$exact" ]; then
+      echo "error: no milestone titled '$exact' for tag $FOR_TAG" >&2
+    else
+      echo "error: no milestone for tag $FOR_TAG - looked for '$exact', then '$minor'" >&2
+    fi
+    exit 2
+  fi
   TAG_MODE=1
 fi
 
 # Default to the lowest-numbered open milestone (the "active" one).
 if [ -z "$MS" ]; then
-  MS=$(gh api "repos/$REPO/milestones?state=open&per_page=100" --jq 'sort_by(.number) | .[0].number // empty')
+  MS=$(gh api --paginate --slurp "repos/$REPO/milestones?state=open&per_page=100" \
+        | jq -r 'add | sort_by(.number) | .[0].number // empty')
   [ -n "$MS" ] || { echo "error: no open milestone found in $REPO" >&2; exit 2; }
 fi
 
-ms_json=$(gh api "repos/$REPO/milestones/$MS") || { echo "error: milestone #$MS not found in $REPO" >&2; exit 2; }
+# Reuse the list already in hand when --for-tag fetched it; only the default path
+# has to ask again.
+if [ -n "${MILESTONES:-}" ]; then
+  ms_json=$(jq --argjson n "$MS" 'map(select(.number == $n)) | .[0]' <<<"$MILESTONES")
+else
+  ms_json=$(gh api "repos/$REPO/milestones/$MS") || { echo "error: milestone #$MS not found in $REPO" >&2; exit 2; }
+fi
 ms_title=$(jq -r '.title' <<<"$ms_json")
 ms_state=$(jq -r '.state' <<<"$ms_json")
 
@@ -121,7 +159,14 @@ linked_issues=" "   # space-delimited set of issue numbers a PR points at
 
 printf 'Pull requests\n'
 if [ -z "$pr_numbers" ]; then
-  warn "no PRs carry milestone #$MS yet"
+  # In tag mode this is a refusal, not a note. A milestone nobody filed work
+  # against is trivially "ready", so warning here is how an empty or mistakenly
+  # created milestone shadows the real one and a release ships unverified.
+  if [ "$TAG_MODE" = 1 ]; then
+    err "no PRs carry milestone #$MS — nothing to release under it, or the work was filed elsewhere"
+  else
+    warn "no PRs carry milestone #$MS yet"
+  fi
 fi
 for pr in $pr_numbers; do
   pr_json=$(gh pr view "$pr" --repo "$REPO" --json number,title,state,milestone,closingIssuesReferences,body)
@@ -159,7 +204,11 @@ done
 
 printf '\nIssues\n'
 if [ -z "$issue_numbers" ]; then
-  warn "no issues carry milestone #$MS"
+  if [ "$TAG_MODE" = 1 ]; then
+    err "no issues carry milestone #$MS — an empty milestone is not a tag-ready one"
+  else
+    warn "no issues carry milestone #$MS"
+  fi
 fi
 for is in $issue_numbers; do
   is_state=$(jq -r --argjson n "$is" '.[] | select(.number == $n) | .state' <<<"$items")
@@ -176,6 +225,58 @@ for is in $issue_numbers; do
     ok "issue #$is ($is_state) ← linked"
   fi
 done
+
+# The milestone query above can only see work that already carries the milestone,
+# so it is structurally blind to the other half of the rule: "every PR merged since
+# the previous tag carries a milestone". That one has to be asked of the commit
+# range, not of the milestone.
+if [ "$TAG_MODE" = 1 ]; then
+  printf '\nMerged since the previous tag\n'
+
+  # gh prints the 404 body on stdout when a repository has no release yet, so the
+  # result is shape-checked rather than trusted.
+  prev_tag=$(gh api "repos/$REPO/releases/latest" --jq '.tag_name // empty' 2>/dev/null || true)
+  case "$prev_tag" in
+    v[0-9]*.[0-9]*.[0-9]*) ;;
+    *) prev_tag="" ;;
+  esac
+
+  if [ -z "$prev_tag" ]; then
+    ok "no previous release - $FOR_TAG is the first, nothing precedes it"
+  else
+    # One paginated compare call, then PR numbers out of the commit subjects. This
+    # repository's convention puts them there ("feat(scope): ... (#NNN)"), and a
+    # squash merge adds them on its own.
+    range_prs=$(gh api --paginate --slurp "repos/$REPO/compare/$prev_tag...$FOR_TAG" 2>/dev/null \
+                 | jq -r 'add | .commits[].commit.message' \
+                 | grep -oE '\(#[0-9]+\)' | grep -oE '[0-9]+' | sort -un || true)
+
+    audited=" $(echo $pr_numbers) "   # collapse newlines; already checked above
+    unseen=0
+
+    for pr in $range_prs; do
+      case "$audited" in *" $pr "*) continue ;; esac
+
+      unseen=$((unseen + 1))
+      pr_ms=$(gh pr view "$pr" --repo "$REPO" --json milestone -q '.milestone.title // ""' 2>/dev/null || echo "")
+
+      if [ -z "$pr_ms" ]; then
+        err "PR #$pr merged since $prev_tag carries no milestone"
+      elif [ "$pr_ms" != "$ms_title" ]; then
+        err "PR #$pr merged since $prev_tag carries milestone '$pr_ms', not '$ms_title'"
+      else
+        ok "PR #$pr (milestone '$pr_ms') ← merged in range"
+        unseen=$((unseen - 1))
+      fi
+    done
+
+    if [ -z "$range_prs" ]; then
+      warn "no pull requests identified between $prev_tag and $FOR_TAG"
+    elif [ "$unseen" = 0 ]; then
+      ok "every PR merged since $prev_tag carries milestone '$ms_title'"
+    fi
+  fi
+fi
 
 printf '\n'
 if [ "$errors" -gt 0 ]; then
