@@ -72,11 +72,16 @@
 
 <!--
   ACTION REQUIRED: The content in this section represents placeholders.
-  Fill them out with the right edge cases.
+  Fill them out with the right edge cases. For anything that reads a tool artefact the
+  constitution (Principle II) already fixes the answers for version-below-range,
+  unknown-newer-version and malformed input; state them here so they become acceptance
+  scenarios rather than surprises.
 -->
 
-- What happens when [boundary condition]?
-- How does system handle [error scenario]?
+- What happens when [boundary condition, e.g., "the artefact is truncated mid-record"]?
+- How does the system handle [error scenario, e.g., "a version below the supported range"]?
+- What happens when [unknown newer version, e.g., "a log written by a version not yet in the corpus"]?
+- What happens when [empty or degenerate input, e.g., "a run with zero requests"]?
 
 ## Requirements *(mandatory)*
 
@@ -87,21 +92,34 @@
 
 ### Functional Requirements
 
-- **FR-001**: System MUST [specific capability, e.g., "allow users to create accounts"]
-- **FR-002**: System MUST [specific capability, e.g., "validate email addresses"]
-- **FR-003**: Users MUST be able to [key interaction, e.g., "reset their password"]
-- **FR-004**: System MUST [data requirement, e.g., "persist user preferences"]
-- **FR-005**: System MUST [behavior, e.g., "log all security events"]
+- **FR-001**: System MUST [specific capability, e.g., "decode every record kind of a Gatling 3.12.x text simulation.log"]
+- **FR-002**: System MUST [gate behaviour, e.g., "refuse a log below version 3.11.5 with an error naming the version found and the range supported"]
+- **FR-003**: Consumers MUST be able to [key interaction, e.g., "ask which fields this source provides before rendering a report"]
+- **FR-004**: System MUST [data requirement, e.g., "report a field the source does not carry as absent, never as zero"]
+- **FR-005**: System MUST [behaviour, e.g., "produce identical records for chunked and whole-file reads"]
 
 *Example of marking unclear requirements:*
 
-- **FR-006**: System MUST authenticate users via [NEEDS CLARIFICATION: auth method not specified - email/password, SSO, OAuth?]
-- **FR-007**: System MUST retain user data for [NEEDS CLARIFICATION: retention period not specified]
+- **FR-006**: System MUST compute percentiles [NEEDS CLARIFICATION: exact or t-digest approximation, and at what compression?]
+- **FR-007**: System MUST bucket per-interval series at [NEEDS CLARIFICATION: interval length not specified]
 
 ### Key Entities *(include if feature involves data)*
 
 - **[Entity 1]**: [What it represents, key attributes without implementation]
 - **[Entity 2]**: [What it represents, relationships to other entities]
+
+### Source Coverage *(include if the feature reads a tool artefact)*
+
+<!--
+  Constitution Principles I–III: every decoder declares what it accepts, what it cannot
+  provide, and which real recordings prove it. State these as requirements, not design.
+-->
+
+- **Tool and versions**: [e.g., "Gatling 3.11.5 through 3.12.x"]
+- **Artefact formats**: [e.g., "text simulation.log; binary simulation.log from 3.13.0"]
+- **Version gate**: [what is refused, what decodes with a warning]
+- **Not provided by this source** (declared through Capabilities): [e.g., "per-request bytes, group timings"]
+- **Golden corpus**: [runs to record under testdata/corpus/<tool>/<version>/ and the tool report used for tolerance checks]
 
 ## Success Criteria *(mandatory)*
 
@@ -112,10 +130,10 @@
 
 ### Measurable Outcomes
 
-- **SC-001**: [Measurable metric, e.g., "Users can complete account creation in under 2 minutes"]
-- **SC-002**: [Measurable metric, e.g., "System handles 1000 concurrent users without degradation"]
-- **SC-003**: [User satisfaction metric, e.g., "90% of users successfully complete primary task on first attempt"]
-- **SC-004**: [Business metric, e.g., "Reduce support tickets related to [X] by 50%"]
+- **SC-001**: [Correctness metric, e.g., "Every corpus file in the covered version range decodes to exactly the recorded record stream"]
+- **SC-002**: [Fidelity metric, e.g., "Counts and percentiles match the tool's own report within the documented tolerance"]
+- **SC-003**: [Resource metric, e.g., "A 1 GB log decodes with peak memory under 64 MiB"]
+- **SC-004**: [Consumer metric, e.g., "galaxio report renders the run without a tool-specific code path"]
 
 ## Assumptions
 
@@ -125,7 +143,7 @@
   chosen when the feature description did not specify certain details.
 -->
 
-- [Assumption about target users, e.g., "Users have stable internet connectivity"]
-- [Assumption about scope boundaries, e.g., "Mobile support is out of scope for v1"]
-- [Assumption about data/environment, e.g., "Existing authentication system will be reused"]
-- [Dependency on existing system/service, e.g., "Requires access to the existing user profile API"]
+- [Assumption about inputs, e.g., "The run directory is complete; a truncated log is an error, not a partial result"]
+- [Assumption about scope boundaries, e.g., "Binary simulation.log (3.13.0+) is out of scope for this feature"]
+- [Assumption about data/environment, e.g., "Corpus runs can be recorded with the tool version pinned in the sample project"]
+- [Dependency on existing work, e.g., "Requires the model types and Capabilities introduced by spec 001"]
