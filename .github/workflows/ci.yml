@@ -56,7 +56,13 @@ jobs:
           set -euo pipefail
           for pkg in ./model/... ./gatling/...; do
             if go list "$pkg" >/dev/null 2>&1; then
-              go list -deps "$pkg" | grep -E '^[a-z0-9-]+\.[a-z]{2,}/' && {
-                echo "non-stdlib dependency found in $pkg"; exit 1; } || true
+              # A dependency is third-party when it is neither the standard library nor one
+              # of this module's own packages; a path pattern cannot tell those apart.
+              deps=$(go list -deps -f '{{if not .Standard}}{{if not .Module.Main}}{{.ImportPath}}{{end}}{{end}}' "$pkg")
+              if [ -n "$deps" ]; then
+                echo "non-stdlib dependency found in $pkg:"
+                echo "$deps"
+                exit 1
+              fi
             fi
           done
