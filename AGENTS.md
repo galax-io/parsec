@@ -36,7 +36,7 @@ model/ is the source of truth for every consumer; each tool package converts tha
 
 ## Test Model
 
-Golden corpus per Gatling version under testdata/corpus/; decoder output compared byte for byte against the recorded record stream, statistics against that run's own Gatling report within a documented tolerance; chunked and whole-file reads must agree; race detector always on; coverage floor 90 percent for decoder packages, 80 percent overall.
+Golden corpus per Gatling version under testdata/corpus/, each run committed together with the report Gatling produced for it (captured at recording time or never); decoder output compared byte for byte against the recorded record stream, statistics against that run's own Gatling report within a documented tolerance; chunked and whole-file reads must agree; race detector always on; coverage floor 90 percent for decoder packages, 80 percent overall.
 
 ---
 

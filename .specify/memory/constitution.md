@@ -1,48 +1,62 @@
 <!--
 Sync Impact Report
 ==================
-Version change: unversioned spec-kit template → 1.0.0
-Bump rationale: initial ratification. Every placeholder in the template has been replaced
-with rules derived from AGENTS.md, README.md, doc.go, .golangci.yml and
-.github/workflows/ci.yml. From here on the MAJOR/MINOR/PATCH policy in Governance applies.
+Version change: 1.0.0 → 1.1.0
+Bump rationale: MINOR. Guidance in an existing principle is materially expanded, and an existing
+section is materially expanded. No principle is removed or redefined incompatibly, and nothing that
+was already compliant becomes non-compliant: the new rules bind work from here on.
 
-Modified principles (template slot → ratified principle):
-- slot PRINCIPLE_1 → I. Canonical Model First
-- slot PRINCIPLE_2 → II. Version-Gated, Streaming Decoders
-- slot PRINCIPLE_3 → III. Golden-Corpus Testing (NON-NEGOTIABLE)
-- slot PRINCIPLE_4 → IV. Minimal, Explicit Dependencies
-- slot PRINCIPLE_5 → V. Compatibility-Sensitive Public API
-- (no template slot) → VI. Idiomatic, Simple Go
+Modified principles:
+- III. Golden-Corpus Testing (NON-NEGOTIABLE) — new bullet: a recording MUST capture, at the
+  moment the run is made, the artefact AND the report the tool produced for that same run. An
+  entry MUST NOT be added without the report unless the tool version produced none, in which
+  case the entry records that fact. Rationale extended to say why: the evidence has an expiry.
 
-Added sections:
-- Quality Gates & Tooling (fills template section 2)
-- Development Workflow & Release Process (fills template section 3)
-- Governance (rules, amendment procedure, versioning policy, compliance review)
+Modified sections:
+- Quality Gates & Tooling — the gate table's "CI job" column named jobs (static, test, deps) that
+  the verification pipeline replaces, and listed seven gates where the pipeline runs ten. Renamed
+  to the jobs that will exist (quick, lint, test, e2e, deps, vuln, coverage) and extended with the
+  end-to-end, vulnerability and coverage gates. This matters because the constitution is the
+  tie-break document: a reviewer enforcing "green on all CI jobs" from a stale table would not know
+  the end-to-end gate is part of the required set.
 
-Removed sections: none. Template guidance comments removed once replaced.
+Why now: Principle III already required statistics to be compared against the tool's own report,
+but never said that report must be committed when the run is recorded — the half that cannot be
+fixed later. An archived run cannot be re-run, and Gatling stopped producing statistics reports
+in 3.13.5, so a run recorded without its report can never prove a decoder's numbers. Surfaced by
+specs/001-ci-release-automation (FR-031, FR-032) while designing the end-to-end corpus harness.
+
+Added sections: none. Removed sections: none. Renamed principles: none.
 
 Templates:
-- ✅ .specify/templates/plan-template.md — Constitution Check lists gates I–VI plus a
-  workflow gate; Technical Context carries the module's standing facts; source layout is
-  the Go module layout; Complexity Tracking examples are parsec-specific.
-- ✅ .specify/templates/spec-template.md — conditional "Source Coverage" subsection (tool,
-  versions, formats, gate behaviour, Capabilities gaps, corpus); domain edge cases,
-  requirement and success-criteria examples.
-- ✅ .specify/templates/tasks-template.md — test tasks REQUIRED per Principle III; Go path
-  conventions; corpus, version-gate, Capabilities, doc-comment, CHANGELOG and benchmark
-  tasks in the phases; Go parallel example.
+- ✅ .specify/templates/plan-template.md — Constitution Check gate III now asks for each recording's
+  own tool report, or an explicit note that the tool version produced none.
+- ✅ .specify/templates/spec-template.md — "Source Coverage" ▸ Golden corpus now states that the
+  report is captured at recording time or never.
+- ✅ .specify/templates/tasks-template.md — path conventions and the T002 corpus task now name the
+  tool report as part of the recording, with the reason.
 - ✅ .specify/templates/checklist-template.md — no constitution references; no change.
-- ✅ .claude/skills/speckit-*/SKILL.md — reviewed for agent-specific references; every
-  command loads .specify/memory/constitution.md generically; no change required.
-- ⚠ .claude/skills/speckit-tasks/SKILL.md ("Task Generation Rules") still says tests are
-  OPTIONAL. The tasks template now says REQUIRED for parsec; the skill file is spec-kit
-  managed and is reinstalled on upgrade, so it was left untouched. Patch it or accept it.
-- ✅ AGENTS.md, README.md, CLAUDE.md — consistent with the principles; nothing renamed.
+- ✅ .claude/skills/speckit-*/SKILL.md — every command loads this file generically; no change
+  required beyond the one known exception below. Kept on the list because it is a drift surface.
+- ✅ CLAUDE.md — loads AGENTS.md and points at the active plan; checked on every amendment.
+- ✅ .golangci.yml, doc.go, .github/workflows/ — the sources Principles III, IV and VI encode rules
+  about (coverage floors, stdlib-only, lint configuration). Listed so an amendment that changes a
+  floor or a dependency rule has a recorded pointer to the files that must move with it.
+- ✅ plan-template.md still carries one Constitution Check gate per principle plus a workflow gate;
+  adding a principle means adding its gate there, or every later plan silently skips it.
+- ✅ AGENTS.md — "Test Model" now says each run is committed together with its own Gatling report.
+- ✅ README.md — describes what is being built, not how corpora are recorded; no change required.
+- ⚠ .claude/skills/speckit-tasks/SKILL.md ("Task Generation Rules") still says tests are OPTIONAL.
+  The tasks template says REQUIRED for parsec; the skill file is spec-kit managed and reinstalled
+  on upgrade, so it is left untouched. Unchanged from v1.0.0. Patch it or accept it.
 
 Follow-up TODOs:
-- CI does not yet enforce the coverage floors of Principle III (90% decoder packages,
-  80% overall). Add the gate when the first decoder package lands (v0.0.2 milestone);
-  until then reviewers check the go test -cover numbers in the PR description.
+- CI does not yet enforce the coverage floors of Principle III (90% decoder packages, 80% overall).
+  specs/001-ci-release-automation builds the reporting half and leaves enforcement behind an
+  unpassed --enforce flag; flip it when the first decoder package lands (v0.0.2 milestone). Until
+  then reviewers check the go test -cover numbers in the PR description.
+- No corpus entry exists yet, so the new recording rule has nothing to validate against. The first
+  entry arrives with specs/001-ci-release-automation and is the first test of this rule.
 - Ratification date is the scaffold date (2026-09-02); no earlier constitution existed.
 -->
 
@@ -98,6 +112,13 @@ an external format, and streaming is what lets a multi-gigabyte log be reported 
   `testdata/corpus/<tool>/<version>/`, recorded from a real run of that tool version and
   committed as produced. A hand-edited artefact is a fixture, not corpus, and MUST say so
   in its name.
+- A recording MUST capture, at the moment the run is made, everything a later comparison
+  will need: the artefact exactly as the tool produced it, AND the report that tool
+  produced for that same run. None of it is recoverable afterwards — an archived run cannot
+  be re-run, and a tool may stop producing a report in a later version, as Gatling did in
+  3.13.5. A corpus entry MUST NOT be added without the run's own report unless that tool
+  version genuinely produced none, in which case the entry MUST record that fact so a later
+  reader knows the absence is the tool's and not the recorder's.
 - Decoder output MUST be compared against the recorded record stream byte for byte (field
   for field where the record stream is stored decoded). Statistics MUST be compared
   against the report the tool itself produced for that run, within a tolerance documented
@@ -114,6 +135,9 @@ an external format, and streaming is what lets a multi-gigabyte log be reported 
 Rationale: for an undocumented format the corpus *is* the specification. Byte-for-byte
 agreement plus report-level tolerances are the only evidence that a decoder is correct
 rather than merely plausible, and the race detector is cheap insurance for streaming code.
+That evidence has an expiry: the moment a run finishes is the only moment its own report can
+be captured, so an entry recorded without one is permanently unable to prove a decoder's
+numbers — a gap no amount of later work can close.
 
 ### IV. Minimal, Explicit Dependencies
 
@@ -177,13 +201,16 @@ Every PR MUST be green on all CI jobs before merge:
 
 | Gate | Command | CI job |
 |------|---------|--------|
-| Format | `test -z "$(gofmt -l .)"` | static |
-| Module hygiene | `go mod tidy && git diff --exit-code` | static |
-| Vet | `go vet ./...` | static |
-| Lint | `golangci-lint` (pinned) with `.golangci.yml` | static |
-| Build | `go build ./...` | test |
+| Format | `test -z "$(gofmt -l .)"` | quick |
+| Module hygiene | `go mod tidy && git diff --exit-code` | quick |
+| Vet | `go vet ./...` | quick |
+| Build | `go build ./...` | quick |
+| Lint | `golangci-lint` (pinned) with `.golangci.yml`, over every build configuration | lint |
 | Tests | `go test -race -shuffle=on ./...` | test |
+| End-to-end | `go test -tags=integration` over the golden corpus; an empty run fails | e2e |
 | Dependency boundary | stdlib-only check on `./model/...` and `./gatling/...` | deps |
+| Vulnerabilities | `govulncheck` (pinned) over the module | vuln |
+| Coverage | per-package against the floors below | coverage |
 
 Local equivalents: `gofmt -w .` before every commit; `go vet ./... && go test ./...` to
 verify; `go build ./... && go test ./...` is the definition of a green commit;
@@ -261,4 +288,4 @@ contradict.
   re-reads Principles I–VI against the milestone's merged PRs and files an issue for
   each gap in the next milestone.
 
-**Version**: 1.0.0 | **Ratified**: 2026-09-02 | **Last Amended**: 2026-09-02
+**Version**: 1.1.0 | **Ratified**: 2026-09-02 | **Last Amended**: 2026-09-02

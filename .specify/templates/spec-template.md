@@ -119,7 +119,7 @@
 - **Artefact formats**: [e.g., "text simulation.log; binary simulation.log from 3.13.0"]
 - **Version gate**: [what is refused, what decodes with a warning]
 - **Not provided by this source** (declared through Capabilities): [e.g., "per-request bytes, group timings"]
-- **Golden corpus**: [runs to record under testdata/corpus/<tool>/<version>/ and the tool report used for tolerance checks]
+- **Golden corpus**: [runs to record under testdata/corpus/<tool>/<version>/, each committed with that run's own tool report for tolerance checks — the report is captured at recording time or never (Principle III); say so explicitly if the tool version produces none]
 
 ## Success Criteria *(mandatory)*
 
