@@ -25,7 +25,7 @@ parsec is a single Go module with packages at the repository root (see plan.md "
 
 - **Packages**: `model/`, `gatling/`, `stats/`, one `<tool>/` package per adapter, `internal/` for shared non-public helpers
 - **Tests**: `<pkg>/<file>_test.go` beside the code; table-driven on stdlib `testing`
-- **Golden corpus**: `testdata/corpus/<tool>/<version>/`, recorded from real runs; a hand-edited fixture says so in its name
+- **Golden corpus**: `testdata/corpus/<tool>/<version>/`, recorded from real runs with that run's own tool report beside it; a hand-edited fixture says so in its name
 - Paths below are examples for a Gatling decoder story - adjust based on plan.md structure
 
 <!--
@@ -52,7 +52,7 @@ parsec is a single Go module with packages at the repository root (see plan.md "
 **Purpose**: Package skeleton and golden corpus for this feature
 
 - [ ] T001 Create the package directories named in plan.md (e.g. gatling/, testdata/corpus/gatling/3.12.1/)
-- [ ] T002 Record the golden corpus for every version in scope into testdata/corpus/<tool>/<version>/ with the tool's own report beside it
+- [ ] T002 Record the golden corpus for every version in scope into testdata/corpus/<tool>/<version>/ with the tool's own report beside it — unrecoverable later, so it is captured now or never (Principle III)
 - [ ] T003 [P] Confirm .golangci.yml needs no change for this feature; if it does, justify it in plan.md Complexity Tracking
 
 ---

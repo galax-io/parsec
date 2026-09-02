@@ -53,7 +53,8 @@ Complexity Tracking. N/A is allowed only with a one-line reason.
       coverage; `io.Reader` entry point with bounded memory and capped allocations; chunked
       and whole-file reads agree; errors carry offsets; no panic/recover control flow.
 - [ ] **III. Golden-Corpus Testing** — corpus recordings from real runs listed for every
-      version touched; byte-for-byte and report-tolerance assertions planned with their
+      version touched, each captured with that run's own tool report (or the entry recording
+      that the tool version produced none); byte-for-byte and report-tolerance assertions planned with their
       tolerances documented; coverage stays ≥ 90% (decoder packages) / 80% (overall); each
       bug fixed gets a regression test; no mocks where a real artefact exists.
 - [ ] **IV. Minimal, Explicit Dependencies** — `model/` and `gatling/` stay stdlib-only; any
