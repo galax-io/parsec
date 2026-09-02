@@ -1,0 +1,44 @@
+# Changes here will be overwritten by `copier update` — NEVER EDIT MANUALLY.
+# This file records the answers used to scaffold the project so the template
+# can be re-applied later.  Keep it committed.
+_commit: d8b7cd1
+_src_path: gh:galax-io/spec-kit-galaxio-bootstrap
+architecture: model/ is the source of truth for every consumer; each tool package
+    converts that tool's artefacts into model types and declares through Capabilities
+    what the source cannot provide; stats/ consumes model types only. The Gatling
+    log format is external, undocumented and has already changed once, so every read
+    is version-gated.
+build_test_cmd: go build ./... && go test ./...
+commands: '# format      gofmt -w .
+
+    # verify      go vet ./... && go test ./...
+
+    # build/test  go build ./... && go test ./...
+
+    # integration go test -tags=integration ./...'
+dep_manifest: go.mod
+do_git: false
+org_repo: galax-io/parsec
+project_name: parsec
+project_tagline: 'Load-test result primitives in Go: one canonical model for Gatling,
+    JMeter, k6, Locust and Yandex.Tank results, consumed by galaxio-cli, the comet
+    sidecar and the Galaxio backend; the public decoder API is compatibility-sensitive'
+publish_mechanism: Go module proxy (tag-based)
+release_notes_tool: git-cliff
+role: 'Principal Engineer: Go, binary and text format decoding, streaming parsers,
+    load-testing result statistics'
+run_speckit: false
+stack: go
+stack_detail: Go 1.25, standard library only in model/ and gatling/; caio/go-tdigest
+    for percentiles; stdlib testing with table-driven tests and golden files under
+    testdata/
+structure: model/ -> canonical result types; gatling/ -> text and binary simulation.log
+    codecs, version gate, run discovery; jmeter/ k6/ locust/ phout/ -> per-tool adapters;
+    stats/ -> aggregation and percentiles; testdata/corpus/ -> golden logs per tool
+    and version
+test_model: Golden corpus per Gatling version under testdata/corpus/; decoder output
+    compared byte for byte against the recorded record stream, statistics against
+    that run's own Gatling report within a documented tolerance; chunked and whole-file
+    reads must agree; race detector always on; coverage floor 90 percent for decoder
+    packages, 80 percent overall.
+

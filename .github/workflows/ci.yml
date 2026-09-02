@@ -1,0 +1,62 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+    paths-ignore: ['**.md', 'docs/**', 'specs/**', '.specify/**']
+  pull_request:
+    paths-ignore: ['**.md', 'docs/**', 'specs/**', '.specify/**']
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  static:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - name: gofmt
+        run: test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
+      - name: go mod tidy is clean
+        run: go mod tidy && git diff --exit-code
+      - name: go vet
+        run: go vet ./...
+      - uses: golangci/golangci-lint-action@v8
+        with:
+          version: v2.12.2
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - name: build
+        run: go build ./...
+      - name: test
+        run: go test -race -shuffle=on ./...
+
+  deps:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - name: model and gatling depend on the standard library only
+        run: |
+          set -euo pipefail
+          for pkg in ./model/... ./gatling/...; do
+            if go list "$pkg" >/dev/null 2>&1; then
+              go list -deps "$pkg" | grep -E '^[a-z0-9-]+\.[a-z]{2,}/' && {
+                echo "non-stdlib dependency found in $pkg"; exit 1; } || true
+            fi
+          done
