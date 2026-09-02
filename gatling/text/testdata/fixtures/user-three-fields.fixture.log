@@ -1,0 +1,6 @@
+ASSERTION	AAEBAAICAAAAAAAAAPA/
+RUN	io.galaxio.parsec.corpus.CorpusSimulation	corpussimulation	1788379354534	 	3.11.5
+USER	Corpus recording	START
+USER	Corpus recording	START	1788379356165
+REQUEST		GET /ok	1788379356162	1788379356173	OK	 
+USER	Corpus recording	END	1788379356180

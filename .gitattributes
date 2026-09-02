@@ -1,0 +1,5 @@
+# Recorded artefacts and hand-written fixtures are byte-exact evidence. Git must never
+# normalise their line endings: a Windows recording carries CRLF natively, and the CRLF
+# fixture exists to prove the reader accepts it.
+testdata/corpus/**              -text
+gatling/text/testdata/fixtures/** -text
