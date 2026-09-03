@@ -183,6 +183,26 @@ Per [plan.md](plan.md) "Source Code":
 
 ---
 
+## Phase 9: User Story 6 — Every supported Gatling is re-run and re-checked (Priority: P2)
+
+**Goal**: a real Gatling per supported version on every change, held to its own fresh report (issue #15, pulled into v0.0.2)
+
+**Independent Test**: `PARSEC_CANARY_RUNS=... go test -tags=canary -race -count=1 ./gatling/text/` over two fresh runs passes and names both versions; the workflow's shell steps run locally end to end
+
+### Tests for User Story 6 (REQUIRED — write first, MUST fail before implementation) ⚠️
+
+- [X] T045 [US6] Move the report, tally and masked-comparison helpers out of `gatling/text/golden_test.go`, `report_test.go` and `crossversion_test.go` into `gatling/text/helpers_test.go` under `//go:build integration || canary`, leaving only the tests behind; the corpus suite must pass unchanged
+- [X] T046 [US6] Write `gatling/text/canary_test.go` under `//go:build canary`: `canaryRuns` parses `PARSEC_CANARY_RUNS` ("version=dir" pairs) and skips with a reason when unset; `TestCanary` per version asserts the header names the version asked for, surfaces any gate warning to the job summary, and applies `checkCounts`/`checkRates`/`walk` against that run's `js/global_stats.json` and `js/stats.json`; `TestCanaryCrossVersion` holds the runs to each other as masked multisets; `TestCanaryCoversSupportedRange` fails when a bound of `SupportedVersions` was not run
+
+### Implementation for User Story 6
+
+- [X] T047 [US6] Write `.github/workflows/gatling-canary.yml`: `workflow_call` and `workflow_dispatch` with a `versions` input defaulting to the supported list, a weekly `schedule`; `setup-java` 17 with the sbt cache and `setup-sbt`; start the stub and wait for it; run the probe under every version, failing with the version named; export `PARSEC_CANARY_RUNS`; run the canary tests with `-count=1 -json` and fail when none passed
+- [X] T048 [US6] Add the `canary` job to `.github/workflows/ci.yml` as `uses: ./.github/workflows/gatling-canary.yml`; add the `canary` build tag to `.golangci.yml` so the file is linted
+- [X] T049 [US6] Run the workflow's shell steps locally end to end — stub, both versions under sbt, the canary tests — and confirm every version is named in the summary
+- [X] T050 [US6] Document the canary in `specs/002-gatling-text-decoder/quickstart.md` and `research.md` (R14); note in `plan.md` that the constitution's gate table needs a `canary` row, which is an amendment for its own PR
+
+---
+
 ## Dependencies & Execution Order
 
 ### Phase Dependencies

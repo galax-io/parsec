@@ -56,7 +56,7 @@ Source: `.specify/memory/constitution.md` v1.1.0.
 
 - [x] **I. Canonical Model First** — PASS, conditionally, with a Complexity Tracking row. This feature adds no `model/` types because `model/` is milestone v0.0.3. What it exports are the log's own wire records, not results: no count, timing or percentile is derived here, and no `Capabilities` claim is made. The condition is that these types are documented as wire records rather than a result model, and that v0.0.3 adds the conversion. Recorded as a row so the deferral is visible to a reviewer rather than argued away.
 - [x] **II. Version-Gated, Streaming Decoders** — PASS. Gate refuses below range, decodes with a caller-reachable warning above it, and refuses a version string that is not a plain release (FR-009a). Range equals corpus coverage. `io.Reader` entry point, bounded memory, 1 MiB line ceiling. Chunked and whole-file agreement is a test, not an assumption. Errors carry line numbers. No `recover`. **Changed during Phase 0:** the surplus-field rule now differs inside and above the covered range precisely so that "an unknown newer version MUST decode and MUST surface a warning" keeps holding — see research.md R4.
-- [x] **III. Golden-Corpus Testing** — PASS. Two recordings, each from a real run, each committed with the two statistics files that run generated. Field-for-field comparison against a committed golden record stream; counts and mean rate against the run's own report with the tolerance and its reason documented at the assertion. Coverage floors 90% / 80%. Fixtures are named as fixtures, never as corpus.
+- [x] **III. Golden-Corpus Testing** — PASS. The canary (issue #15, pulled into v0.0.2) adds a second layer above the corpus: every supported release is started for real on every change and held to its own fresh report. It does not replace the recording — a fresh run cannot be compared to the golden stream, only to its own report and to the other fresh runs — and the constitution's gate table needs a `canary` row, which is an amendment for its own PR. Two recordings, each from a real run, each committed with the two statistics files that run generated. Field-for-field comparison against a committed golden record stream; counts and mean rate against the run's own report with the tolerance and its reason documented at the assertion. Coverage floors 90% / 80%. Fixtures are named as fixtures, never as corpus.
 - [x] **IV. Minimal, Explicit Dependencies** — PASS. `gatling/` and `gatling/text/` are standard library only. No module added.
 - [x] **V. Compatibility-Sensitive Public API** — PASS. Every exported identifier is listed in [contracts/](contracts/) with a doc comment and the version range it accepts. Pre-v0.1.0, so these may still change; the `CHANGELOG.md` entry lands in the implementation PR under Added.
 - [x] **VI. Idiomatic, Simple Go** — PASS. One reader, one flat record type, no interface introduced before a second codec needs it. `.golangci.yml` unchanged.
@@ -93,8 +93,12 @@ gatling/text/                             # this feature's codec
 ├── reader.go                             # Reader: preamble, gate, Next
 ├── scan.go                               # line splitting, 1 MiB ceiling, CR handling
 ├── parse.go                              # one parser per record kind
+├── intern.go                             # bounded table of the names a log repeats
 ├── testdata/fixtures/                    # hand-written, named as fixtures
+├── helpers_test.go                       # //go:build integration || canary: report and cross-run checks
+├── canary_test.go                        # //go:build canary: fresh runs from PARSEC_CANARY_RUNS
 └── *_test.go                             # unit + golden + chunked-agreement + benchmark
+.github/workflows/gatling-canary.yml      # a real Gatling per version; called from ci.yml, by hand, weekly
 testdata/corpus/gatling/3.11.5/           # recorded run
 ├── simulation.log
 ├── global_stats.json                     # the run's own report: totals and mean rate
