@@ -34,10 +34,10 @@ Per [plan.md](./plan.md) "Source Code":
 
 **Purpose**: Spec-first commit, issue tracking, and the directory skeleton everything else lands in
 
-- [ ] T001 Commit the spec artifacts in `specs/001-ci-release-automation/` as `docs(speckit): add 001-ci-release-automation spec/plan/tasks`, before any implementation commit (constitution: Spec-first)
+- [X] T001 Commit the spec artifacts in `specs/001-ci-release-automation/` as `docs(speckit): add 001-ci-release-automation spec/plan/tasks`, before any implementation commit (constitution: Spec-first)
 - [ ] T002 Create one GitHub issue per implementation PR below (foundational, US1, US2-harness, US2-corpus, US3, US4, polish) under milestone **v0.0.1 Scaffold**, so each commit can carry `Closes #N` (constitution: 1 issue = 1 commit). `/speckit-taskstoissues` can generate these  
 - [ ] T003 [P] Record the corpus layout `testdata/corpus/<tool>/<version>/<format>/` in `README.md` — git tracks files, not directories, so the first real file creates the path; committing `.gitkeep` into directories that receive real files later is the add-then-remove churn AGENTS.md forbids
-- [ ] T004 [P] Add `run: build-tags: [integration]` to `.golangci.yml`, or run the `lint` job as a matrix over both build configurations. golangci-lint only loads files whose build constraints are satisfied, so without this every file in `internal/e2e` is invisible to all enabled linters and the job reports an empty package — indistinguishable from clean code, which is why "confirm it needs no change" would return the wrong answer
+- [X] T004 [P] Add `run: build-tags: [integration]` to `.golangci.yml`, or run the `lint` job as a matrix over both build configurations. golangci-lint only loads files whose build constraints are satisfied, so without this every file in `internal/e2e` is invisible to all enabled linters and the job reports an empty package — indistinguishable from clean code, which is why "confirm it needs no change" would return the wrong answer
 
 ---
 
@@ -47,8 +47,8 @@ Per [plan.md](./plan.md) "Source Code":
 
 **⚠️ CRITICAL**: US1 and US3 both consume `verify.yml`. Nothing in Phase 3 or Phase 5 can start until it exists.
 
-- [ ] T005 Create `.github/workflows/verify.yml` with `on: workflow_call` and `permissions: contents: read`, carrying the four gates that exist today, moved out of `ci.yml` unchanged in behaviour: `quick` (gofmt, `go mod tidy` clean, `go vet`, `go build`), `lint` (`golangci/golangci-lint-action` at the pinned version), `test` (`go test -race -shuffle=on ./...`), `deps` (stdlib-only boundary for `./model/...` and `./gatling/...`). Job names are a contract — see [contracts/workflows.md](./contracts/workflows.md). Fix the `deps` check while moving it: `go list -deps` prints the queried package itself, so the current pattern flags `github.com/galax-io/parsec/model` as a third-party dependency the moment `model/` exists, and with `model/` absent the `if go list` guard makes it a silent no-op. Exclude the module path, and make the no-package case say so in the output instead of passing quietly
-- [ ] T006 Rewire `.github/workflows/ci.yml` to call `verify.yml` via `uses:`, keeping its current triggers and concurrency block for now, so the trunk stays green while Phase 3 rebuilds the trigger logic
+- [X] T005 Create `.github/workflows/verify.yml` with `on: workflow_call` and `permissions: contents: read`, carrying the four gates that exist today, moved out of `ci.yml` unchanged in behaviour: `quick` (gofmt, `go mod tidy` clean, `go vet`, `go build`), `lint` (`golangci/golangci-lint-action` at the pinned version), `test` (`go test -race -shuffle=on ./...`), `deps` (stdlib-only boundary for `./model/...` and `./gatling/...`). Job names are a contract — see [contracts/workflows.md](./contracts/workflows.md). Fix the `deps` check while moving it: `go list -deps` prints the queried package itself, so the current pattern flags `github.com/galax-io/parsec/model` as a third-party dependency the moment `model/` exists, and with `model/` absent the `if go list` guard makes it a silent no-op. Exclude the module path, and make the no-package case say so in the output instead of passing quietly
+- [X] T006 Rewire `.github/workflows/ci.yml` to call `verify.yml` via `uses:`, keeping its current triggers and concurrency block for now, so the trunk stays green while Phase 3 rebuilds the trigger logic
 - [ ] T007 Validate `.github/workflows/verify.yml` by breaking each of the four gates in turn and confirming each is reported by name: an unformatted file (`quick`), a `//nolint` with no explanation (`lint`), a failing test (`test`), and a third-party import under `model/` (`deps`). The four breakages an earlier draft listed — unformatted file, untidy `go.mod`, vet finding, failing build — are all steps of `quick` alone, and would have left `lint`, `test` and `deps` unexercised at this checkpoint
 
 **Checkpoint**: the gate set exists once and is callable. US1, US2 and US3 can now proceed in parallel.
@@ -63,24 +63,24 @@ Per [plan.md](./plan.md) "Source Code":
 
 ### Tests for User Story 1 (REQUIRED — write first, MUST fail before implementation) ⚠️
 
-- [ ] T008 [P] [US1] Write `scripts/check-coverage_test.sh`: a package with no statements reports `n/a` not `0%`; `--enforce` fails on a package below its floor; without `--enforce` the same input exits 0. Must fail — the script does not exist yet
+- [X] T008 [P] [US1] Write `scripts/check-coverage_test.sh`: a package with no statements reports `n/a` not `0%`; `--enforce` fails on a package below its floor; without `--enforce` the same input exits 0. Must fail — the script does not exist yet
 - [ ] T009 [P] [US1] Record in [quickstart.md](./quickstart.md) US1 the four break-one-gate branches and the exact expected failure text, so T017 and T018 have a pass/fail definition rather than a judgement call
 
 ### Implementation for User Story 1
 
-- [ ] T010 [P] [US1] Write `scripts/check-coverage.sh`: build a per-package table from a `go test -coverprofile` profile, report `n/a` for packages with no statements, accept `--enforce` applying the 90% decoder / 80% overall floors, and exit 0 without it (research D10)
-- [ ] T011 [P] [US1] Add the `vuln` job to `.github/workflows/verify.yml` running `go run golang.org/x/vuln/cmd/govulncheck@<pinned> ./...` — pinned, never `@latest`, so it never enters `go.mod` (Principle IV)
-- [ ] T012 [US1] Add the `coverage` job to `.github/workflows/verify.yml` calling `scripts/check-coverage.sh` **without** `--enforce` and writing its table to `$GITHUB_STEP_SUMMARY` (depends on T010, T011 — same file)
-- [ ] T013 [US1] Add the `changes` job to `.github/workflows/ci.yml`: check out with `fetch-depth: 0` (a depth-1 clone does not contain the base commit and `git diff` against a missing object exits 128), compute changed paths with `git diff --name-only` against an event-specific base — `github.event.pull_request.base.sha` on a pull request, `github.event.before` on a push, `code=true` when neither resolves — and output a `code` boolean that is false for changes touching only `**.md`, `docs/`, `specs/` and `.specify/`. `ci.yml` runs on both events and the pull-request field is empty on a push, which would otherwise mark every trunk push documentation-only and report green having verified nothing
-- [ ] T014 [US1] Remove `paths-ignore` from the `.github/workflows/ci.yml` triggers and gate the `verify.yml` call on `needs.changes.outputs.code == 'true'` — `paths-ignore` and a required check cannot coexist (research D1)
-- [ ] T015 [US1] Add the aggregate `verify` job to `.github/workflows/ci.yml` with `if: always()` and `needs: [changes, gates]`, failing when `contains(needs.*.result, 'failure')` or `contains(needs.*.result, 'cancelled')` and passing when `gates` is `skipped`. `needs` accepts only job ids from the same file, so the gates inside `verify.yml` are neither listed here nor reachable — the `uses:` job already fails when any of them fails
-- [ ] T016 [US1] Add `.github/ruleset-main.json` declaring the branch-protection ruleset that requires the `verify` check with bypass disabled, so the maintainer action in [quickstart.md](./quickstart.md) is a single `gh api` call and not a description
+- [X] T010 [P] [US1] Write `scripts/check-coverage.sh`: build a per-package table from a `go test -coverprofile` profile, report `n/a` for packages with no statements, accept `--enforce` applying the 90% decoder / 80% overall floors, and exit 0 without it (research D10)
+- [X] T011 [P] [US1] Add the `vuln` job to `.github/workflows/verify.yml` running `go run golang.org/x/vuln/cmd/govulncheck@<pinned> ./...` — pinned, never `@latest`, so it never enters `go.mod` (Principle IV)
+- [X] T012 [US1] Add the `coverage` job to `.github/workflows/verify.yml` calling `scripts/check-coverage.sh` **without** `--enforce` and writing its table to `$GITHUB_STEP_SUMMARY` (depends on T010, T011 — same file)
+- [X] T013 [US1] Add the `changes` job to `.github/workflows/ci.yml`: check out with `fetch-depth: 0` (a depth-1 clone does not contain the base commit and `git diff` against a missing object exits 128), compute changed paths with `git diff --name-only` against an event-specific base — `github.event.pull_request.base.sha` on a pull request, `github.event.before` on a push, `code=true` when neither resolves — and output a `code` boolean that is false for changes touching only `**.md`, `docs/`, `specs/` and `.specify/`. `ci.yml` runs on both events and the pull-request field is empty on a push, which would otherwise mark every trunk push documentation-only and report green having verified nothing
+- [X] T014 [US1] Remove `paths-ignore` from the `.github/workflows/ci.yml` triggers and gate the `verify.yml` call on `needs.changes.outputs.code == 'true'` — `paths-ignore` and a required check cannot coexist (research D1)
+- [X] T015 [US1] Add the aggregate `verify` job to `.github/workflows/ci.yml` with `if: always()` and `needs: [changes, gates]`, failing when `contains(needs.*.result, 'failure')` or `contains(needs.*.result, 'cancelled')` and passing when `gates` is `skipped`. `needs` accepts only job ids from the same file, so the gates inside `verify.yml` are neither listed here nor reachable — the `uses:` job already fails when any of them fails
+- [X] T016 [US1] Add `.github/ruleset-main.json` declaring the branch-protection ruleset that requires the `verify` check with bypass disabled, so the maintainer action in [quickstart.md](./quickstart.md) is a single `gh api` call and not a description
 
 ### Validation for User Story 1
 
 - [ ] T017 [US1] Break each gate in turn on a branch and confirm `verify` fails naming the gate, per [quickstart.md](./quickstart.md) US1: unformatted `.go` file, third-party import under `model/`, failing test, `//nolint` with no explanation  
 - [ ] T018 [US1] Open a branch touching only `README.md` and confirm the gate jobs report `skipped`, `verify` reports green, and the change is mergeable on review alone (FR-002 + FR-006 together)  
-- [ ] T019 [US1] Add the `CHANGELOG.md` entry under Unreleased ▸ Added for the verification pipeline and its single required check
+- [X] T019 [US1] Add the `CHANGELOG.md` entry under Unreleased ▸ Added for the verification pipeline and its single required check
 
 **Checkpoint**: US1 is complete and independently valuable — the repository can no longer accept a red change, and documentation still merges freely.
 
@@ -103,10 +103,10 @@ Per [plan.md](./plan.md) "Source Code":
 - [ ] T023 [P] [US2] Implement `internal/e2e/registry.go`: a concurrency-safe registry holding tool, version, format, `level` (`harness` or `decoder`) and assertion count, plus the exported decision function `TestMain` calls so the empty-registry rule is unit-testable
 - [ ] T024 [P] [US2] Write `internal/e2e/doc.go` stating why this suite never skips: the constitution's `t.Skip`-when-the-tool-is-unavailable rule is about an external tool binary, and these cases replay committed recordings, so a missing recording is a failure (research D3). The next reader will otherwise expect a skip
 - [ ] T025 [US2] Implement `internal/e2e/main_test.go`: `TestMain` runs `m.Run()`, then exits non-zero printing `no end-to-end case executed` when the registry is empty (depends on T023)
-- [ ] T026 [US2] Record a real Gatling run in the 3.11.5 – 3.12.x range into `testdata/corpus/gatling/<version>/`: `simulation.log` **and the run's own statistics report**, both committed byte for byte. The report is unreadable-later information — an archived run cannot be re-run and Gatling stopped producing reports in 3.13.5 (FR-031). **Maintainer action: needs a JVM and a Gatling distribution.** Procedure in [quickstart.md](./quickstart.md) US2  
+- [X] T026 [US2] Record a real Gatling run in the 3.11.5 – 3.12.x range into `testdata/corpus/gatling/<version>/`: `simulation.log` **and the run's own statistics report**, both committed byte for byte. The report is unreadable-later information — an archived run cannot be re-run and Gatling stopped producing reports in 3.13.5 (FR-031). **Maintainer action: needs a JVM and a Gatling distribution.** Procedure in [quickstart.md](./quickstart.md) US2  
 - [ ] T027 [US2] Implement `internal/e2e/scaffold_test.go`: discover the recorded entry, read the artefact, assert it is present and non-empty, and register the case with `level=harness`. It compares nothing — there is no decoder to compare against, and FR-032 records that comparison as future work rather than guessing at it now (depends on T022, T023, T026)
-- [ ] T028 [P] [US2] Write `scripts/e2e-inventory.sh` parsing `go test -json` into the executed-case inventory shown in [contracts/workflows.md](./contracts/workflows.md), and exiting non-zero when the count is zero
-- [ ] T029 [US2] Add the `e2e` job to `.github/workflows/verify.yml` running `go test -tags=integration -race -shuffle=on -json ./internal/e2e/...` piped through `scripts/e2e-inventory.sh` into `$GITHUB_STEP_SUMMARY`, with `shell: bash` and `set -o pipefail` on the step. Nothing is added to `ci.yml`: the aggregate needs the `gates` call job, not the individual gates. Without `pipefail` the job takes the script's exit status and discards the test result entirely, so a failing case with a satisfied inventory reports green
+- [X] T028 [P] [US2] Write `scripts/e2e-inventory.sh` parsing `go test -json` into the executed-case inventory shown in [contracts/workflows.md](./contracts/workflows.md), and exiting non-zero when the count is zero
+- [X] T029 [US2] Add the `e2e` job to `.github/workflows/verify.yml` running `go test -tags=integration -race -shuffle=on -json ./internal/e2e/...` piped through `scripts/e2e-inventory.sh` into `$GITHUB_STEP_SUMMARY`, with `shell: bash` and `set -o pipefail` on the step. Nothing is added to `ci.yml`: the aggregate needs the `gates` call job, not the individual gates. Without `pipefail` the job takes the script's exit status and discards the test result entirely, so a failing case with a satisfied inventory reports green
 
 ### Validation for User Story 2
 
@@ -133,16 +133,16 @@ Per [plan.md](./plan.md) "Source Code":
 
 ### Implementation for User Story 3
 
-- [ ] T035 [P] [US3] Write `cliff.toml` with commit parsers for this repository's actual prefixes (`feat`, `fix`, `docs`, `ci`, `chore`, `refactor`, `test`, `perf`) and a catch-all group, so a commit that ignored the convention is listed rather than dropped from the notes (research D7)
-- [ ] T036 [US3] Create `.github/workflows/release.yml` triggered on `push` tags `v*.*.*` with `permissions: contents: read`, and its `guard` job: check out with `fetch-depth: 0` (a tag-triggered checkout creates no remote-tracking branches, so the containment test would find none and refuse every release), resolve the containing branches with `git branch -r --contains`, refuse unless `origin/main` or exactly `origin/release/X.Y.0` for the tag's major.minor, run `scripts/check-linkage.sh --for-tag` with `issues: read`, `pull-requests: read` and `GH_TOKEN` set on the job, and refuse when a Release already exists for the tag
-- [ ] T037 [US3] Add the `verify` call to `.github/workflows/release.yml` using the reusable workflow from Phase 2 — the same gate set, not a lighter one, because a `release/*` branch carrying a cherry-pick has a tree that was never verified as such
-- [ ] T038 [US3] Add the `publish` job to `.github/workflows/release.yml` with `permissions: contents: write` scoped to that job, needing `guard` and `verify`, in this order: generate notes with `orhun/git-cliff-action` at a pinned version → poll `https://proxy.golang.org/github.com/galax-io/parsec/@v/<tag>.info` until it resolves → re-check the Release does not exist → **create the Release last**. The poll comes before the creation: it depends on the tag, not on the Release, and putting the flakiest step after the irreversible one is what would leave a red run with a Release already created that no re-run can ever clear (research D8)
+- [X] T035 [P] [US3] Write `cliff.toml` with commit parsers for this repository's actual prefixes (`feat`, `fix`, `docs`, `ci`, `chore`, `refactor`, `test`, `perf`) and a catch-all group, so a commit that ignored the convention is listed rather than dropped from the notes (research D7)
+- [X] T036 [US3] Create `.github/workflows/release.yml` triggered on `push` tags `v*.*.*` with `permissions: contents: read`, and its `guard` job: check out with `fetch-depth: 0` (a tag-triggered checkout creates no remote-tracking branches, so the containment test would find none and refuse every release), resolve the containing branches with `git branch -r --contains`, refuse unless `origin/main` or exactly `origin/release/X.Y.0` for the tag's major.minor, run `scripts/check-linkage.sh --for-tag` with `issues: read`, `pull-requests: read` and `GH_TOKEN` set on the job, and refuse when a Release already exists for the tag
+- [X] T037 [US3] Add the `verify` call to `.github/workflows/release.yml` using the reusable workflow from Phase 2 — the same gate set, not a lighter one, because a `release/*` branch carrying a cherry-pick has a tree that was never verified as such
+- [X] T038 [US3] Add the `publish` job to `.github/workflows/release.yml` with `permissions: contents: write` scoped to that job, needing `guard` and `verify`, in this order: generate notes with `orhun/git-cliff-action` at a pinned version → poll `https://proxy.golang.org/github.com/galax-io/parsec/@v/<tag>.info` until it resolves → re-check the Release does not exist → **create the Release last**. The poll comes before the creation: it depends on the tag, not on the Release, and putting the flakiest step after the irreversible one is what would leave a red run with a Release already created that no re-run can ever clear (research D8)
 
 ### Validation for User Story 3
 
 - [ ] T039 [US3] Push a version tag on a feature branch and confirm `.github/workflows/release.yml` publishes nothing and names the branch rule; delete the test tag afterwards, which is safe because nothing was published  
 - [ ] T040 [US3] Repeat for a tag whose minor does not match its release branch, and for a tag whose milestone still has an open issue; confirm both are refused before `publish` runs  
-- [ ] T041 [US3] Add the `CHANGELOG.md` entry under Unreleased ▸ Added for the tag-driven release workflow
+- [X] T041 [US3] Add the `CHANGELOG.md` entry under Unreleased ▸ Added for the tag-driven release workflow
 
 **Checkpoint**: the release process documented in `AGENTS.md` is enforced rather than merely written down.
 
@@ -180,8 +180,8 @@ Per [plan.md](./plan.md) "Source Code":
 - [ ] T050 Confirm the `verify` check is green on the feature's own pull request. The gates it runs are the same ones a human would re-run by hand, and a manual run can only ever disagree with the pipeline when the pipeline is broken — at which point the human's "confirmed" is the answer that gets believed
 - [ ] T051 Run the full [quickstart.md](./quickstart.md) "Definition of done" list and record the resulting package coverage numbers in the PR description, as the constitution requires until the coverage gate becomes blocking  
 - [ ] T052 Confirm `scripts/check-linkage.sh` passes for milestone **v0.0.1 Scaffold**: every PR from this feature carries the milestone and every issue from T002 is closed
-- [ ] T053 Fix `scripts/check-linkage.sh --for-tag` (issue #23): resolve the milestone titled exactly `vX.Y.Z` before falling back to `vX.Y.0`; match on a version boundary so `v0.0.1` cannot select `v0.0.10`, `v0.0.1.2` or `v0.0.1-rc1`; refuse a milestone with no issues and no pull requests instead of reporting it tag-ready; paginate the milestone queries; and audit pull requests merged since the previous release, which a milestone query cannot see (FR-018)
-- [ ] T054 Write `scripts/check-linkage_test.sh`: hermetic regression tests with `gh` replaced by a fixture-backed stub, covering every case above. Constitution Principle III is non-negotiable here — a bug fix ships with a test that fails without the fix, and this one must fail against both the original script and the first partial fix
+- [X] T053 Fix `scripts/check-linkage.sh --for-tag` (issue #23): resolve the milestone titled exactly `vX.Y.Z` before falling back to `vX.Y.0`; match on a version boundary so `v0.0.1` cannot select `v0.0.10`, `v0.0.1.2` or `v0.0.1-rc1`; refuse a milestone with no issues and no pull requests instead of reporting it tag-ready; paginate the milestone queries; and audit pull requests merged since the previous release, which a milestone query cannot see (FR-018)
+- [X] T054 Write `scripts/check-linkage_test.sh`: hermetic regression tests with `gh` replaced by a fixture-backed stub, covering every case above. Constitution Principle III is non-negotiable here — a bug fix ships with a test that fails without the fix, and this one must fail against both the original script and the first partial fix
 
 ---
 
@@ -282,3 +282,34 @@ T016 writes the ruleset file, but the maintainer action that applies it should c
 - Validation tasks are not optional: a gate that has never refused anything is a gate nobody has tested
 - Every `CHANGELOG.md` entry lands in its own story's PR, per the constitution's same-PR rule
 - Avoid: batching CHANGELOG entries, editing `.github/dependabot.yml` (the split works because it stays as it is), and widening `verify.yml` in more than one task at a time
+
+---
+
+## Status — 2026-09-04
+
+This list was written before the Gatling decoder existed, and reality has moved. Recorded here
+rather than silently, so the next reader is not misled by the checkboxes alone.
+
+**Delivered** (issue #32): Phase 2 and User Stories 1 and 3 — `verify.yml` holds the gate set once,
+`ci.yml` is `changes` → `gates` → `verify` with a single required check, `release.yml` is
+guard → verify → publish with the irreversible act last, plus `cliff.toml`,
+`scripts/check-coverage.sh` with its tests, `scripts/e2e-inventory.sh` and
+`.github/ruleset-main.json`.
+
+**Already satisfied elsewhere**: T001 and T004 with the scaffold; T026 by
+`002-gatling-text-decoder`, which recorded two corpus entries with Gatling's own reports — far more
+than this task asked for; T053 and T054 by the `check-linkage.sh` fix that shipped before this.
+
+**User Story 2 (T020–T032) is obsolete and MUST be re-tasked rather than implemented.** It specifies
+an `internal/e2e` scaffold harness for a repository with no decoder — T027 states outright that it
+"compares nothing — there is no decoder to compare against". `gatling/text` now ships an integration
+suite, a golden corpus carrying each run's own report, and a live `e2e` gate that already refuses an
+empty run. Building the scaffold now would be duplicated dead code, which `AGENTS.md` forbids. What
+survives of the story is its *intent* — the e2e gate can never pass by skipping — and that intent is
+implemented and enforced.
+
+**Still open**: the validation tasks that require deliberately breaking a gate and observing the
+refusal (T007, T017, T018, T030, T031, T033, T034, T039, T040), the corpus-layout note (T003), User
+Story 4 (T042–T047, dependency updates — independent of the release path), and the polish tasks
+(T048–T052). A gate that has never been seen to refuse anything is not yet a proven gate; these
+remain the honest gap.
