@@ -112,6 +112,25 @@ An engineer reads a multi-gigabyte log from a long soak run on an ordinary machi
 
 ---
 
+---
+
+### User Story 6 - Every supported Gatling is re-run and re-checked on every change (Priority: P2)
+
+A maintainer changes the decoder and wants to know, before the change merges, that a Gatling that ran a minute ago — not one recorded weeks ago — still produces a log the decoder reads to the numbers Gatling itself reports. Every supported release is started for real, runs the probe simulation, and the decoder is held to the report each run generated for itself and to the other runs of the same simulation. The same job can be started by hand with any version list, so a newly published release is tried the day it appears and reported as a candidate for the supported range.
+
+**Why this priority**: the recorded corpus proves the decoder against the past and can never be re-recorded; only a fresh run proves it against the tool as it is today, and only a fresh run can try a release that did not exist when the corpus was made. It is P2 because the recorded corpus already makes the decoder demonstrably correct; this keeps it that way.
+
+**Independent Test**: run the canary with the supported version list and confirm every version passes and is named in the summary; run it with a version above the range and confirm the run is reported as unverified; corrupt the decoder's field order and confirm the canary fails naming the version and the check.
+
+**Acceptance Scenarios**:
+
+1. **Given** the supported version list, **When** the canary runs, **Then** each version starts a real Gatling, the decoder reads its fresh log to the end, and the request counts and mean rate equal that run's own report exactly.
+2. **Given** two or more versions ran, **When** their runs are compared, **Then** they are identical as multisets once timing, identity and order are set aside.
+3. **Given** a check fails for one version, **When** the canary reports, **Then** the failure names the Gatling version and the check that failed.
+4. **Given** a version above the supported range, **When** it is run by hand, **Then** the log decodes, the warning is surfaced in the summary, and the version is named as a candidate for widening the range — the range itself is not widened.
+5. **Given** the supported range is widened without the version being added to the canary's list, **When** the canary runs, **Then** it fails naming the missing bound.
+6. **Given** a machine without Gatling, **When** the canary tests run locally, **Then** they skip with a reason; in the pipeline an empty canary run is a failure.
+
 ### Edge Cases
 
 - **A version below the supported range**: refused, with an error naming the version found and the range supported; no records delivered (User Story 3).
@@ -181,6 +200,14 @@ An engineer reads a multi-gigabyte log from a long soak run on an ordinary machi
 - **FR-022**: Verification MUST cover both levels: per-record-kind checks over well-formed and malformed inputs for every field of every record kind, and end-to-end checks that read each complete recorded run and compare it against both that run's kept report files (FR-021) and its golden record stream (FR-021a).
 - **FR-023**: Any hand-written input used to exercise malformed handling MUST be named as a fixture, not as corpus, so that a later reader cannot mistake an edited file for a real recording.
 
+**Canary**
+
+- **FR-024**: On every change, the pipeline MUST start every supported Gatling release for real, run the probe simulation under it, and hold the decoder to the report that run generated for itself — request counts and mean rate exactly, as FR-021 and FR-021b hold it to the recorded corpus — and hold the runs to each other as SC-003 does. A failed run, a refused or undecodable log, a disagreement with the report or between runs each fail the change.
+- **FR-025**: The canary MUST be startable by hand with any version list and MUST run on a weekly schedule. A version above the supported range decodes unverified and MUST be reported as a candidate for widening the range; the range MUST NOT be widened by the canary itself.
+- **FR-026**: A canary failure MUST name the Gatling version and the check that failed.
+- **FR-027**: The canary's version list MUST cover both bounds of the supported range; widening the range without running the new bound MUST fail.
+- **FR-028**: Without a Gatling to run, the canary tests MUST skip with a reason rather than fake a result; in the pipeline a canary run in which no test passed MUST fail.
+
 ### Key Entities *(include if feature involves data)*
 
 - **Run header**: the first line of every log. Identifies the simulation class, the run identifier, the wall-clock start of the run, a free-text description and the Gatling version that wrote the log. It is what the version gate reads, and no event record is meaningful without it.
@@ -213,6 +240,7 @@ An engineer reads a multi-gigabyte log from a long soak run on an ordinary machi
 - **SC-007**: A randomised robustness run over mutated and truncated corpus files completes with only errors and no crash, across at least 10,000 mutations.
 - **SC-008**: Every accepted, refused and warned version outcome named in Source Coverage has at least one automated check asserting it.
 - **SC-009**: Automated tests exercise at least 90% of the log-reading code and at least 80% of the project overall, measured on every change.
+- **SC-010**: On every change, every supported Gatling release is started afresh and its fresh report is matched exactly by the decoder; a manual run with a version above the range names it as unverified rather than failing or widening the range.
 
 ## Assumptions
 
@@ -233,4 +261,5 @@ An engineer reads a multi-gigabyte log from a long soak run on an ordinary machi
 - **The assertion payload stays opaque.** Its encoding is a Scala serialisation format, and the requirements it carries are expressed in OpenNFR instead; decoding it was considered and rejected in issue #3.
 - **Both failure kinds are producible.** The sample simulation can be pointed at a controllable endpoint that yields both a failed check and a connection-level exception, so a single recorded run exercises both without hand-editing.
 - **Group paths split losslessly.** A comma cannot survive inside a group name: Gatling replaces it with a space on write, so a comma in a group path is always a separator and the split is exact. This is write-side behaviour in 3.11.5, not an assumption about typical data, and the corpus run MUST include a group name containing a comma to prove it.
+- **The canary runs the text range only until the binary codec lands.** Gatling 3.13.0 and later write the binary format, which is milestone v0.0.5; started under this canary they would be refused at the first line. The newest release is therefore not part of the default list, and issue #15's "newest release" probe becomes meaningful when both codecs exist. Recording a corpus entry stays the way a version enters the supported range; the canary is how the range is kept honest between recordings.
 - **This builds on the scaffold.** The module, CI gates, licence and spec-driven flow from issue #2 (milestone v0.0.1) are in place; this feature adds the first code and the first corpus entry the project has ever had.
