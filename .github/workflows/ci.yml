@@ -72,6 +72,11 @@ jobs:
             exit 1
           fi
 
+  canary:
+    # A real Gatling, every supported version, against the probe simulation; the
+    # decoder is held to each run's own report. See gatling-canary.yml.
+    uses: ./.github/workflows/gatling-canary.yml
+
   deps:
     runs-on: ubuntu-latest
     steps:

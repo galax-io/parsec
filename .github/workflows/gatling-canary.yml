@@ -1,0 +1,84 @@
+name: gatling-canary
+
+# Runs a real Gatling — every version in the list — against the probe simulation,
+# then holds the decoder to the report each run generated for itself, and holds
+# the runs to each other. The recorded corpus proves the decoder against the past;
+# this proves it against a Gatling that ran a minute ago.
+
+on:
+  workflow_call:
+    inputs:
+      versions:
+        description: Gatling versions to run, space-separated
+        type: string
+        default: '3.11.5 3.12.0'
+  workflow_dispatch:
+    inputs:
+      versions:
+        description: >-
+          Gatling versions to run, space-separated. A version above the supported range
+          decodes unverified and is reported as a candidate for widening the range.
+        type: string
+        default: '3.11.5 3.12.0'
+  schedule:
+    - cron: '17 6 * * 1'
+
+permissions:
+  contents: read
+
+jobs:
+  canary:
+    runs-on: ubuntu-latest
+    env:
+      VERSIONS: ${{ inputs.versions || '3.11.5 3.12.0' }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: sbt
+      - uses: sbt/setup-sbt@v1
+      - name: start the stub the probe simulation talks to
+        run: |
+          set -euo pipefail
+          go run ./testdata/corpus/gatling/simulation/stub > stub.log 2>&1 &
+          for _ in $(seq 1 50); do
+            curl -sf http://127.0.0.1:8089/ok > /dev/null && break
+            sleep 0.2
+          done
+          curl -sf http://127.0.0.1:8089/ok > /dev/null || { cat stub.log; exit 1; }
+      - name: run the probe simulation under every version
+        working-directory: testdata/corpus/gatling/simulation
+        run: |
+          set -euo pipefail
+          runs=""
+          for v in $VERSIONS; do
+            echo "::group::Gatling $v"
+            if ! sbt -batch -Dgatling.version="$v" "Gatling/testOnly io.galaxio.parsec.corpus.CorpusSimulation"; then
+              echo "canary: Gatling $v could not run the probe simulation"
+              exit 1
+            fi
+            echo "::endgroup::"
+            dir=$(ls -d target/gatling/corpussimulation-* | head -1)
+            mv "$dir" "target/gatling/v$v"
+            runs="${runs:+$runs;}$v=$PWD/target/gatling/v$v"
+          done
+          echo "PARSEC_CANARY_RUNS=$runs" >> "$GITHUB_ENV"
+      - name: decode every fresh run and hold it to its own report
+        run: |
+          set -euo pipefail
+          echo "## Gatling canary" >> "$GITHUB_STEP_SUMMARY"
+          if ! go test -tags=canary -race -count=1 -json ./gatling/text/ > canary.json; then
+            jq -r 'select(.Action == "output") | .Output' canary.json | grep -E 'FAIL|Gatling|\.go:[0-9]+:' | tail -60
+            exit 1
+          fi
+          passed=$(jq -r 'select(.Action == "pass" and .Test != null) | .Test' canary.json | wc -l | tr -d ' ')
+          echo "canary tests passed: $passed"
+          if [ "$passed" -eq 0 ]; then
+            echo "no canary test ran"
+            exit 1
+          fi
