@@ -39,3 +39,10 @@ The three files beside this note are exactly as Gatling wrote them; none has bee
   one crash that did occur produced a single-line message. No `ERROR` message in this log contains
   a tab or a line break.
 - No request carries the never-completed end sentinel.
+
+## After the recording
+
+The simulation's assertions were tightened after this run was made — from three loose ones to
+nine exact ones — so that a broken environment fails the run itself. This recording is the log as
+it was written under the three original assertions and is not re-made: a recording is captured
+once. Fresh runs of the same simulation now carry nine `ASSERTION` records ahead of the header.

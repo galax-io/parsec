@@ -5,53 +5,9 @@ package text_test
 import (
 	"os"
 	"path/filepath"
-	"regexp"
 	"slices"
-	"strings"
 	"testing"
 )
-
-// Two recordings of the same simulation legitimately differ in three ways:
-// every timing value (timestamps and cumulated response times), the run's
-// identity (id and Gatling version), and file order — concurrent virtual users
-// interleave differently on every run, so order is not evidence of anything.
-// Everything else must agree exactly, as a multiset.
-//
-// The version gate's warning goes with identity. It is a statement about which
-// version wrote the log, not about what the log holds, and only a run above the
-// supported range carries one (FR-025) — so comparing it would make such a run
-// unequal to an in-range one by construction.
-var (
-	timing   = regexp.MustCompile(`\b(start|end|timestamp|cumulated)=-?\d+`)
-	identity = regexp.MustCompile(`\brun="[^"]*"|\bversion=\S+`)
-	lineNo   = regexp.MustCompile(`(?m)^\d+ `)
-)
-
-func maskedSorted(t *testing.T, dir string) []string {
-	t.Helper()
-
-	f, err := os.Open(filepath.Join(dir, "simulation.log")) //nolint:gosec // a corpus path from the test's own glob
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = f.Close() }()
-
-	stream, err := canonical(f)
-	if err != nil {
-		t.Fatalf("%s: %v", dir, err)
-	}
-
-	s := string(stream)
-	s = timing.ReplaceAllString(s, "$1=…")
-	s = identity.ReplaceAllString(s, "…")
-	s = lineNo.ReplaceAllString(s, "")
-
-	lines := strings.Split(strings.TrimRight(s, "\n"), "\n")
-	lines = slices.DeleteFunc(lines, func(l string) bool { return strings.HasPrefix(l, "WARNING ") })
-	slices.Sort(lines)
-
-	return lines
-}
 
 func TestCrossVersion(t *testing.T) {
 	t.Parallel()

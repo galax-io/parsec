@@ -77,6 +77,11 @@ jobs:
         # it costs about ninety seconds and moves the very HeapAlloc figure it asserts on.
         run: go test -tags=integration -count=1 -run '^TestPeakMemory$' ./...
 
+  canary:
+    # A real Gatling, every supported version, against the probe simulation; the
+    # decoder is held to each run's own report. See gatling-canary.yml.
+    uses: ./.github/workflows/gatling-canary.yml
+
   deps:
     runs-on: ubuntu-latest
     steps:
