@@ -1,0 +1,48 @@
+# git-cliff — release notes for parsec.
+#
+# Notes are reproducible before tagging:
+#   git cliff --unreleased --tag v0.0.2
+#
+# The catch-all group at the bottom is deliberate. Dropping a commit that ignored
+# the convention is worse than an untidy "Other" section: these notes are the only
+# record a downstream consumer reads.
+
+[changelog]
+header = ""
+body = """
+{% if version %}## {{ version | trim_start_matches(pat="v") }}{% else %}## Unreleased{% endif %}
+{% for group, commits in commits | group_by(attribute="group") %}
+### {{ group }}
+{% for commit in commits %}
+- {{ commit.message | split(pat="\n") | first | trim }}{% if commit.breaking %} **(breaking)**{% endif %}
+{%- endfor %}
+{% endfor %}
+"""
+footer = ""
+trim = true
+
+[git]
+conventional_commits = true
+# false, so a commit that ignored the convention reaches the catch-all parser
+# instead of being dropped from the notes entirely.
+filter_unconventional = false
+filter_commits = false
+protect_breaking_commits = true
+split_commits = false
+topo_order = false
+sort_commits = "oldest"
+tag_pattern = "v[0-9]*"
+
+# The prefixes this repository actually uses. Order matters: the first match wins.
+commit_parsers = [
+  { message = "^feat",     group = "Added" },
+  { message = "^fix",      group = "Fixed" },
+  { message = "^perf",     group = "Performance" },
+  { message = "^refactor", group = "Changed" },
+  { message = "^docs",     group = "Documentation" },
+  { message = "^test",     group = "Tests" },
+  { message = "^ci",       group = "Build and CI" },
+  { message = "^chore",    group = "Build and CI" },
+  # Catch-all: listed, never dropped.
+  { message = ".*",        group = "Other" },
+]

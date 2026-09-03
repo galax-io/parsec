@@ -23,6 +23,22 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Golden corpus `testdata/corpus/gatling/3.11.5/` and `3.12.0/`: one real run each of the same
   simulation, with the two statistics files Gatling generated for it and the decoded record stream,
   plus the simulation and stub that recorded them. (#3)
+- Verification pipeline: `verify.yml` holds the gate set once — `quick`, `lint`, `test`, `e2e`,
+  `canary`, `deps`, `vuln`, `coverage` — and both `ci.yml` and `release.yml` call it, so adding a
+  gate is a one-file edit. `ci.yml` publishes a single required check, `verify`, which is green for
+  a documentation-only change, red when any gate fails, and never absent: a cancelled run fails it,
+  because suppressing a run is not passing. (#3)
+- Tag-driven release: pushing `vX.Y.Z` runs `release.yml` — a guard that refuses a tag outside
+  `main` or its own `release/X.Y.0`, refuses a milestone that is not tag-ready, and refuses a
+  version already released; then the full gate set; then publication, ordered so the only
+  irreversible act is last. Notes come from `cliff.toml`, whose catch-all group lists a commit that
+  ignored the convention rather than dropping it.
+- `scripts/check-coverage.sh` builds the per-package coverage table from one profile and, with
+  `--enforce`, applies the 90% decoder and 80% module floors. A package with no statements reports
+  `n/a`, not `0%`. `scripts/e2e-inventory.sh` turns `go test -json` into the executed-case
+  inventory and refuses a run in which nothing executed.
+- `.github/ruleset-main.json` declares the branch-protection ruleset, so requiring `verify` is one
+  `gh api` call rather than a paragraph of instructions.
 - Repository scaffold: Go module, linter configuration, CI, licence and the spec-driven development flow.
 
 ### Fixed

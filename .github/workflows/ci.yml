@@ -1,11 +1,22 @@
 name: ci
 
+# Three jobs, and the gates are not among them: they live in verify.yml and reach
+# here as one `uses:` job, because `needs:` accepts only job ids declared in the
+# same file and a reusable workflow's jobs are not addressable from its caller.
+#
+#   changes ──→ gates (uses: verify.yml)
+#      │            │
+#      └────────────┴──→ verify   (if: always())
+#
+# There is no paths-ignore. When paths-ignore matches, GitHub does not run the
+# workflow at all, so a required check never reports and a documentation-only pull
+# request is blocked forever. The changes job is what lets a docs change merge while
+# a code change is still gated.
+
 on:
   push:
     branches: [main]
-    paths-ignore: ['**.md', 'docs/**', 'specs/**', '.specify/**']
   pull_request:
-    paths-ignore: ['**.md', 'docs/**', 'specs/**', '.specify/**']
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -15,145 +26,83 @@ permissions:
   contents: read
 
 jobs:
-  static:
+  changes:
     runs-on: ubuntu-latest
+    outputs:
+      code: ${{ steps.filter.outputs.code }}
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
         with:
-          go-version-file: go.mod
-      - name: gofmt
-        run: test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
-      - name: go mod tidy is clean
-        run: go mod tidy && git diff --exit-code
-      - name: go vet
-        run: go vet ./...
-      - uses: golangci/golangci-lint-action@v9
-        with:
-          version: v2.12.2
-
-  test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
-        with:
-          go-version-file: go.mod
-      - name: build
-        run: go build ./...
-      - name: test
-        run: go test -race -shuffle=on ./...
-
-  e2e:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
-        with:
-          go-version-file: go.mod
-      - name: end-to-end over the golden corpus
-        # An empty run fails: once a decoder package exists, at least one integration test
-        # must have run and passed. -count=1 never serves a cached verdict for tests that
-        # read real recordings.
+          # The base commit is not in a default depth-1 clone, and `git diff` against
+          # an object it does not have exits 128.
+          fetch-depth: 0
+      - id: filter
+        name: does this change touch code?
+        env:
+          # Event-specific: this workflow runs on both, and the pull-request field is
+          # empty on a push. Reading only that one would mark every trunk push
+          # documentation-only and report green having verified nothing.
+          BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
-          if [ -z "$(for pat in ./model/... ./gatling/...; do go list "$pat" 2>/dev/null || true; done)" ]; then
-            echo "no decoder package yet; the end-to-end suite has nothing to run"
+
+          # An all-zero SHA is how a first push and a branch creation are reported.
+          if [ -z "$BASE" ] || [ "$BASE" = "0000000000000000000000000000000000000000" ] \
+             || ! git cat-file -e "${BASE}^{commit}" 2>/dev/null; then
+            echo "base commit could not be resolved; treating the change as code"
+            echo "code=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          if ! go test -tags=integration -race -shuffle=on -count=1 -skip '^TestPeakMemory$' -json ./... > e2e.json; then
-            jq -r 'select(.Action == "output") | .Output' e2e.json | grep -E 'FAIL|panic|\.go:[0-9]+:' | tail -60
-            exit 1
-          fi
-          passed=$(jq -r 'select(.Action == "pass" and .Test != null) | .Test' e2e.json | wc -l | tr -d ' ')
-          echo "integration tests passed: $passed" | tee -a "$GITHUB_STEP_SUMMARY"
-          if [ "$passed" -eq 0 ]; then
-            echo "no integration test ran: the corpus is missing, not optional"
-            exit 1
-          fi
-      - name: bounded memory over a multi-gigabyte log
-        # Apart from the step above, and without -race. The test decodes 2.8 GiB through
-        # one reader in one goroutine, so the detector has nothing to observe; instrumenting
-        # it costs about ninety seconds and moves the very HeapAlloc figure it asserts on.
-        run: go test -tags=integration -count=1 -run '^TestPeakMemory$' ./...
 
-  canary:
-    # A real Gatling, every supported version, against the probe simulation; the
-    # decoder is held to each run's own report. See gatling-canary.yml.
-    uses: ./.github/workflows/gatling-canary.yml
+          changed="$(git diff --name-only "$BASE" "$HEAD_SHA")"
+          echo "changed files:"
+          printf '%s\n' "$changed" | sed 's/^/  /'
 
-  deps:
+          # Documentation-only when every changed path is prose or spec material.
+          # Guessing wrong in this direction costs a review; guessing wrong the other
+          # way lets an unverified change through, which is why anything unrecognised
+          # counts as code.
+          if printf '%s\n' "$changed" | grep -qvE '(\.md$|^docs/|^specs/|^\.specify/)'; then
+            echo "code=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "documentation only; the code gates have nothing to verify"
+            echo "code=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  gates:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    # The only `if:` on the gate set. The jobs inside verify.yml cannot see
+    # needs.changes and must not try.
+    uses: ./.github/workflows/verify.yml
+
+  # The single required status check. One entry carries the whole gate set, so
+  # adding a gate is an edit to verify.yml alone.
+  verify:
+    needs: [changes, gates]
+    if: always()
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
-        with:
-          go-version-file: go.mod
-      - name: model and gatling depend on the standard library only
+      - name: verdict
+        env:
+          CHANGES: ${{ needs.changes.result }}
+          GATES: ${{ needs.gates.result }}
+          FAILED: ${{ contains(needs.*.result, 'failure') }}
+          CANCELLED: ${{ contains(needs.*.result, 'cancelled') }}
         run: |
           set -euo pipefail
-          for pkg in ./model/... ./gatling/...; do
-            if go list "$pkg" >/dev/null 2>&1; then
-              # A dependency is third-party when it is neither the standard library nor one
-              # of this module's own packages; a path pattern cannot tell those apart.
-              deps=$(go list -deps -f '{{if not .Standard}}{{if not .Module.Main}}{{.ImportPath}}{{end}}{{end}}' "$pkg")
-              if [ -n "$deps" ]; then
-                echo "non-stdlib dependency found in $pkg:"
-                echo "$deps"
-                exit 1
-              fi
-            fi
-          done
+          echo "changes: $CHANGES"
+          echo "gates:   $GATES"
 
-  vuln:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
-        with:
-          go-version-file: go.mod
-      - name: govulncheck
-        # Run through go run at a pinned version so the tool never reaches go.mod.
-        run: go run golang.org/x/vuln/cmd/govulncheck@v1.7.0 ./...
-
-  coverage:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
-        with:
-          go-version-file: go.mod
-      - name: coverage floors — 90% per decoder package, 80% overall
-        run: |
-          set -euo pipefail
-          pkgs=$(for pat in ./model/... ./gatling/...; do go list "$pat" 2>/dev/null || true; done)
-          if [ -z "$pkgs" ]; then
-            echo "no decoder package yet; nothing to hold to the 90% floor"
-            exit 0
-          fi
-          {
-            echo "| package | coverage | floor |"
-            echo "|---|---|---|"
-          } >> "$GITHUB_STEP_SUMMARY"
-          for pkg in $pkgs; do
-            # Keep the test output: a failure inside a command substitution would otherwise
-            # end the script under set -e with nothing printed.
-            if ! out=$(go test -tags=integration -count=1 -skip '^TestPeakMemory$' -cover "$pkg" 2>&1); then
-              printf '%s\n' "$out" | tail -80
-              echo "$pkg: tests failed under -cover"
-              exit 1
-            fi
-            pct=$(sed -nE 's/.*coverage: ([0-9.]+)% of statements.*/\1/p' <<<"$out" | tail -1)
-            echo "$pkg: ${pct:-0}%"
-            echo "| $pkg | ${pct:-0}% | 90% |" >> "$GITHUB_STEP_SUMMARY"
-            awk -v p="${pct:-0}" -v pkg="$pkg" 'BEGIN { if (p + 0 < 90) { print pkg " coverage " p "% is below the 90% floor"; exit 1 } }'
-          done
-          if ! out=$(go test -tags=integration -count=1 -skip '^TestPeakMemory$' -coverpkg=./... -coverprofile=cover.out ./... 2>&1); then
-            printf '%s\n' "$out" | tail -80
-            echo "tests failed while measuring overall coverage"
+          # skipped is a pass: it is how a documentation-only change reports.
+          # cancelled is not — an author may suppress a run, but suppressing is not
+          # passing, and a superseded run must never read as a green one.
+          if [ "$FAILED" = "true" ]; then
+            echo "a gate failed"
             exit 1
           fi
-          overall=$(go tool cover -func=cover.out | awk '/^total:/ { sub("%", "", $NF); print $NF }')
-          echo "overall: ${overall}%"
-          echo "| overall | ${overall}% | 80% |" >> "$GITHUB_STEP_SUMMARY"
-          awk -v p="$overall" 'BEGIN { if (p + 0 < 80) { print "overall coverage " p "% is below the 80% floor"; exit 1 } }'
+          if [ "$CANCELLED" = "true" ]; then
+            echo "the run was cancelled, which is not a pass"
+            exit 1
+          fi
