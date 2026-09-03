@@ -1,0 +1,156 @@
+name: release
+
+# Pushing a version tag is the only thing that publishes a release. Not a merge,
+# not a schedule, not a manual trigger.
+#
+#   tag pushed ──→ guard ──→ verify (reusable) ──→ publish
+#
+# What the guard cannot do: pushing vX.Y.Z is itself a publication. proxy.golang.org
+# and sum.golang.org resolve the module from the tag alone, on first request, and
+# record the tree hash permanently — no workflow runs before that can happen. So
+# "the guard refused, nothing was published" is true of the GitHub Release and false
+# of the module version. Preconditions are checked locally before the push; the push
+# is the last step, not the test.
+
+on:
+  push:
+    tags: ['v*.*.*']
+
+permissions:
+  contents: read
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # A permissions block sets every scope it does not name to none, and
+      # check-linkage.sh calls the issues and pull-request APIs. Without these it
+      # would refuse every release with "Resource not accessible by integration".
+      issues: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # A tag-triggered checkout fetches the tag at depth 1 and creates no
+          # remote-tracking branches at all, so `git branch -r --contains` would
+          # print nothing and every release — including a correct one — is refused.
+          fetch-depth: 0
+
+      - name: the tag sits on an allowed branch
+        env:
+          TAG: ${{ github.ref_name }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+
+          # release/1.2.0 serves v1.2.0, v1.2.1, … and refuses v1.3.0.
+          version="${TAG#v}"
+          allowed="origin/release/${version%.*}.0"
+
+          branches="$(git branch -r --contains "$SHA" | sed 's/^[ *]*//' | sed 's#^origin/HEAD.*##' | grep -v '^$' || true)"
+          echo "the tagged commit is contained in:"
+          printf '%s\n' "$branches" | sed 's/^/  /'
+
+          # Matched exactly, not as a glob: origin/release/X.Y.* would also accept
+          # release/1.2.1 and release/1.2.backup, which the repository's own rule —
+          # one release/X.Y.0 branch per minor — forbids. A guard looser than the
+          # rule it enforces is not a guard.
+          if grep -qx 'origin/main' <<<"$branches" || grep -qx "$allowed" <<<"$branches"; then
+            echo "$TAG is allowed here"
+          else
+            echo "refusing $TAG: a tag lives only on main or on exactly $allowed" >&2
+            exit 1
+          fi
+
+      - name: the milestone is tag-ready
+        env:
+          TAG: ${{ github.ref_name }}
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/check-linkage.sh --for-tag "$TAG"
+
+      - name: no Release exists for this tag yet
+        env:
+          TAG: ${{ github.ref_name }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "refusing $TAG: a Release already exists for it" >&2
+            exit 1
+          fi
+          echo "no Release exists for $TAG"
+
+  # The same gate set as any merged change, not a lighter one: a release/* branch
+  # carrying a cherry-pick has a tree that was never verified as such.
+  verify:
+    needs: guard
+    uses: ./.github/workflows/verify.yml
+
+  publish:
+    needs: [guard, verify]
+    runs-on: ubuntu-latest
+    permissions:
+      # Write is granted here and nowhere else in this workflow.
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: generate the release notes
+        id: notes
+        uses: orhun/git-cliff-action@v4
+        with:
+          config: cliff.toml
+          args: --latest --strip header
+        env:
+          OUTPUT: NOTES.md
+
+      # Before the Release, never after. Proxy resolution depends on the tag, which
+      # is already pushed, so nothing about it needs the Release to exist — and
+      # putting the flakiest step (a third party's first fetch of a new module, which
+      # is slow) after the irreversible one is what would leave a red run with a
+      # Release already created that the existence check then refuses to retry.
+      #
+      # The poll both confirms and warms the proxy.
+      - name: the module resolves on proxy.golang.org
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          url="https://proxy.golang.org/github.com/galax-io/parsec/@v/${TAG}.info"
+          for attempt in $(seq 1 30); do
+            if curl -sfL "$url" -o proxy.json; then
+              echo "resolved after ${attempt} attempt(s):"
+              cat proxy.json
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "proxy.golang.org did not resolve $TAG within five minutes" >&2
+          exit 1
+
+      - name: no Release appeared while we worked
+        env:
+          TAG: ${{ github.ref_name }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "refusing $TAG: a Release now exists for it" >&2
+            exit 1
+          fi
+
+      # The only published state this workflow creates, and the last thing it does.
+      - name: create the Release
+        env:
+          TAG: ${{ github.ref_name }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release create "$TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "$TAG" \
+            --notes-file NOTES.md \
+            --verify-tag

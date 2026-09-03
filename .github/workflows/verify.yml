@@ -1,0 +1,169 @@
+name: verify
+
+# The gate set, defined once and called from both the pull-request path (ci.yml)
+# and the release path (release.yml). Adding a gate means adding a job here and
+# nowhere else: the caller reaches all of them through one `uses:` job, which
+# fails when any job inside fails.
+#
+# Job names are a contract — see specs/001-ci-release-automation/contracts/workflows.md.
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  # quick is the fast-fail gate: it must report within three minutes (SC-002), and
+  # everything else runs behind it so a misformatted branch does not spend a runner
+  # on the race detector.
+  quick:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - name: gofmt
+        # Asserted on empty output, not on exit status: `gofmt -l` exits 0 even when
+        # it lists files, so the bare form reports success on exactly the input this
+        # gate exists to reject.
+        run: test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
+      - name: go mod tidy is clean
+        run: go mod tidy && git diff --exit-code
+      - name: go vet
+        run: go vet ./...
+      - name: go build
+        run: go build ./...
+
+  lint:
+    needs: quick
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      # One run covers every build configuration: .golangci.yml sets
+      # run.build-tags, so the integration and canary files are loaded too.
+      # Without that they would be invisible to every linter and the job would
+      # report an empty package — indistinguishable from clean code.
+      - uses: golangci/golangci-lint-action@v9
+        with:
+          # renovate: datasource=github-releases depName=golangci/golangci-lint
+          version: v2.12.2
+
+  test:
+    needs: quick
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - name: test
+        run: go test -race -shuffle=on ./...
+
+  e2e:
+    needs: quick
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - name: end-to-end over the golden corpus
+        # shell: bash with pipefail, because a pipeline's status is its last
+        # command's: under the default shell a failing test whose inventory is
+        # satisfied would report green.
+        #
+        # -count=1 never serves a cached verdict for tests that read real recordings.
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "$(for pat in ./model/... ./gatling/...; do go list "$pat" 2>/dev/null || true; done)" ]; then
+            echo "no decoder package yet; the end-to-end suite has nothing to run"
+            exit 0
+          fi
+          # Not a pipeline into the inventory: `cmd | inventory || true` would take the
+          # trailing `|| true` for the whole pipeline and discard the test result. The
+          # status is checked on its own, and the inventory is the second reading.
+          if ! go test -tags=integration -race -shuffle=on -count=1 -skip '^TestPeakMemory$' -json ./... > e2e.json; then
+            jq -r 'select(.Action == "output") | .Output' e2e.json | grep -E 'FAIL|panic|\.go:[0-9]+:' | tail -60
+            bash scripts/e2e-inventory.sh --summary < e2e.json || true
+            exit 1
+          fi
+          bash scripts/e2e-inventory.sh --summary < e2e.json
+      - name: bounded memory over a multi-gigabyte log
+        # Apart from the step above, and without -race. The test decodes 2.8 GiB through
+        # one reader in one goroutine, so the detector has nothing to observe; instrumenting
+        # it costs about ninety seconds and moves the very HeapAlloc figure it asserts on.
+        run: go test -tags=integration -count=1 -run '^TestPeakMemory$' ./...
+
+  canary:
+    needs: quick
+    # A real Gatling, every supported version, against the probe simulation; the
+    # decoder is held to each run's own report. See gatling-canary.yml.
+    uses: ./.github/workflows/gatling-canary.yml
+
+  deps:
+    needs: quick
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - name: model and gatling depend on the standard library only
+        run: |
+          set -euo pipefail
+          seen=0
+          for pkg in ./model/... ./gatling/...; do
+            if go list "$pkg" >/dev/null 2>&1; then
+              seen=1
+              # A dependency is third-party when it is neither the standard library nor one
+              # of this module's own packages; a path pattern cannot tell those apart, and
+              # `go list -deps` prints the queried package itself.
+              deps=$(go list -deps -f '{{if not .Standard}}{{if not .Module.Main}}{{.ImportPath}}{{end}}{{end}}' "$pkg")
+              if [ -n "$deps" ]; then
+                echo "non-stdlib dependency found in $pkg:"
+                echo "$deps"
+                exit 1
+              fi
+            fi
+          done
+          # Say so rather than passing quietly: a gate that silently checked nothing
+          # reads exactly like a gate that checked everything and was satisfied.
+          if [ "$seen" -eq 0 ]; then
+            echo "neither model/ nor gatling/ exists yet; the boundary check had nothing to check"
+          fi
+
+  vuln:
+    needs: quick
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - name: govulncheck
+        # Run through go run at a pinned version so the tool never reaches go.mod.
+        # renovate: datasource=go depName=golang.org/x/vuln
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.7.0 ./...
+
+  coverage:
+    needs: quick
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - name: coverage floors — 90% per decoder package, 80% overall
+        # --enforce is passed: the constitution's recorded follow-up was to make the
+        # floors blocking once the first decoder package landed, and it has.
+        run: |
+          set -euo pipefail
+          go test -tags=integration -count=1 -skip '^TestPeakMemory$' \
+            -coverpkg=./... -coverprofile=cover.out ./...
+          bash scripts/check-coverage.sh --enforce cover.out
