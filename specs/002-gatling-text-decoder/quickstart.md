@@ -106,6 +106,33 @@ go test -tags=integration -bench=BenchmarkReader -benchmem ./gatling/text/
 | Mutated and truncated inputs, ≥ 10,000 of them, produce errors and no panic | no input can crash the reader | SC-007, FR-015 |
 | Below range refused, in range clean, above range warned, non-release refused | all four gate outcomes are real | SC-008, FR-009a–FR-011 |
 | 1 GB read under 32 MiB peak, and the same peak ten times larger | memory is independent of log size | SC-004, FR-017 |
+| Every supported Gatling started afresh; its fresh report matched exactly; runs identical to each other | the decoder holds against the tool as it is today | SC-010, FR-024–FR-027 |
+
+---
+
+## The canary: a real Gatling, every supported version
+
+The recorded corpus proves the decoder against the past. The canary proves it against a Gatling that
+ran a minute ago. In the pipeline it runs on every change (`ci.yml` → `gatling-canary.yml`), weekly,
+and by hand from the Actions tab with any version list — one `run (<version>)` job per version in
+parallel, then `compare` across them. Locally, the same in sequence:
+
+```bash
+go run ./testdata/corpus/gatling/simulation/stub &
+```
+
+```bash
+(cd testdata/corpus/gatling/simulation && for v in 3.11.5 3.12.0; do sbt -batch -Dgatling.version=$v "Gatling/testOnly io.galaxio.parsec.corpus.CorpusSimulation" && mv target/gatling/corpussimulation-* target/gatling/v$v; done)
+```
+
+```bash
+PARSEC_CANARY_RUNS="3.11.5=$PWD/testdata/corpus/gatling/simulation/target/gatling/v3.11.5;3.12.0=$PWD/testdata/corpus/gatling/simulation/target/gatling/v3.12.0" go test -tags=canary -race -count=1 -v ./gatling/text/
+```
+
+Expected: `TestCanary/<version>` for each version, its counts and span logged next to "matched its own
+report"; `TestCanaryCrossVersion` logging the runs as identical; `TestCanaryCoversSupportedRange`
+passing. Without `PARSEC_CANARY_RUNS` the tests skip with a reason. To try a release the corpus does
+not cover, add it to the list: it decodes unverified and is named as a candidate for the range.
 
 ---
 

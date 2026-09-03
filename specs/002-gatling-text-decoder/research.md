@@ -59,6 +59,10 @@ from the serializers in `LogFileDataWriter.scala` and the parsers in `Records.sc
   a lone space decodes as empty (FR-003).
 - A request's group path is empty for a top-level request; a comma inside a group name is replaced
   with a space on write, so every comma in a path is a separator and the split is lossless (FR-005).
+  The replacement reaches further than the log: Gatling builds its statistics and resolves its
+  assertion paths from what it wrote, so an assertion on such a group must name it as recorded —
+  `"inner  with comma"`, two spaces — and `"inner, with comma"` as declared resolves to nothing.
+  Found while making the probe simulation's assertions exact (R14).
 - Only a request's failure message is escaped. Scenario, request and group names and error messages
   are not — see R5.
 
@@ -294,3 +298,42 @@ under the caller, and the constitution forbids exactly that class of surprise.
 without exception — `bufio`, `csv`, `gzip`, `zlib`, `tar`. A Go reader looks for that name, and
 `text.New(f)` says nothing about what it makes. The community convention this deviates from is
 noted beside the declaration, as the convention itself asks.
+
+---
+
+## R14. The canary: a fresh Gatling per version, held to its own report
+
+**Decision**: a workflow that starts every supported Gatling release for real, runs the probe
+simulation, and holds the decoder to the report each run generated — reusable from `ci.yml`
+on every change, startable by hand with any version list, and scheduled weekly (issue #15,
+pulled into v0.0.2).
+
+**Rationale**: the recorded corpus is immutable evidence about the past and cannot be re-made;
+a fresh run is the only evidence about the tool as it is today, and the only way to try a
+release that did not exist when the corpus was recorded. The two are not interchangeable: a
+fresh run cannot be compared to the golden stream, because concurrent users interleave
+differently and every timing differs — it can only be compared to its own report and to the
+other fresh runs. So the canary reuses exactly the checks the corpus suite already makes
+(`decodeTally`, `checkCounts`, `checkRates`, `maskedSorted`), now shared under
+`//go:build integration || canary`, and applies them to whatever directories
+`PARSEC_CANARY_RUNS` names.
+
+**Design points**: each version runs in its own matrix job — a failure names the version in the
+check itself, and versions do not wait for one another — then a `compare` job downloads every
+run as an artifact and holds them to each other. The version list lives in the workflow;
+`TestCanaryCoversSupportedRange` fails when `SupportedVersions` is widened without the new
+bound being run, so the two cannot drift. A
+version above the range decodes unverified and is written to the job summary as a candidate —
+the range is never widened by a machine. Without Gatling the tests skip with a reason, as the
+constitution requires of a test that needs a real tool, and the job fails when no canary test
+passed, so a skip cannot pass for a run.
+
+**Alternatives considered**: one job running every version in sequence — simpler and cheaper on
+two versions, since the JDK and sbt are set up once, but a failure in one version hides the
+others and the wall clock grows with every version the binary codec will add. Comparing fresh
+runs to the golden stream — rejected, see above. Auto-widening the range from a passing canary —
+rejected by issue #15 itself.
+
+**Scope note**: Gatling 3.13.0 and later write the binary format (milestone v0.0.5). Under this
+canary they would be refused at the first line, so the newest release is not on the default
+list yet; the "newest release" probe in issue #15 becomes meaningful when both codecs exist.
