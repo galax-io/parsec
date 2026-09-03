@@ -126,12 +126,23 @@ jobs:
             echo "|---|---|---|"
           } >> "$GITHUB_STEP_SUMMARY"
           for pkg in $pkgs; do
-            pct=$(go test -tags=integration -count=1 -cover "$pkg" | sed -nE 's/.*coverage: ([0-9.]+)% of statements.*/\1/p' | tail -1)
+            # Keep the test output: a failure inside a command substitution would otherwise
+            # end the script under set -e with nothing printed.
+            if ! out=$(go test -tags=integration -count=1 -cover "$pkg" 2>&1); then
+              printf '%s\n' "$out" | tail -80
+              echo "$pkg: tests failed under -cover"
+              exit 1
+            fi
+            pct=$(sed -nE 's/.*coverage: ([0-9.]+)% of statements.*/\1/p' <<<"$out" | tail -1)
             echo "$pkg: ${pct:-0}%"
             echo "| $pkg | ${pct:-0}% | 90% |" >> "$GITHUB_STEP_SUMMARY"
             awk -v p="${pct:-0}" -v pkg="$pkg" 'BEGIN { if (p + 0 < 90) { print pkg " coverage " p "% is below the 90% floor"; exit 1 } }'
           done
-          go test -tags=integration -count=1 -coverpkg=./... -coverprofile=cover.out ./... > /dev/null
+          if ! out=$(go test -tags=integration -count=1 -coverpkg=./... -coverprofile=cover.out ./... 2>&1); then
+            printf '%s\n' "$out" | tail -80
+            echo "tests failed while measuring overall coverage"
+            exit 1
+          fi
           overall=$(go tool cover -func=cover.out | awk '/^total:/ { sub("%", "", $NF); print $NF }')
           echo "overall: ${overall}%"
           echo "| overall | ${overall}% | 80% |" >> "$GITHUB_STEP_SUMMARY"
