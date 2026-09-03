@@ -23,8 +23,10 @@ be reproduced for a future version, and so a reader of the corpus can see exactl
    sbt -Dgatling.version=3.12.0 "Gatling/testOnly io.galaxio.parsec.corpus.CorpusSimulation"
    ```
 
-   Half the requests fail by design; every declared assertion still holds, so the run exits zero.
-   The log and report land in `target/gatling/corpussimulation-<timestamp>/`.
+   Half the requests fail by design, and the assertions pin exactly which: 18 successes, 18
+   failures, 100% per request. A broken environment fails the run itself rather than producing a
+   log that is merely consistent with its own report. The log and report land in
+   `target/gatling/corpussimulation-<timestamp>/`.
 
 3. Copy, unmodified, into `../<version>/`: `simulation.log`, `js/global_stats.json`, `js/stats.json`.
    Then write `RECORDING.md` there with what `specs/002-gatling-text-decoder/tasks.md` T004 asks

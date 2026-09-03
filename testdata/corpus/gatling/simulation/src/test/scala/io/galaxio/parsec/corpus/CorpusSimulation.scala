@@ -53,8 +53,21 @@ class CorpusSimulation extends Simulation {
     scn.inject(atOnceUsers(2), rampUsers(4).during(2.seconds)),
   ).protocols(httpProtocol)
     .assertions(
-      global.successfulRequests.count.gte(1),
-      global.failedRequests.count.gte(1),
-      details("GET /ok").responseTime.max.lt(60000),
+      // Exact on purpose: six users, each making three requests that must succeed and
+      // three that must fail. A broken environment — the stub down, an "invalid" domain
+      // that resolves — then fails this run itself, instead of producing a log that is
+      // merely consistent with its own report.
+      global.successfulRequests.count.is(18),
+      global.failedRequests.count.is(18),
+      details("GET /ok").successfulRequests.percent.is(100),
+      details("outer" / "GET /ok").successfulRequests.percent.is(100),
+      // The group is declared with a comma, but Gatling writes the comma as a space and
+      // builds its statistics from what it wrote, so an assertion path must use the name
+      // as recorded — two spaces where the comma was.
+      details("outer" / "inner  with comma" / "GET /slow").successfulRequests.percent.is(100),
+      details("outer" / "inner  with comma" / "GET /fail").failedRequests.percent.is(100),
+      details("connect refused").failedRequests.percent.is(100),
+      details("unknown host").failedRequests.percent.is(100),
+      global.responseTime.max.lt(60000),
     )
 }
