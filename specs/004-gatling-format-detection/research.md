@@ -354,14 +354,20 @@ and to ship a benchmark. This feature adds no decoding, so the honest goal is th
 amount however large the log, and spec 002's figures are unchanged end to end.
 
 **What the benchmark actually said, and what it corrected.** `Detect` allocates nothing on every
-path a real log takes and runs in 1.9–5.9 ns; fed 14 bytes and 1 MiB it costs 5.928 ns and 5.949 ns,
-so the size of the input is genuinely unreachable. Dispatch, however, costs **four** extra
-allocations and 124 bytes per opened log, not the one this entry first predicted: `io.MultiReader`,
-its slice, the `bytes.Reader` over the replayed head, and the head escaping to the heap. The
-prediction was wrong and is corrected here rather than explained away — the property that matters,
-that the cost is constant and cannot grow with the log, is what the measurement confirms. Throughput
-is indistinguishable, with the dispatched path measuring slightly faster than the direct one, which
-is noise rather than a result.
+path a real log takes and runs in 5.2–10.7 ns; fed 14 bytes and 1 MiB it costs 6.905 ns and
+7.030 ns, so the size of the input is genuinely unreachable. Dispatch costs **five** extra
+allocations and 138 bytes per opened log, not the one this entry first predicted: `io.MultiReader`,
+its slice, the `bytes.Reader` over the replayed head, the head escaping to the heap, and the clone a
+refusal returns so a caller on a non-rewindable stream keeps the whole log. The prediction was wrong
+and is corrected here rather than explained away — the property that matters, that the cost is
+constant and cannot grow with the log, is what the measurement confirms. Throughput is
+indistinguishable, the two figures sitting inside run-to-run noise.
+
+**Why not bufio.** Reading the window through a `bufio.Reader` was tried and reverted. Its Read
+does one underlying read and returns `(0, nil)` straight through — the no-progress guard lives in
+`fill()`, which Read does not use — so it fixed nothing, and it read its whole 16-byte buffer
+rather than the ten bytes wanted, putting six bytes beyond the reach of the error a refusal returns.
+`readHead` carries the guard explicitly and consumes exactly the window.
 
 **Alternatives considered**: none — a throughput target for a function that reads ten bytes would be
 theatre.

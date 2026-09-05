@@ -184,7 +184,7 @@ builds, and US5 lives in the package US2 creates. The `[USn]` labels keep spec.m
 - [X] T045 Boundary checks: `go list -deps` confirms `model/` and `gatling/...` are still stdlib-only, and `go mod tidy` leaves the tree unchanged.
 - [X] T046 Run every scenario in [quickstart.md](./quickstart.md) end to end, including scenario 9 — every test that passed in `gatling/text/` before this feature still passes unchanged.
 - [X] T047 Commit as one green `feat(gatling): tell which Gatling wrote a simulation.log (#5)` — `go build ./... && go test ./...` passing on its own. Assign the PR to milestone **v0.0.4** and close [parsec#5](https://github.com/galax-io/parsec/issues/5) when it lands on `main`.
-- [ ] T048 Amend [parsec#5](https://github.com/galax-io/parsec/issues/5) with the two corrections this feature established: its first-byte-`R` detection rule is falsified by this repository's own corpus (both logs open with `ASSERTION`), and its acceptance bullet is met for **format** in all five named versions but for **version** only in the two this module can decode — the binary three arrive with their codec in v0.0.5.
+- [X] T048 Amend [parsec#5](https://github.com/galax-io/parsec/issues/5) with the two corrections this feature established: its first-byte-`R` detection rule is falsified by this repository's own corpus (both logs open with `ASSERTION`), and its acceptance bullet is met for **format** in all five named versions but for **version** only in the two this module can decode — the binary three arrive with their codec in v0.0.5.
 
 ---
 
@@ -273,9 +273,8 @@ That is a real increment: it is the smallest thing that answers "which Gatling w
 
 ## What actually happened
 
-Every task above is done except T048, which edits a GitHub issue and is held for confirmation.
-Three things went differently from the plan, and each is recorded where it belongs rather than
-quietly absorbed.
+Every task above is done. Three things went differently from the plan, and each is
+recorded where it belongs rather than quietly absorbed.
 
 **T003 kept 64 bytes, not 256.** The whole log a 3.15.1 run produced is 154 bytes, so "the first
 256" would have been the entire file — exactly the shape FR-031a forbids the sample from having,

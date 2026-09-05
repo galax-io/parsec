@@ -199,7 +199,7 @@ go test -run '^$' -bench 'BenchmarkDetect|BenchmarkOpen' -benchmem ./gatling/ ./
 ```
 
 Expected: `Detect` allocates nothing and does not vary with input size — 14 bytes and 1 MiB both
-cost about 5.9 ns. Opening through `simlog` costs four extra allocations and 124 bytes over opening
+cost about 7 ns. Opening through `simlog` costs five extra allocations and 138 bytes over opening
 the codec directly, paid once per log and constant in its size, and throughput over the largest
 corpus log is indistinguishable from the direct path.
 
