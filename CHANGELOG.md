@@ -5,6 +5,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.0.3] - 2026-09-05
+
+The canonical model, and the corpus probe's expectations stated once in OpenNFR.
+
 ### Added
 
 - `model` package: the canonical result types every source is decoded into — `Sample`,
