@@ -31,12 +31,14 @@ type RunReader struct {
 // A log written by an older version is refused with a *gatling.VersionError
 // naming the version found and the range supported; so is a version string that
 // is not a plain MAJOR.MINOR.PATCH release, quoting what was found. A plain
-// release above the range decodes, and the warning is on the returned run.
+// release above the range decodes, and the warning is on the returned run;
+// under [gatling.WithStrict] it is refused with a *gatling.UnverifiedError
+// instead.
 //
 // The gate is not re-implemented here: a log the decoder refuses never reaches
 // the conversion, and the error is the decoder's own.
-func NewRunReader(r io.Reader) (*RunReader, error) {
-	rd, err := NewReader(r)
+func NewRunReader(r io.Reader, opts ...gatling.Option) (*RunReader, error) {
+	rd, err := NewReader(r, opts...)
 	if err != nil {
 		return nil, err
 	}

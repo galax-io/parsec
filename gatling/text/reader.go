@@ -45,13 +45,14 @@ const maxAssertionBytes = 8 << 20
 // NewReader reads the preamble and the run header and gates on the version it
 // names. It fails when no header can be found, when the version is below the
 // supported range, and when the version is not a plain release. A version above
-// the range succeeds and records a warning.
+// the range succeeds and records a warning — or, under [gatling.WithStrict],
+// fails with a *gatling.UnverifiedError instead.
 //
 // It allocates its line buffer up front, once, and refuses any line past
 // MaxLineLen, so no line can grow past the ceiling. Beyond that buffer, a
 // bounded table of the names the log repeats and a bounded preamble, the
 // reader holds only the records it hands out.
-func NewReader(r io.Reader) (*Reader, error) {
+func NewReader(r io.Reader, opts ...gatling.Option) (*Reader, error) {
 	rd := &Reader{sc: newScanner(r)}
 
 	// Assertion records precede the header, one per declared assertion. Their
@@ -94,7 +95,7 @@ func NewReader(r io.Reader) (*Reader, error) {
 			rd.asserts = append(rd.asserts, string(fields[1]))
 
 		case kindRun:
-			return rd.finishPreamble(line, surplusLine, surplusFields)
+			return rd.finishPreamble(line, surplusLine, surplusFields, opts)
 
 		default:
 			return nil, &gatling.SyntaxError{
@@ -133,27 +134,29 @@ func unterminated(lineNo int) error {
 
 // finishPreamble decodes the header, applies the gate and settles the field
 // count rule for everything read so far.
-func (r *Reader) finishPreamble(line []byte, surplusLine, surplusFields int) (*Reader, error) {
+func (r *Reader) finishPreamble(line []byte, surplusLine, surplusFields int, opts []gatling.Option) (*Reader, error) {
 	hdr, n, err := parseHeader(line, r.sc.lineNo)
 	if err != nil {
 		return nil, err
 	}
 
-	isLenient := false
+	// The decision is not made here. versionPolicy holds this codec's range and
+	// gatling.Policy holds the rule, so a second codec cannot disagree with this
+	// one about what a version means.
+	verdict, warning, err := versionPolicy.Apply(hdr.Version, opts...)
+	if err != nil {
+		return nil, err
+	}
 
-	switch gatling.Gate(hdr.Version, minVersion, maxVersion) {
-	case gatling.VerdictRefused:
-		return nil, &gatling.VersionError{
-			Found:   hdr.Version.String(),
-			Version: hdr.Version,
-			Parsed:  true,
-			Min:     minVersion,
-			Max:     maxVersion,
-		}
-	case gatling.VerdictUnverified:
-		r.warnings = append(r.warnings, gatling.Warning{Version: hdr.Version, Min: minVersion, Max: maxVersion})
-		isLenient = true
-	case gatling.VerdictAccepted, gatling.VerdictUnknown:
+	// Read from the verdict, not from whether a warning came back. The two
+	// coincide today, but leniency relaxes real checks — a surplus field is
+	// accepted, an error record's timestamp is searched for rather than counted
+	// to — and tying that to the presence of a struct would let any warning
+	// raised for some later reason silently relax the parser for a version the
+	// corpus fully covers.
+	isLenient := verdict == gatling.VerdictUnverified
+	if isLenient {
+		r.warnings = append(r.warnings, warning)
 	}
 
 	if !isLenient {

@@ -6,6 +6,8 @@
 //     version type and the version gate every Gatling codec shares.
 //   - gatling/text: the codec for the tab-separated simulation.log written
 //     by Gatling 3.11.5 through 3.12.0.
+//   - gatling/simlog: opens a simulation.log without being told which Gatling
+//     wrote it, by identifying the format from the file's leading bytes.
 //   - model: the canonical result types every source is decoded into, and the
 //     Capabilities a source declares about what it cannot provide. This is what
 //     a consumer builds on; the records in gatling are the log's own events.

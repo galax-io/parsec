@@ -23,6 +23,11 @@ func SupportedVersions() (oldest, newest gatling.Version) {
 	return minVersion, maxVersion
 }
 
+// versionPolicy is this codec's gate, stated once. The decision it applies
+// lives in gatling, so that the binary codec inherits the same one rather than
+// growing a second copy of it.
+var versionPolicy = gatling.Policy{Min: minVersion, Max: maxVersion}
+
 const (
 	tab            = '\t'
 	groupSeparator = ','

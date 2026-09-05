@@ -5,6 +5,46 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+Telling which Gatling wrote a log, before anything tries to read it.
+
+### Added
+
+- `gatling.Detect`, with `gatling.Format` and `gatling.DetectSize`: names a `simulation.log` as the
+  tab-separated text format or the binary one written from 3.13.0, from a fixed ten leading bytes
+  and never from the file's name. A text log is recognised by `RUN` or `ASSERTION` followed by a
+  tab — a simulation that declares assertions writes those ahead of the run header, so both are
+  ordinary openings, and both recorded runs in the corpus begin with the second.
+- `gatling/simlog`: opens a `simulation.log` without being told which Gatling wrote it. It
+  identifies the format, hands the stream to the codec that reads it, and yields records identical
+  to that codec's own. A binary log is refused with a `*gatling.UnsupportedFormatError` naming the
+  format, rather than failing as a syntax error on line 1.
+- `gatling/simlog.Supported`: what this module reads, per format, so a consumer reports it instead
+  of hard-coding a range that goes stale. The binary format is reported as known and not yet
+  readable, which is a different answer from an unknown one.
+- `gatling.Policy` and `Policy.Apply`: the version policy in one place, applied by every codec
+  before any record is decoded. It returns the `Verdict` alongside the warning, so a codec reads
+  leniency from the version decision rather than inferring it. `gatling.Gate` is unchanged and is
+  what `Apply` is built on.
+- `gatling.WithStrict`, with `gatling.Option`: refuses a version no recording covers instead of
+  decoding it with a warning. The default is unchanged and lenient; strictness only ever tightens
+  the gate, and cannot reach a version inside or below the supported range.
+- `gatling.FormatError`, `gatling.UnsupportedFormatError` and `gatling.UnverifiedError`. With the
+  existing `VersionError` and `SyntaxError`, every way a read can be refused now has its own type,
+  so a caller branches with `errors.As` rather than on message text.
+
+### Changed
+
+- `gatling/text.NewReader` and `gatling/text.NewRunReader` take `opts ...gatling.Option`. Every
+  existing *call* compiles and behaves exactly as before — passing no options is the lenient
+  default — and the version decision moved out of the codec into `gatling.Policy` without changing
+  any outcome. What does break is a caller that stored either constructor in a variable of type
+  `func(io.Reader) (*text.Reader, error)`: a variadic parameter changes the function's type, so a
+  registry built that way stops compiling. Permitted before v0.1.0 (Principle V) and recorded here
+  rather than described as fully compatible.
+- `gatling.Warning.String` returns the empty string for the zero `Warning`. The zero value is how
+  "no warning" travels, so rendering it as a warning about version 0.0.0 put a false alarm in the
+  log of every healthy run.
+
 ## [0.0.3] - 2026-09-05
 
 The canonical model, and the corpus probe's expectations stated once in OpenNFR.
