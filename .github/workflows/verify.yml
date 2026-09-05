@@ -106,6 +106,65 @@ jobs:
     # decoder is held to each run's own report. See gatling-canary.yml.
     uses: ./.github/workflows/gatling-canary.yml
 
+  # The corpus probe states what it must produce once, in an OpenNFR document, and
+  # the Gatling assertions are rendered from it. This gate holds that document to
+  # the schema OpenNFR publishes, so a schema change it violates is caught here
+  # rather than by nobody.
+  #
+  # The ref is pinned to the release the renderer in gatling-picatinny tracks: the
+  # document must satisfy the renderer first, and the schema at that ref is what
+  # the renderer was built against. Moving the renderer's version moves this pin
+  # with it, in the same change.
+  nfr:
+    needs: quick
+    runs-on: ubuntu-latest
+    env:
+      OPENNFR_REF: v0.8.0
+      DOCUMENT: testdata/corpus/gatling/simulation/src/test/resources/nfr.yaml
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - name: install the validator
+        # Pinned for the same reason golangci-lint is: a validator that changes
+        # under us turns a green gate red without a change to what it checks.
+        run: pip install --disable-pip-version-check 'jsonschema==4.26.0' 'PyYAML==6.0.3'
+      - name: fetch the published schema
+        run: |
+          set -euo pipefail
+          curl -sfL --retry 3 \
+            "https://raw.githubusercontent.com/galax-io/opennfr/${OPENNFR_REF}/schema/opennfr.io/v1/requirementset.schema.json" \
+            -o /tmp/requirementset.schema.json
+      - name: the probe's requirements validate against it
+        # A gate that cannot find its input reports failure rather than success:
+        # a missing document reads exactly like a valid one to a bare exit code.
+        run: |
+          set -euo pipefail
+          test -f "$DOCUMENT" || { echo "no document at $DOCUMENT"; exit 1; }
+          python3 - "$DOCUMENT" <<'PYEOF'
+          import json, sys
+          import yaml
+          from jsonschema import Draft202012Validator
+
+          path = sys.argv[1]
+          with open("/tmp/requirementset.schema.json") as f:
+              schema = json.load(f)
+          with open(path) as f:
+              document = yaml.safe_load(f)
+
+          errors = sorted(Draft202012Validator(schema).iter_errors(document),
+                          key=lambda e: list(e.path))
+          for e in errors:
+              where = "/".join(str(p) for p in e.path) or "(root)"
+              print(f"{path}: {where}: {e.message}")
+
+          if errors:
+              sys.exit(1)
+
+          print(f"{path}: valid against the OpenNFR schema")
+          PYEOF
+
   deps:
     needs: quick
     runs-on: ubuntu-latest
