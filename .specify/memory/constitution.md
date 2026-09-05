@@ -1,75 +1,88 @@
 <!--
 Sync Impact Report
 ==================
-Version change: 1.1.0 → 2.0.0
-Bump rationale: MAJOR. Two rules are removed, not narrowed, and the module's scope changes with
-them: Principle I no longer describes a `stats/` package, and Principle IV no longer pre-approves a
-third-party module. The versioning policy calls a removed rule MAJOR. A reader could argue MINOR on
-the grounds that nothing already compliant becomes non-compliant — there is no `stats/` package and
-nothing imports go-tdigest — but what changes here is what the library is *for*, and that is the
-most consequential kind of amendment this document can carry. MAJOR is the honest signal.
+Version change: 2.0.0 → 2.1.0
+Bump rationale: MINOR. A section is added and nothing is removed or redefined. "Engineering
+Guidance (Skills)" joins Quality Gates & Tooling; every existing principle, gate and rule is
+untouched, and nothing already compliant becomes non-compliant. The versioning policy calls an
+added section MINOR.
 
-Modified principles:
-- I. Canonical Model First — the `stats/` bullet is replaced. This module now computes no statistic
-  at all: no count, mean, percentile, range or per-interval series. It decodes artefacts into
-  `model` types and offers the primitives a consumer computes from — the position a sample was
-  recorded at, the bounds of the run, the outcome predicate, a way to walk the stream. A new bullet
-  states the line that replaces the old one: this module owns the **definitions** (what counts as a
-  failure, what a request position is, where a run begins and ends), the consumer owns the
-  arithmetic. The tool-packages-must-not-import-each-other rule is unchanged and kept.
-- IV. Minimal, Explicit Dependencies — the `github.com/caio/go-tdigest` pre-approval is removed. It
-  existed for percentiles in `stats/`; with the arithmetic gone so is the reason. `go.mod` naming no
-  requirement is now the intended steady state rather than a property of a young module.
+Modified principles: none.
+Added sections: Quality Gates & Tooling → **Engineering Guidance (Skills)**.
+Removed sections: none. Renamed principles: none.
 
-Modified sections: none. Added sections: none. Removed sections: none. Renamed principles: none.
+Drafted, then immediately refreshed, and folded rather than re-versioned: the skill plugins were
+updated while this amendment was still uncommitted — `samber/cc-skills-golang` 1.4.0 → 2.0.1 and
+`galaxio/galaxio-gatling` 2.0.0 → 2.4.0 — so the section ships classified against what is installed
+rather than against what was installed an hour earlier. No 2.2.0 is issued for that: version numbers
+here describe amendments that have landed, and 2.1.0 had not. The refresh added four skills to the
+classification (`golang-gopls`, `golang-refactoring`, `golang-pkg-go-dev`, and the always-active
+orchestrator `golang-how-to`), named the three new Gatling skills, and made the Review clause
+concrete, because the very first update proved the drift it warns about: `galaxio-gatling` 2.4.0
+moved `version-lookup.md` into a new `gatling-versions` skill, which left a reference in
+`specs/004-gatling-format-detection/research.md` pointing at a file that no longer exists.
 
-Why now: statistics belong in `galaxio-cli`, decided 2026-09-05, and the arithmetic moved there in
-the same change (parsec#9 into galaxio-cli#51, parsec#12 to galaxio-cli#61).
+Why now: coding agents in this repository carry a third-party Go skill set, and it had been
+applied by taste. Reviewing it against the drafted API of spec 004 changed that API three times —
+a functional option renamed to the `With` convention, two exported identifiers dropped that no
+caller needed, and a written justification forced for returning an interface from a constructor —
+and it also surfaced three skills whose advice would have broken a MUST. Both halves are worth
+fixing in one place rather than re-deciding per feature.
 
-The obvious objection is that three consumers would then each grow their own statistics — the
-"one statistics engine per tool" failure parsec#4 exists to prevent, moved one layer up. It does not
-land, because the two implementations are different computations rather than one duplicated:
-`galaxio-cli` summarises a finished run in one pass over an archived log, and the `comet` sidecar
-aggregates a run while it is still being written, in windows, with its own arithmetic. A single
-shared accumulator would have had to serve both and would have been shaped by neither.
+What the new section does *not* do, deliberately: it does not make a skill a build gate. A skill is
+versioned outside this repository, can drift between releases, and may be absent for a contributor.
+The gate table above already enforces the outcomes — gofmt, golangci-lint, the stdlib-only `deps`
+job, the coverage floors. The skills are how a change is got right the first time; the gates are
+what catch it when it is not. A rule CI cannot check and a contributor may be unable to follow would
+have been a rule in name only.
 
-What still had to be protected is the part where two computations can silently disagree about *what*
-they are measuring, and that is what the new Principle I bullet pins here: what a failure is, what a
-request position is, where a run begins and ends. Divergence in arithmetic is a bug someone finds;
-divergence in definitions is two correct programs disagreeing.
+Three bounds are stated once and apply to every skill: this document wins where they disagree; a
+skill never justifies a dependency, a layout change, a weakened gate or a lowered coverage floor;
+and unavailability blocks nothing, because Principles I–VI say the same things in less detail.
+
+On `golang-project-layout`, which is the one classification that moved during drafting: banning it
+outright was wrong. Principle I already fixes the tool packages by name and the module's import
+paths are published, so the layout questions that skill opens with are answered here and are not
+open to revision — `pkg/`, `cmd/`, the architecture question and the dependency-injection question
+are all out. What is genuinely open, and grows as `jmeter/`, `k6/`, `locust/` and `phout/` arrive,
+is when a helper belongs in `internal/` and where a package boundary should fall once several
+adapters share a problem. It is therefore listed with a carve-out rather than forbidden. The
+distinction the section keeps throughout is between advice that breaks a MUST and advice for which
+no occasion has yet arisen: the second is not a prohibition, and two such skills are named with the
+milestone that would promote them.
 
 Templates:
-- ✅ .specify/templates/plan-template.md — Technical Context no longer names go-tdigest in `stats/`;
-  the Constitution Check gate for I asks about primitives rather than a statistics package; the
-  source tree drops the `stats/` line; the Complexity Tracking example no longer suggests a module
-  in `stats/`.
-- ✅ .specify/templates/spec-template.md — the percentile example FR and the percentile fidelity SC
-  are replaced: a spec for this module states what it decodes and hands over, not what it computes.
-- ✅ .specify/templates/tasks-template.md — path conventions drop `stats/`; the tolerance-test task
-  no longer points at a `stats/` file.
+- ✅ .specify/templates/plan-template.md — Technical Context gains an **Engineering guidance** field,
+  so every plan names the skills its change requires and any it must not follow. This is the
+  propagation that makes the section operative rather than decorative.
+- ✅ AGENTS.md — Boundaries gains one Always item and one Never item, agreeing with the section.
+- ✅ .specify/templates/spec-template.md — no change; a spec is technology-agnostic by design and
+  naming an engineering skill in one would be a layering error.
+- ✅ .specify/templates/tasks-template.md — no change; the plan's Technical Context is where the
+  skills are named, and a task list inherits it.
 - ✅ .specify/templates/checklist-template.md — no constitution references; no change.
-- ✅ AGENTS.md — Structure and Architecture rewritten: no `stats/`, and the statistics sentence
-  replaced by what this module hands a consumer instead.
-- ✅ README.md — the packages table and "What it will be" no longer promise a statistics engine.
-- ✅ doc.go — the planned `stats` package is removed from the package list.
-- ✅ .github/workflows/ — the `deps` gate is unchanged and still correct; no job referenced `stats/`.
-- ✅ .golangci.yml — no reference; no change.
-- ✅ plan-template.md still carries one Constitution Check gate per principle plus a workflow gate.
+- ✅ .github/workflows/ — unchanged, and deliberately: see the "not a build gate" paragraph above.
+- ✅ .golangci.yml — unchanged. `errname`, `errorlint`, `wsl_v5` and `godot` already enforce much of
+  what the required-reading skills describe, which is why the section is about reading rather than
+  about tooling.
+- ✅ README.md, doc.go — no user-visible change; the section is contributor guidance.
 
 Follow-up TODOs:
-- Milestones re-scoped in the same change: v0.0.7 is now "The primitives a consumer folds" (#8);
-  v0.0.8 is retired and closed, its #9 absorbed into galaxio-cli#51; v0.1.0 keeps only the stability
-  contract (#13), its #12 moved to galaxio-cli#61. No arithmetic remains in this backlog.
-- The coverage-floor follow-up from v1.1.0 is **closed**: CI enforces the floors, and the first
-  decoder package landed in v0.0.2.
-- Carried forward from v1.1.0, still unresolved: `.claude/skills/speckit-tasks/SKILL.md` says test
-  tasks are OPTIONAL, which Principle III contradicts. The file is spec-kit managed and reinstalled
-  on upgrade, so it is left alone and recorded here rather than patched — dropping the note would
-  make the drift invisible, which is why it survives this amendment.
-- `.copier-answers.yml` still records the pre-v2.0.0 Structure and Architecture text, including a
-  `stats/` package and the `go-tdigest` pre-approval. The file forbids manual edits and is rewritten
-  by `copier update`, so the fix is to answer differently at the next update; until then a template
-  update would silently revert `AGENTS.md`.
+- The classification is re-read at every `release/X.Y.0` cut together with the Principles I–VI
+  compliance review, and on every skill-plugin update. It is pinned to
+  `samber/cc-skills-golang` 2.0.1 and `galaxio/galaxio-gatling` 2.4.0.
+- `golang-gopls` and `golang-pkg-go-dev` are classified but currently inert: `gopls` is not on the
+  machine and the `godig` plugin is not installed. Both are listed anyway, because the question each
+  answers — every call site before a rename, a proposed module's licence and CVEs — is asked by
+  Principles V and IV whether or not the tool is there to answer it.
+- Carried forward, still unresolved: `.claude/skills/speckit-tasks/SKILL.md` says test tasks are
+  OPTIONAL, which Principle III contradicts. The file is spec-kit managed and reinstalled on
+  upgrade, so it is left alone and recorded here rather than patched — dropping the note would make
+  the drift invisible, which is why it survives this amendment too.
+- Carried forward: `.copier-answers.yml` still records the pre-v2.0.0 Structure and Architecture
+  text, including a `stats/` package and the `go-tdigest` pre-approval. The file forbids manual
+  edits and is rewritten by `copier update`, so the fix is to answer differently at the next update;
+  until then a template update would silently revert `AGENTS.md`.
 - Ratification date is the scaffold date (2026-09-02); no earlier constitution existed.
 -->
 # parsec Constitution
@@ -255,6 +268,102 @@ Additional constraints:
 - CI ignores changes under `**.md`, `docs/`, `specs/` and `.specify/`; a PR that touches
   only those paths merges on review alone.
 
+### Engineering Guidance (Skills)
+
+Coding agents here have a third-party Go skill set (`samber/cc-skills-golang`, classified against
+**2.0.1**) and `galaxio/galaxio-gatling` (**2.4.0**). What follows is a rule about **reading**, not
+about tooling, and it MUST NOT become a build gate: a skill is versioned outside this repository,
+can drift, and may be absent for a contributor. The gate table above enforces the outcomes; the
+skills are how a change is got right the first time.
+
+**An orchestrator does not override this classification.** `golang-how-to` describes itself as
+always active and loads other skills by task shape. It may therefore surface a skill this section
+forbids, in a context where it looks apt. The classification still binds: a skill reached through
+an orchestrator is the same skill, and *Must not be followed* means the advice is not taken however
+it arrived.
+
+Three bounds apply to all of them:
+
+- **This document wins.** Where a skill and this constitution disagree, the constitution is followed
+  and the disagreement is recorded in the feature's `research.md` — the rule already in force for
+  `AGENTS.md`.
+- **A skill never justifies a dependency, a layout change, a weakened gate or a lowered coverage
+  floor.** Those are Principles III and IV, against which a skill has no standing.
+- **Unavailability blocks nothing.** Without the skill set a contributor follows Principles I–VI,
+  which say the same things in less detail.
+
+**Required reading.** Before writing code in the area named, the skill MUST be read.
+
+| When a change… | Skill | Why it is required |
+|---|---|---|
+| adds, renames or changes any exported identifier | `golang-naming` | Principle V: from v0.1.0 a name is effectively permanent — changing one costs a deprecation window and a MINOR release. |
+| adds or changes an error, or a path that returns one | `golang-error-handling` | Principle II requires errors carrying an offset; Principle VI requires errors as values, `%w`, `errors.Is`/`errors.As`, and no control flow by panic. |
+| adds or changes a test — which is every change | `golang-testing` | Principle III is NON-NEGOTIABLE. Its third-party sections are excluded; see *Must not be followed*. |
+| adds an exported identifier | `golang-documentation` | Principle V requires a doc comment on each one, stating for a decoder which tool versions it accepts. |
+| adds an exported type, interface or method set | `golang-structs-interfaces` | Principle I turns on what a tool package exports, and interface placement decides who imports whom. |
+
+**Consult when the occasion arises.** SHOULD, with the occasion stated so it is a trigger rather
+than a suggestion.
+
+| Occasion | Skill | Assessment |
+|---|---|---|
+| a plan states a throughput or peak-memory figure | `golang-benchmark` | The benchmark rule above is a MUST; this is how it is measured and how a regression is argued in the PR. |
+| decoding untrusted input — every artefact this module reads | `golang-safety`, `golang-security` | `gosec` is enabled, and Principle II's allocation caps are exactly this subject. |
+| designing a constructor or a streaming API | `golang-design-patterns` | Functional options and streaming recur here. Its dependency-injection half is out (below). |
+| `golangci-lint` objects, or a linter is added or upgraded | `golang-lint`, `golang-code-style` | `.golangci.yml` is the authority; the skills explain what a linter is asking for. |
+| a profile shows a real bottleneck | `golang-performance` | After measurement, never before it. |
+| a bug resists the obvious explanation | `golang-troubleshooting` | Cheap to reach for, and only then. |
+| an exported identifier is renamed, or every call site of one must be found | `golang-gopls` | Principle V makes a rename expensive; finding the call sites mechanically beats grepping. Needs `gopls` on the machine — without it the skill is inert, which is not a reason to skip the search. |
+| existing code is restructured, or an import cycle must be broken | `golang-refactoring` | Principle VI sends an out-of-scope refactor to its own PR; this is how one is kept behaviour-preserving and split into reviewable pieces. Import cycles are a recurring shape here — a codec imports the shared package, so the shared package cannot dispatch to a codec. |
+| a dependency is proposed under the ask-first rule | `golang-pkg-go-dev` | Principle IV admits a module only with a stated reason; licence, CVEs and the real API are what that reason has to survive. Needs the `godig` plugin, which is not installed — the questions stand regardless. |
+| a new tool package lands, or a shared helper needs a home | `golang-project-layout` | **Carve-out below** — parts of it are settled here and are not open. |
+| the probe simulation, a corpus recording, or a Gatling version question | `galaxio-gatling-pro`, `gatling-versions`, `gatling-build`, `gatling-migration`, `scala-pro` | The corpus is Principle III's evidence and the probe is the only Scala here. `gatling-versions` carries the artefact-per-Gatling-line table, which is what decides whether a version can be recorded at all — it already ruled out running the probe under 3.14.x or 3.15.x, because no `gatling-picatinny` release targets those lines. |
+| the Go toolchain is bumped | `golang-modernize` | At the bump, not between them. |
+
+**`golang-project-layout` — what is settled and what is open.** Principle I already fixes the tool
+packages by name and the module's import paths are published, so the questions that skill opens with
+are answered here and are not open to revision:
+
+- packages live at the repository root. `pkg/` is not used, and moving to it would change every
+  import path of a module three builds depend on;
+- a `main` package lives with the thing it serves — the corpus stub sits under
+  `testdata/corpus/gatling/simulation/stub/`, not under `cmd/`, and that is correct;
+- the architecture question and the dependency-injection question are settled: this is a library of
+  packages, and Principle IV rules out a container.
+
+What is genuinely open, and grows as `jmeter/`, `k6/`, `locust/` and `phout/` arrive: when a helper
+belongs in `internal/` rather than in a tool package, and where a package boundary falls once
+several adapters share a problem. Principle I names `internal/` already; the skill is how to use it
+well.
+
+**Must not be followed.**
+
+| Skill | The MUST it breaks |
+|---|---|
+| `golang-stretchr-testify`, and the testify sections of `golang-testing` | Principle III fixes the standard `testing` package; Principle IV forbids the dependency and the `deps` job enforces it. |
+| `golang-samber-*`, `golang-popular-libraries` | Principle IV: no module is pre-approved, and `model/` and `gatling/` are stdlib-only. |
+| `golang-dependency-injection`, `golang-google-wire`, `golang-uber-dig`, `golang-uber-fx`, `golang-samber-do` | A container is both a dependency (IV) and an abstraction with no current need (VI). This module is imported, not wired. |
+
+**No occasion has arisen** for the service, transport, storage and telemetry skills —
+`golang-cli`, `golang-spf13-cobra`, `golang-spf13-viper`, `golang-grpc`, `golang-graphql`,
+`golang-swagger`, `golang-database`, `golang-observability`, `golang-samber-slog`,
+`golang-concurrency`, `golang-context`, `golang-data-structures` — nor for
+`golang-dependency-management` (Principle IV means `go.mod` names no requirement, and `go mod tidy`
+is already a gate), `golang-continuous-integration` (the pipeline exists and the gate table above is
+authoritative) or `golang-stay-updated`. This is a synchronous `io.Reader` library with no server,
+no transport and no store. **These are not prohibitions.** Two are worth watching: decoding a log
+while it is still being written (v0.0.9) is the milestone most likely to make `golang-concurrency`
+and `golang-context` relevant, and when it lands they move up a tier deliberately rather than being
+reached for by surprise.
+
+**Review.** This classification is re-read at every `release/X.Y.0` cut, alongside the Principles
+I–VI compliance review and in the same place, and whenever a skill plugin is updated. A
+classification made against one version of a skill set is not evidence about the next, and this is
+not theoretical: the first update after this section was written added four skills, one of them an
+always-active orchestrator, and moved a reference a feature's `research.md` was citing by name. A
+refresh diffs the skill inventory, re-checks the rules the tiers rest on, updates the versions
+pinned above, and fixes every `research.md` left pointing at a file that moved.
+
 ## Development Workflow & Release Process
 
 `AGENTS.md` holds the step-by-step procedure; the rules below are the ones it MUST NOT
@@ -312,4 +421,4 @@ contradict.
   re-reads Principles I–VI against the milestone's merged PRs and files an issue for
   each gap in the next milestone.
 
-**Version**: 2.0.0 | **Ratified**: 2026-09-02 | **Last Amended**: 2026-09-05
+**Version**: 2.1.0 | **Ratified**: 2026-09-02 | **Last Amended**: 2026-09-05

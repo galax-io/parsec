@@ -47,11 +47,11 @@ Golden corpus per Gatling version under testdata/corpus/, each run committed tog
 
 ## Boundaries
 
-**Always:** format before commit, branch from `main`, keep commits semantic and green, preserve backward compat for published public APIs and any downstream consumers. `go.mod` = dependency truth, `.github/workflows/` = CI/release truth.
+**Always:** format before commit, branch from `main`, keep commits semantic and green, preserve backward compat for published public APIs and any downstream consumers. Read the skills the constitution marks *required reading* before writing code in their area (exported names, errors, tests, doc comments, exported types). `go.mod` = dependency truth, `.github/workflows/` = CI/release truth, the constitution = everything else.
 
 **Ask first:** new deps or upgrades, changing public API signatures / observable behavior / serialized formats, editing another repo, release/publish workflow changes.
 
-**Never:** force-push or commit to `main`, merge commits in PR branches (rebase only), commit broken code, opportunistic refactors outside scope, mock external systems where a real integration path exists.
+**Never:** force-push or commit to `main`, merge commits in PR branches (rebase only), commit broken code, opportunistic refactors outside scope, mock external systems where a real integration path exists, follow a skill the constitution forbids (testify, samber/*, a DI container, `pkg/`-style relayout) — a skill never outranks this repository's rules.
 
 ## Milestones (ALWAYS)
 
