@@ -27,6 +27,8 @@
 
 **Testing**: stdlib `testing`, table-driven; golden corpus under `testdata/corpus/<tool>/<version>/`; `go test -race -shuffle=on ./...`; integration suite behind `-tags=integration`
 
+**Engineering guidance**: the skills this change requires reading, and any it must not follow — see the constitution, Quality Gates & Tooling → Engineering Guidance (Skills). Name the required-reading rows this change triggers (exported identifiers → `golang-naming`, errors → `golang-error-handling`, tests → `golang-testing`, doc comments → `golang-documentation`, exported types → `golang-structs-interfaces`), any *consult* row whose occasion has arisen, and record in research.md every place a skill and this constitution disagreed. [Or: none triggered — say so and why]
+
 **Target Platform**: any Go 1.25 target; consumed as a library by galaxio-cli, the comet sidecar and the Galaxio backend
 
 **Project Type**: library (Go module `github.com/galax-io/parsec`)
@@ -65,7 +67,9 @@ Complexity Tracking. N/A is allowed only with a one-line reason.
       contracts/; breaking changes flagged in the spec and approved; deprecation path defined;
       `CHANGELOG.md` entry planned; doc comment for every new exported identifier.
 - [ ] **VI. Idiomatic, Simple Go** — no abstraction without a current need; `.golangci.yml`
-      unchanged or the change justified; errors as values; no control flow by panic.
+      unchanged or the change justified; errors as values; no control flow by panic; the
+      required-reading skills for this change were read and any disagreement with this
+      constitution is recorded in research.md.
 - [ ] **Workflow** — feature assigned to a milestone; spec artifacts committed as
       `docs(speckit): …` before implementation; each tracked issue maps to one green commit.
 
