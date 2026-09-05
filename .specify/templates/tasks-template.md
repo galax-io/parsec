@@ -23,7 +23,7 @@ description: "Task list template for feature implementation"
 
 parsec is a single Go module with packages at the repository root (see plan.md "Source Code"):
 
-- **Packages**: `model/`, `gatling/`, `stats/`, one `<tool>/` package per adapter, `internal/` for shared non-public helpers
+- **Packages**: `model/`, `gatling/`, one `<tool>/` package per adapter, `internal/` for shared non-public helpers
 - **Tests**: `<pkg>/<file>_test.go` beside the code; table-driven on stdlib `testing`
 - **Golden corpus**: `testdata/corpus/<tool>/<version>/`, recorded from real runs with that run's own tool report beside it; a hand-edited fixture says so in its name
 - Paths below are examples for a Gatling decoder story - adjust based on plan.md structure
@@ -86,7 +86,7 @@ Examples of foundational tasks (adjust based on your project):
 - [ ] T009 [P] [US1] Golden test: decode testdata/corpus/<tool>/<version>/ and compare byte for byte with the recorded record stream in <tool>/decoder_test.go
 - [ ] T010 [P] [US1] Equivalence test: chunked reads == whole-file read for every corpus file in <tool>/decoder_chunk_test.go
 - [ ] T011 [P] [US1] Version-gate test: below range refused with both versions in the error, unknown newer decodes with a warning in <tool>/version_test.go
-- [ ] T012 [US1] Tolerance test: statistics against the tool's own report within the documented tolerance in stats/<file>_test.go
+- [ ] T012 [US1] Tolerance test: counts folded from the decoded records against the tool's own report, within the documented tolerance, in <tool>/<file>_test.go — the test computes them, the library does not
 
 ### Implementation for User Story 1
 
@@ -181,7 +181,7 @@ Examples of foundational tasks (adjust based on your project):
 
 - Tests MUST be written and FAIL before implementation
 - Model types before decoders
-- Decoders before statistics
+- Decoders before anything that folds their output
 - Core implementation before integration
 - Story complete before moving to next priority
 

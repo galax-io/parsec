@@ -29,11 +29,11 @@ Go 1.25, standard library only in model/ and gatling/; caio/go-tdigest for perce
 <!-- A LIGHT search index, not a full tree. List only the entry points an agent needs
      to FIND code fast — one terse line per area (`dir/ -> what lives there`). Omit
      anything discoverable by looking; an exhaustive tree is noise and rots fast. -->
-model/ -> canonical result types; gatling/ -> text and binary simulation.log codecs, version gate, run discovery; jmeter/ k6/ locust/ phout/ -> per-tool adapters; stats/ -> aggregation and percentiles; testdata/corpus/ -> golden logs per tool and version
+model/ -> canonical result types and the primitives a consumer computes from; gatling/ -> text and binary simulation.log codecs, version gate, run discovery; jmeter/ k6/ locust/ phout/ -> per-tool adapters; testdata/corpus/ -> golden logs per tool and version
 
 ## Architecture
 
-model/ is the source of truth for every consumer; each tool package converts that tool's artefacts into model types and declares through Capabilities what the source cannot provide; stats/ consumes model types only. The Gatling log format is external, undocumented and has already changed once, so every read is version-gated.
+model/ is the source of truth for every consumer; each tool package converts that tool's artefacts into model types and declares through Capabilities what the source cannot provide. This module computes no statistic — no count, mean, percentile, range or series: it owns the definitions a consumer computes from (what a failure is, what a request position is, where a run begins and ends) and galaxio-cli owns the arithmetic. The Gatling log format is external, undocumented and has already changed once, so every read is version-gated.
 
 ## Test Model
 

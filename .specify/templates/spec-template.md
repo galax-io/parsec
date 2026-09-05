@@ -100,7 +100,7 @@
 
 *Example of marking unclear requirements:*
 
-- **FR-006**: System MUST compute percentiles [NEEDS CLARIFICATION: exact or t-digest approximation, and at what compression?]
+- **FR-006**: System MUST expose [primitive, e.g., "the position a sample was recorded at"] [NEEDS CLARIFICATION: is this a definition this module owns, or arithmetic that belongs to the consumer?]
 - **FR-007**: System MUST bucket per-interval series at [NEEDS CLARIFICATION: interval length not specified]
 
 ### Key Entities *(include if feature involves data)*
@@ -131,7 +131,7 @@
 ### Measurable Outcomes
 
 - **SC-001**: [Correctness metric, e.g., "Every corpus file in the covered version range decodes to exactly the recorded record stream"]
-- **SC-002**: [Fidelity metric, e.g., "Counts and percentiles match the tool's own report within the documented tolerance"]
+- **SC-002**: [Fidelity metric, e.g., "Counts taken from the decoded records match the tool's own report exactly" — the verification suite computes them; this module does not]
 - **SC-003**: [Resource metric, e.g., "A 1 GB log decodes with peak memory under 64 MiB"]
 - **SC-004**: [Consumer metric, e.g., "galaxio report renders the run without a tool-specific code path"]
 

@@ -21,7 +21,7 @@
 
 **Language/Version**: Go 1.25 (`go.mod` is authoritative)
 
-**Primary Dependencies**: standard library only in `model/` and `gatling/`; `github.com/caio/go-tdigest` in `stats/`; [any other module: name it here, justify it in research.md, ask first (Principle IV)]
+**Primary Dependencies**: standard library only in `model/` and `gatling/`; no module is pre-approved anywhere (Principle IV). [Any module at all: name it here, justify it in research.md, ask first]
 
 **Storage**: N/A (artefacts are read through `io.Reader`; nothing is persisted) [or feature-specific]
 
@@ -45,9 +45,11 @@ Source: `.specify/memory/constitution.md` v1.0.0. Mark each gate PASS, or FAIL w
 Complexity Tracking. N/A is allowed only with a one-line reason.
 
 - [ ] **I. Canonical Model First** — new or changed result data lives in `model/` types; no
-      tool package exports a consumer-facing result type; `stats/` and tool packages import
-      only `model/` and `internal/`; everything the source cannot supply is declared through
-      `Capabilities`, never defaulted.
+      tool package exports a consumer-facing result type; tool packages import only
+      `model/` and `internal/`; everything the source cannot supply is declared through
+      `Capabilities`, never defaulted; **nothing here computes a count, a mean, a
+      percentile, a range or a series** — this module owns the definitions a consumer
+      computes from, not the arithmetic.
 - [ ] **II. Version-Gated, Streaming Decoders** — every artefact read passes the version gate
       (refuse below range, decode with a warning above); the codec's range equals its corpus
       coverage; `io.Reader` entry point with bounded memory and capped allocations; chunked
@@ -92,7 +94,6 @@ specs/[###-feature]/
 model/                              # canonical result types and Capabilities
 gatling/                            # text + binary simulation.log codecs, version gate, run discovery
 jmeter/  k6/  locust/  phout/       # one adapter package per tool, added by milestone
-stats/                              # counts, timings, percentiles (go-tdigest), per-interval series
 internal/                           # helpers shared across packages; not public API
 testdata/corpus/<tool>/<version>/   # golden artefacts recorded from real runs
 <pkg>/*_test.go                     # table-driven tests beside the code they cover
@@ -107,5 +108,5 @@ directories it records, and any new `internal/` package with the reason it is no
 
 | Violation | Why Needed | Simpler Alternative Rejected Because |
 |-----------|------------|-------------------------------------|
-| [e.g., new third-party module in stats/] | [current need] | [why the standard library is insufficient] |
+| [e.g., a third-party module anywhere in the module] | [current need] | [why the standard library is insufficient] |
 | [e.g., exported tool-specific result type] | [specific problem] | [why a model/ type plus Capabilities cannot express it] |

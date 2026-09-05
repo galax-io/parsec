@@ -10,7 +10,11 @@ Gatling stopped generating `stats.json` and `global_stats.json` in 3.13.5, and s
 
 ## What it will be
 
-One canonical model for the results of a load test, a decoder per tool that produces it, and a statistics engine that answers the questions a report asks. Three consumers are waiting for it: the `galaxio report` commands in [galaxio-cli](https://github.com/galax-io/galaxio-cli), result ingestion in the Galaxio platform, and the live-metrics sidecar.
+One canonical model for the results of a load test, and a decoder per tool that produces it. Three consumers are waiting for it: the `galaxio report` commands in [galaxio-cli](https://github.com/galax-io/galaxio-cli), result ingestion in the Galaxio platform, and the live-metrics sidecar.
+
+**This library computes no statistic.** No count, no mean, no percentile, no range, no per-interval series. What it owns is the part two implementations diverge on — the definitions: what counts as a failure, what a request position is, where a run begins and ends — and the primitives a consumer computes from.
+
+The arithmetic belongs to the consumers, and there is deliberately more than one of it. `galaxio-cli` summarises a finished run in one pass over an archived log. The `comet` sidecar aggregates a run while it is still being written, in windows, and carries its own arithmetic for it. Those are different computations, and one shared accumulator would have been shaped by neither.
 
 ### Sources, in the order they are planned
 
@@ -27,19 +31,37 @@ The Gatling log format is internal to Gatling, undocumented, and has already cha
 
 ### Packages
 
+    model/         canonical result types shared by every source                        (v0.0.3)
     gatling/       version type, version gate and the errors every Gatling codec shares  (v0.0.2)
-    gatling/text/  the text simulation.log codec for 3.11.5 and 3.12.0                   (v0.0.2)
-    model/         canonical result types shared by every source                         (planned)
-    stats/         counts, timings, percentiles, ranges, per-interval series             (planned)
+    gatling/text/  the text simulation.log codec for 3.11.5 and 3.12.0, and the          (v0.0.2)
+                   conversion of a log into model types                                  (v0.0.3)
 
-`model` and `gatling` depend on the standard library only, and CI checks that.
+`model` and `gatling` depend on the standard library only, and CI checks that. No module is pre-approved anywhere: `go.mod` naming no requirement is the intended steady state, not a property of a young project.
 
 ## Status
 
 `gatling/` and `gatling/text/` decode a Gatling 3.11.5 or 3.12.0 text `simulation.log` from a
-stream, in bounded memory, gated on the version the log names. They hand back the log's own wire
-records; the canonical model that every source converts into is v0.0.3. Everything else in the
-table above is unimplemented.
+stream, in bounded memory, gated on the version the log names.
+
+`model/` is the canonical form every source is decoded into, and `gatling/text.NewRunReader` reads a
+log straight into it — so a report can be written once and work for every tool. What a source cannot
+measure is declared through `Capabilities` and never filled in with a zero. A run carries only what
+does not grow with its length; its samples, groups, virtual-user events and errors stream beside it,
+so a log larger than memory still reads.
+
+The log's own wire records are still there and still exported: they are the format's events rather
+than a result, and the binary codec will share them. Build on `model/`.
+
+Everything else in the table above is unimplemented.
+
+## What this library will not do
+
+Compute statistics. Counts, means, percentiles, response-time ranges and per-interval series are the
+consumer's: [galaxio-cli#51](https://github.com/galax-io/galaxio-cli/issues/51) for a finished run,
+[galaxio-cli#61](https://github.com/galax-io/galaxio-cli/issues/61) for its series, and `comet` for
+the live case with its own arithmetic. This library hands over decoded results and the primitives to
+fold them — the position a sample was recorded at, the bounds of the run, the outcome of every
+sample — so that consumers computing differently still compute the same thing.
 
 The public API becomes stable at v0.1.0; until then it may change between releases.
 
