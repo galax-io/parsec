@@ -31,10 +31,12 @@ The Gatling log format is internal to Gatling, undocumented, and has already cha
 
 ### Packages
 
-    model/         canonical result types shared by every source                        (v0.0.3)
-    gatling/       version type, version gate and the errors every Gatling codec shares  (v0.0.2)
-    gatling/text/  the text simulation.log codec for 3.11.5 and 3.12.0, and the          (v0.0.2)
-                   conversion of a log into model types                                  (v0.0.3)
+    model/          canonical result types shared by every source                       (v0.0.3)
+    gatling/        version type, version policy, format detection and the errors        (v0.0.2)
+                    every Gatling codec shares                                           (v0.0.4)
+    gatling/text/   the text simulation.log codec for 3.11.5 and 3.12.0, and the         (v0.0.2)
+                    conversion of a log into model types                                 (v0.0.3)
+    gatling/simlog/ opens a simulation.log without being told which Gatling wrote it     (v0.0.4)
 
 `model` and `gatling` depend on the standard library only, and CI checks that. No module is pre-approved anywhere: `go.mod` naming no requirement is the intended steady state, not a property of a young project.
 
@@ -48,6 +50,15 @@ log straight into it — so a report can be written once and work for every tool
 measure is declared through `Capabilities` and never filled in with a zero. A run carries only what
 does not grow with its length; its samples, groups, virtual-user events and errors stream beside it,
 so a log larger than memory still reads.
+
+`gatling/simlog` opens a log without being told which Gatling wrote it: it reads the first ten bytes,
+names the format, and hands the stream to the codec that reads it. A binary `simulation.log` — every
+Gatling from 3.13.0 — is refused with an error naming the format and saying no codec reads it yet,
+rather than failing as a syntax error on the first line. What the module accepts is readable
+programmatically, so a tool reports it instead of hard-coding a version range.
+
+A caller that cannot use a number nothing has verified can say so: `gatling.WithStrict` refuses a
+version above the recorded range instead of decoding it with a warning.
 
 The log's own wire records are still there and still exported: they are the format's events rather
 than a result, and the binary codec will share them. Build on `model/`.
