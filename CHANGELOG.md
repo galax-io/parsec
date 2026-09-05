@@ -5,6 +5,24 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+
+- `model` package: the canonical result types every source is decoded into — `Sample`,
+  `GroupSample`, `UserEvent`, `RunError`, `Run`, `Item` and `Capabilities`, with `Opt[T]` for a value
+  a source may not have recorded. Standard library only, and what the three downstream builds depend
+  on instead of any tool package.
+- `gatling/text.NewRunReader`: reads a Gatling text `simulation.log` as canonical results. Same log,
+  same version gate and same bounded memory as `NewReader`; a run carries only what does not grow
+  with its length, and samples, group traversals, user events and run-level errors stream beside it.
+- `gatling/text.Capabilities`: what a Gatling text log records and what it never does, readable
+  before a log is opened.
+
+### Changed
+
+- The Gatling wire records (`gatling.Record`, `gatling.Header` and the rest) keep their signatures
+  and stay exported. They are documented as the log's own events rather than as a result, and the
+  canonical types are what a consumer builds on.
+
 ## [0.0.2] - 2026-09-04
 
 First published version. v0.0.1 was completed but never tagged, so everything below ships here.
