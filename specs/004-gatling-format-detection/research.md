@@ -351,9 +351,17 @@ alone.
 
 **Rationale**: the constitution requires a decoder plan to state a throughput and peak-memory goal
 and to ship a benchmark. This feature adds no decoding, so the honest goal is that it costs a fixed
-amount however large the log: at most one extra allocation for the replayed head, no measurable
-change in throughput, and spec 002's figures unchanged end to end (a 1 GB log under 32 MiB peak and
-under 60 s). `Detect` itself is a comparison of at most 10 bytes and allocates nothing.
+amount however large the log, and spec 002's figures are unchanged end to end.
+
+**What the benchmark actually said, and what it corrected.** `Detect` allocates nothing on every
+path a real log takes and runs in 1.9–5.9 ns; fed 14 bytes and 1 MiB it costs 5.928 ns and 5.949 ns,
+so the size of the input is genuinely unreachable. Dispatch, however, costs **four** extra
+allocations and 124 bytes per opened log, not the one this entry first predicted: `io.MultiReader`,
+its slice, the `bytes.Reader` over the replayed head, and the head escaping to the heap. The
+prediction was wrong and is corrected here rather than explained away — the property that matters,
+that the cost is constant and cannot grow with the log, is what the measurement confirms. Throughput
+is indistinguishable, with the dispatched path measuring slightly faster than the direct one, which
+is noise rather than a result.
 
 **Alternatives considered**: none — a throughput target for a function that reads ten bytes would be
 theatre.

@@ -63,12 +63,24 @@ the Galaxio backend.
 
 **Project Type**: library (Go module `github.com/galax-io/parsec`)
 
-**Performance Goals**: this feature decodes nothing, so the goal is *constant overhead*, and the
-benchmark measures exactly that (research R11): `Detect` allocates nothing and compares at most
-`DetectSize` = 10 bytes whatever the size of the log; opening through `simlog` costs at most one
-extra allocation over opening the codec directly; and spec 002's end-to-end figures are unchanged —
-a 1 GB log read in under 32 MiB peak and under 60 s on a single core. `BenchmarkDetect` and
-`BenchmarkOpen` over the largest corpus log record the numbers.
+**Performance Goals**: this feature decodes nothing, so the goal is *constant overhead* — a cost
+paid once per opened log that the size of the log cannot reach — and the benchmarks measure exactly
+that (research R11). **Measured** on the largest corpus log, arm64, Go 1.26:
+
+| | direct | dispatched | difference |
+|---|---|---|---|
+| `NewReader` + full read | ~80 µs, 40 allocs | ~75 µs, 44 allocs | **+4 allocs, +124 B**, constant |
+| `Detect`, success paths | — | 1.9–5.9 ns, **0 allocs** | — |
+| `Detect`, 14 B vs 1 MiB input | — | 5.928 ns vs 5.949 ns | input size is unreachable |
+
+The four allocations are `io.MultiReader`, its slice, the `bytes.Reader` over the replayed head, and
+the head escaping to the heap — inherent to replaying the window, and paid once per log rather than
+per record. The plan first claimed *at most one*; the benchmark said four, and the claim was
+corrected rather than the measurement explained away. Throughput is indistinguishable: the two
+figures sit inside run-to-run noise, with the dispatched path measuring slightly faster.
+
+Spec 002's end-to-end figures are unchanged — a 1 GB log read in under 32 MiB peak and under 60 s on
+a single core — because nothing on the decoding path moved.
 
 **Constraints**: detection must leave the stream readable from byte 0 (FR-004 — a correctness
 requirement, because the binary codec reconstructs a string cache from the start of the file); a
