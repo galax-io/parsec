@@ -1,65 +1,69 @@
 <!--
 Sync Impact Report
 ==================
-Version change: 1.0.0 → 1.1.0
-Bump rationale: MINOR. Guidance in an existing principle is materially expanded, and an existing
-section is materially expanded. No principle is removed or redefined incompatibly, and nothing that
-was already compliant becomes non-compliant: the new rules bind work from here on.
+Version change: 1.1.0 → 2.0.0
+Bump rationale: MAJOR. Two rules are removed, not narrowed, and the module's scope changes with
+them: Principle I no longer describes a `stats/` package, and Principle IV no longer pre-approves a
+third-party module. The versioning policy calls a removed rule MAJOR. A reader could argue MINOR on
+the grounds that nothing already compliant becomes non-compliant — there is no `stats/` package and
+nothing imports go-tdigest — but what changes here is what the library is *for*, and that is the
+most consequential kind of amendment this document can carry. MAJOR is the honest signal.
 
 Modified principles:
-- III. Golden-Corpus Testing (NON-NEGOTIABLE) — new bullet: a recording MUST capture, at the
-  moment the run is made, the artefact AND the report the tool produced for that same run. An
-  entry MUST NOT be added without the report unless the tool version produced none, in which
-  case the entry records that fact. Rationale extended to say why: the evidence has an expiry.
+- I. Canonical Model First — the `stats/` bullet is replaced. This module now computes no statistic
+  at all: no count, mean, percentile, range or per-interval series. It decodes artefacts into
+  `model` types and offers the primitives a consumer computes from — the position a sample was
+  recorded at, the bounds of the run, the outcome predicate, a way to walk the stream. A new bullet
+  states the line that replaces the old one: this module owns the **definitions** (what counts as a
+  failure, what a request position is, where a run begins and ends), the consumer owns the
+  arithmetic. The tool-packages-must-not-import-each-other rule is unchanged and kept.
+- IV. Minimal, Explicit Dependencies — the `github.com/caio/go-tdigest` pre-approval is removed. It
+  existed for percentiles in `stats/`; with the arithmetic gone so is the reason. `go.mod` naming no
+  requirement is now the intended steady state rather than a property of a young module.
 
-Modified sections:
-- Quality Gates & Tooling — the gate table's "CI job" column named jobs (static, test, deps) that
-  the verification pipeline replaces, and listed seven gates where the pipeline runs ten. Renamed
-  to the jobs that will exist (quick, lint, test, e2e, deps, vuln, coverage) and extended with the
-  end-to-end, vulnerability and coverage gates. This matters because the constitution is the
-  tie-break document: a reviewer enforcing "green on all CI jobs" from a stale table would not know
-  the end-to-end gate is part of the required set.
+Modified sections: none. Added sections: none. Removed sections: none. Renamed principles: none.
 
-Why now: Principle III already required statistics to be compared against the tool's own report,
-but never said that report must be committed when the run is recorded — the half that cannot be
-fixed later. An archived run cannot be re-run, and Gatling stopped producing statistics reports
-in 3.13.5, so a run recorded without its report can never prove a decoder's numbers. Surfaced by
-specs/001-ci-release-automation (FR-031, FR-032) while designing the end-to-end corpus harness.
+Why now: statistics belong in `galaxio-cli`, decided 2026-09-05, and the arithmetic moved there in
+the same change (parsec#9 into galaxio-cli#51, parsec#12 to galaxio-cli#61).
 
-Added sections: none. Removed sections: none. Renamed principles: none.
+The obvious objection is that three consumers would then each grow their own statistics — the
+"one statistics engine per tool" failure parsec#4 exists to prevent, moved one layer up. It does not
+land, because the two implementations are different computations rather than one duplicated:
+`galaxio-cli` summarises a finished run in one pass over an archived log, and the `comet` sidecar
+aggregates a run while it is still being written, in windows, with its own arithmetic. A single
+shared accumulator would have had to serve both and would have been shaped by neither.
+
+What still had to be protected is the part where two computations can silently disagree about *what*
+they are measuring, and that is what the new Principle I bullet pins here: what a failure is, what a
+request position is, where a run begins and ends. Divergence in arithmetic is a bug someone finds;
+divergence in definitions is two correct programs disagreeing.
 
 Templates:
-- ✅ .specify/templates/plan-template.md — Constitution Check gate III now asks for each recording's
-  own tool report, or an explicit note that the tool version produced none.
-- ✅ .specify/templates/spec-template.md — "Source Coverage" ▸ Golden corpus now states that the
-  report is captured at recording time or never.
-- ✅ .specify/templates/tasks-template.md — path conventions and the T002 corpus task now name the
-  tool report as part of the recording, with the reason.
+- ✅ .specify/templates/plan-template.md — Technical Context no longer names go-tdigest in `stats/`;
+  the Constitution Check gate for I asks about primitives rather than a statistics package; the
+  source tree drops the `stats/` line; the Complexity Tracking example no longer suggests a module
+  in `stats/`.
+- ✅ .specify/templates/spec-template.md — the percentile example FR and the percentile fidelity SC
+  are replaced: a spec for this module states what it decodes and hands over, not what it computes.
+- ✅ .specify/templates/tasks-template.md — path conventions drop `stats/`; the tolerance-test task
+  no longer points at a `stats/` file.
 - ✅ .specify/templates/checklist-template.md — no constitution references; no change.
-- ✅ .claude/skills/speckit-*/SKILL.md — every command loads this file generically; no change
-  required beyond the one known exception below. Kept on the list because it is a drift surface.
-- ✅ CLAUDE.md — loads AGENTS.md and points at the active plan; checked on every amendment.
-- ✅ .golangci.yml, doc.go, .github/workflows/ — the sources Principles III, IV and VI encode rules
-  about (coverage floors, stdlib-only, lint configuration). Listed so an amendment that changes a
-  floor or a dependency rule has a recorded pointer to the files that must move with it.
-- ✅ plan-template.md still carries one Constitution Check gate per principle plus a workflow gate;
-  adding a principle means adding its gate there, or every later plan silently skips it.
-- ✅ AGENTS.md — "Test Model" now says each run is committed together with its own Gatling report.
-- ✅ README.md — describes what is being built, not how corpora are recorded; no change required.
-- ⚠ .claude/skills/speckit-tasks/SKILL.md ("Task Generation Rules") still says tests are OPTIONAL.
-  The tasks template says REQUIRED for parsec; the skill file is spec-kit managed and reinstalled
-  on upgrade, so it is left untouched. Unchanged from v1.0.0. Patch it or accept it.
+- ✅ AGENTS.md — Structure and Architecture rewritten: no `stats/`, and the statistics sentence
+  replaced by what this module hands a consumer instead.
+- ✅ README.md — the packages table and "What it will be" no longer promise a statistics engine.
+- ✅ doc.go — the planned `stats` package is removed from the package list.
+- ✅ .github/workflows/ — the `deps` gate is unchanged and still correct; no job referenced `stats/`.
+- ✅ .golangci.yml — no reference; no change.
+- ✅ plan-template.md still carries one Constitution Check gate per principle plus a workflow gate.
 
 Follow-up TODOs:
-- CI does not yet enforce the coverage floors of Principle III (90% decoder packages, 80% overall).
-  specs/001-ci-release-automation builds the reporting half and leaves enforcement behind an
-  unpassed --enforce flag; flip it when the first decoder package lands (v0.0.2 milestone). Until
-  then reviewers check the go test -cover numbers in the PR description.
-- No corpus entry exists yet, so the new recording rule has nothing to validate against. The first
-  entry arrives with specs/001-ci-release-automation and is the first test of this rule.
+- Milestones re-scoped in the same change: v0.0.7 is now "The primitives a consumer folds" (#8);
+  v0.0.8 is retired and closed, its #9 absorbed into galaxio-cli#51; v0.1.0 keeps only the stability
+  contract (#13), its #12 moved to galaxio-cli#61. No arithmetic remains in this backlog.
+- The coverage-floor follow-up from v1.1.0 is **closed**: CI enforces the floors, and the first
+  decoder package landed in v0.0.2 (`gatling/text`, 95.8% at v0.0.3).
 - Ratification date is the scaffold date (2026-09-02); no earlier constitution existed.
 -->
-
 # parsec Constitution
 
 ## Core Principles
@@ -70,8 +74,17 @@ Follow-up TODOs:
   (`gatling/`, `jmeter/`, `k6/`, `locust/`, `phout/`) MUST convert that tool's artefacts
   into `model` types. A tool package MUST NOT export a result type of its own for
   consumers to depend on.
-- `stats/` MUST consume `model` types only and MUST NOT import a tool package. Tool
-  packages MUST NOT import each other; shared helpers live in `model/` or `internal/`.
+- **This module computes no statistic.** It decodes artefacts into `model` types and
+  offers the primitives a consumer needs to compute from them — the position a sample was
+  recorded at, the bounds of the run, the outcome predicate, and a way to walk the stream.
+  It MUST NOT export a count, a mean, a percentile, a range or a per-interval series.
+  Those are the consumer's, and `galaxio-cli` is where they are computed.
+- What this module owns is the **definitions**, not the arithmetic: what counts as a
+  failure, what a request position is, and where a run begins and ends. Those are what
+  two implementations diverge on, and they are cheap to keep in one place. A number
+  derived from them is not.
+- Tool packages MUST NOT import each other; shared helpers live in `model/` or
+  `internal/`.
 - What a source cannot provide MUST be declared through `Capabilities`, never faked. A
   value the source does not carry is reported as absent; it is never filled with a zero,
   an average or a guess. Consumers decide how to render absence.
@@ -146,8 +159,10 @@ numbers — a gap no amount of later work can close.
 - Any other package MAY use a third-party module only when the plan names it, explains
   why the standard library is insufficient and records the decision in `research.md`.
   Adding or upgrading a dependency requires asking first (see Development Workflow).
-- The one pre-approved third-party module is `github.com/caio/go-tdigest`, for
-  percentiles in `stats/`.
+- **No third-party module is pre-approved.** `github.com/caio/go-tdigest` was, for
+  percentiles in a statistics package this module no longer has; with the arithmetic gone
+  so is the reason. `go.mod` naming no requirement is the intended steady state, not an
+  accident of the module being young.
 - `go.mod` is dependency truth: `go mod tidy` MUST leave the tree unchanged, and `main`
   carries no `replace` directive.
 
@@ -288,4 +303,4 @@ contradict.
   re-reads Principles I–VI against the milestone's merged PRs and files an issue for
   each gap in the next milestone.
 
-**Version**: 1.1.0 | **Ratified**: 2026-09-02 | **Last Amended**: 2026-09-02
+**Version**: 2.0.0 | **Ratified**: 2026-09-02 | **Last Amended**: 2026-09-05
