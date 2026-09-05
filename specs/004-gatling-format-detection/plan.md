@@ -69,15 +69,15 @@ that (research R11). **Measured** on the largest corpus log, arm64, Go 1.26:
 
 | | direct | dispatched | difference |
 |---|---|---|---|
-| `NewReader` + full read | ~80 µs, 40 allocs | ~75 µs, 44 allocs | **+4 allocs, +124 B**, constant |
-| `Detect`, success paths | — | 1.9–5.9 ns, **0 allocs** | — |
-| `Detect`, 14 B vs 1 MiB input | — | 5.928 ns vs 5.949 ns | input size is unreachable |
+| `NewReader` + full read | ~83 µs, 41 allocs | ~89 µs, 46 allocs | **+5 allocs, +138 B**, constant |
+| `Detect`, success paths | — | 5.2–10.7 ns, **0 allocs** | — |
+| `Detect`, 14 B vs 1 MiB input | — | 6.905 ns vs 7.030 ns | input size is unreachable |
 
-The four allocations are `io.MultiReader`, its slice, the `bytes.Reader` over the replayed head, and
-the head escaping to the heap — inherent to replaying the window, and paid once per log rather than
-per record. The plan first claimed *at most one*; the benchmark said four, and the claim was
-corrected rather than the measurement explained away. Throughput is indistinguishable: the two
-figures sit inside run-to-run noise, with the dispatched path measuring slightly faster.
+The five allocations are `io.MultiReader`, its slice, the `bytes.Reader` over the replayed head, the
+head escaping to the heap, and the clone a refusal hands back so a caller on a stream it cannot
+rewind still holds the whole log. They are paid once per log rather than per record. The plan first
+claimed *at most one*; the benchmark said four, and then five once refusals learned to return their
+bytes — the claim was corrected each time rather than the measurement explained away.
 
 Spec 002's end-to-end figures are unchanged — a 1 GB log read in under 32 MiB peak and under 60 s on
 a single core — because nothing on the decoding path moved.
@@ -99,7 +99,7 @@ no new record kind, no new capability.
 *GATE: passed before Phase 0 research; re-checked after Phase 1 design — see
 [Post-design re-check](#post-design-re-check).*
 
-Source: `.specify/memory/constitution.md` **v2.0.0**. This feature does not amend it.
+Source: `.specify/memory/constitution.md` **v2.1.0** — the version this branch itself ships, whose Engineering Guidance section was added as a result of this feature's skills review.
 
 - [x] **I. Canonical Model First** — no new result data, so nothing is added to `model/`.
       `gatling/simlog` returns `model.Run` and `model.Item` through `text.RunReader`; it exports no
