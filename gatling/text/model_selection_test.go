@@ -5,6 +5,7 @@ package text_test
 import (
 	"errors"
 	"io"
+	"math"
 	"os"
 	"path/filepath"
 	"slices"
@@ -47,9 +48,60 @@ func readItems(t *testing.T, path string) []model.Item {
 	}
 }
 
+// successesOf is the selection every statistic starts from, written once so
+// both sides of the comparison below use the same one.
+func successesOf(items []model.Item) []time.Duration {
+	var out []time.Duration
+
+	for _, it := range items {
+		if it.Kind != model.ItemSample || it.Sample.Outcome != model.OutcomeSuccess {
+			continue
+		}
+
+		d, ok := it.Sample.Duration.Get()
+		if !ok {
+			// An absent duration is not a zero one; give it a value no
+			// measurement can take so the two cannot collide in the multiset.
+			out = append(out, time.Duration(math.MinInt64))
+
+			continue
+		}
+
+		out = append(out, d)
+	}
+
+	return out
+}
+
+func sameMultiset(a, b []time.Duration) bool {
+	if len(a) != len(b) {
+		return false
+	}
+
+	count := map[time.Duration]int{}
+	for _, d := range a {
+		count[d]++
+	}
+
+	for _, d := range b {
+		count[d]--
+	}
+
+	for _, n := range count {
+		if n != 0 {
+			return false
+		}
+	}
+
+	return true
+}
+
 // The same guarantee as TestSuccessSelectionIsUnchangedByFailures, on a real
-// recording rather than a generated one: removing the failures a run actually
-// contains does not change what succeeded.
+// recording: what succeeded is the same whether or not the run's failures are
+// in the input.
+//
+// The two selections must come from two different inputs. Selecting twice from
+// one filtered slice would compare a set against itself and could not fail.
 func TestCorpusSuccessSelectionIsUnchangedByFailures(t *testing.T) {
 	t.Parallel()
 
@@ -59,23 +111,22 @@ func TestCorpusSuccessSelectionIsUnchangedByFailures(t *testing.T) {
 
 			all := readItems(t, filepath.Join(dir, "simulation.log"))
 
+			// A second input: the same run with every failed sample removed
+			// before selection, so the two selections walk different slices.
 			var withoutFailures []model.Item
 
-			okDurations := map[time.Duration]int{}
 			ok, ko := 0, 0
 
 			for _, it := range all {
 				if it.Kind != model.ItemSample {
 					withoutFailures = append(withoutFailures, it)
+
 					continue
 				}
 
 				switch it.Sample.Outcome {
 				case model.OutcomeSuccess:
 					ok++
-
-					d, _ := it.Sample.Duration.Get()
-					okDurations[d]++
 
 					withoutFailures = append(withoutFailures, it)
 				case model.OutcomeFailure:
@@ -89,29 +140,21 @@ func TestCorpusSuccessSelectionIsUnchangedByFailures(t *testing.T) {
 				t.Fatalf("the recording has %d successes and %d failures; it must have both", ok, ko)
 			}
 
-			// Selecting from the run with its failures removed must give the
-			// same multiset as selecting from the run with them present.
-			stripped := 0
+			withFailures := successesOf(all)
+			withoutAny := successesOf(withoutFailures)
 
-			for _, it := range withoutFailures {
-				if it.Kind != model.ItemSample {
-					continue
-				}
-
-				stripped++
-
-				d, _ := it.Sample.Duration.Get()
-				okDurations[d]--
+			if len(withFailures) != ok {
+				t.Errorf("selected %d successes from the whole run, counted %d", len(withFailures), ok)
 			}
 
-			if stripped != ok {
-				t.Errorf("selected %d successes with failures removed, %d with them present", stripped, ok)
+			if !sameMultiset(withFailures, withoutAny) {
+				t.Errorf("the selected successes differ once the run's %d failures are removed", ko)
 			}
 
-			for d, n := range okDurations {
-				if n != 0 {
-					t.Errorf("duration %v appears %d more times in one selection than the other", d, n)
-				}
+			// The failures really were in the first input, so the comparison
+			// above was not between two identical slices.
+			if len(all) == len(withoutFailures) {
+				t.Fatal("no failure was removed; the two inputs are the same slice")
 			}
 
 			t.Logf("%s: %d successes unchanged by the presence of %d failures", filepath.Base(dir), ok, ko)

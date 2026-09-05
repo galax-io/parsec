@@ -41,7 +41,7 @@
 
 *GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
 
-Source: `.specify/memory/constitution.md` v1.0.0. Mark each gate PASS, or FAIL with a row in
+Source: `.specify/memory/constitution.md` — cite the version in force, and re-check when a feature amends it in its own branch. Mark each gate PASS, or FAIL with a row in
 Complexity Tracking. N/A is allowed only with a one-line reason.
 
 - [ ] **I. Canonical Model First** — new or changed result data lives in `model/` types; no

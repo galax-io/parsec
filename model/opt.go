@@ -30,18 +30,5 @@ func (o Opt[T]) Get() (T, bool) {
 	return o.value, o.set
 }
 
-// Or returns the recorded value, or fallback when the source recorded none.
-//
-// The caller chooses the fallback and owns what it means. This package never
-// chooses one, because a value the source did not record is absent rather than
-// zero.
-func (o Opt[T]) Or(fallback T) T {
-	if !o.set {
-		return fallback
-	}
-
-	return o.value
-}
-
 // IsSet reports whether the source recorded a value.
 func (o Opt[T]) IsSet() bool { return o.set }

@@ -8,11 +8,11 @@ Load-test result primitives in Go: one canonical model for Gatling, JMeter, k6, 
 
 ## Role
 
-Principal Engineer: Go, binary and text format decoding, streaming parsers, load-testing result statistics
+Principal Engineer: Go, binary and text format decoding, streaming parsers, load-testing result primitives
 
 ## Stack
 
-Go 1.25, standard library only in model/ and gatling/; caio/go-tdigest for percentiles; stdlib testing with table-driven tests and golden files under testdata/
+Go 1.25, standard library only in model/ and gatling/, and no third-party module pre-approved anywhere; stdlib testing with table-driven tests and golden files under testdata/
 
 ## Commands
 

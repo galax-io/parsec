@@ -16,12 +16,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   with its length, and samples, group traversals, user events and run-level errors stream beside it.
 - `gatling/text.Capabilities`: what a Gatling text log records and what it never does, readable
   before a log is opened.
+- `model.ItemAssertion`: an opaque payload a source wrote among the events rather than ahead of
+  them. A source that writes them all in its preamble puts them on `Run.Assertions` instead; this
+  kind exists so neither placement loses them.
+- `model.FieldsKnown`: every field the package names, so a caller walks the set instead of
+  hardcoding its last constant.
 
-### Changed
-
-- The Gatling wire records (`gatling.Record`, `gatling.Header` and the rest) keep their signatures
-  and stay exported. They are documented as the log's own events rather than as a result, and the
-  canonical types are what a consumer builds on.
+The Gatling wire records (`gatling.Record`, `gatling.Header` and the rest) are unchanged and stay
+exported. They are the log's own events rather than a result; the canonical types are what a
+consumer builds on.
 
 ## [0.0.2] - 2026-09-04
 

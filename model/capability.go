@@ -62,11 +62,31 @@ const (
 	// FieldIntervalSeries is per-interval measurements over the run, as against
 	// one figure for the whole of it.
 	FieldIntervalSeries
+
+	// fieldCount is one past the last field. Every bound in this package and
+	// every test that walks the set derives from it, so a field added above is
+	// carried by the mechanism instead of falling silently outside it — the
+	// failure this sentinel exists to prevent is a field that reads as neither
+	// provided nor absent.
+	fieldCount
 )
 
-// fieldNames is indexed by Field. A field added without a name here fails
-// TestFieldStringNamesEveryField rather than printing as a number in a report.
-var fieldNames = [...]string{
+// FieldsKnown returns every field this package names, in ascending order. It is
+// what a caller — or a test asserting it has accounted for all of them — walks
+// instead of hardcoding the last constant.
+func FieldsKnown() []Field {
+	known := make([]Field, 0, fieldCount-1)
+	for f := FieldUnknown + 1; f < fieldCount; f++ {
+		known = append(known, f)
+	}
+
+	return known
+}
+
+// fieldNames is indexed by Field and sized by the sentinel, so a field added
+// without a name here is the empty string and fails TestFieldStringNamesEveryField
+// rather than printing as a number in a report.
+var fieldNames = [fieldCount]string{
 	FieldUnknown:                unknownName,
 	FieldSampleDuration:         "sample duration",
 	FieldSampleScenario:         "sample scenario",
@@ -87,8 +107,8 @@ var fieldNames = [...]string{
 
 // String returns the field's name, for a report that names what is missing.
 func (f Field) String() string {
-	if int(f) >= len(fieldNames) {
-		return fieldNames[FieldUnknown]
+	if f >= fieldCount {
+		return unknownName
 	}
 
 	return fieldNames[f]
@@ -110,7 +130,7 @@ func (f Field) String() string {
 // The zero Capabilities provides nothing, which is the honest reading of a
 // source that has said nothing about itself.
 type Capabilities struct {
-	provided [len(fieldNames)]bool
+	provided [fieldCount]bool
 }
 
 // NewCapabilities returns the capabilities of a source that provides exactly
@@ -122,7 +142,7 @@ func NewCapabilities(provided ...Field) Capabilities {
 	var c Capabilities
 
 	for _, f := range provided {
-		if f == FieldUnknown || int(f) >= len(fieldNames) {
+		if f == FieldUnknown || f >= fieldCount {
 			continue
 		}
 
@@ -134,7 +154,7 @@ func NewCapabilities(provided ...Field) Capabilities {
 
 // Provides reports whether the source records f.
 func (c Capabilities) Provides(f Field) bool {
-	if f == FieldUnknown || int(f) >= len(c.provided) {
+	if f == FieldUnknown || f >= fieldCount {
 		return false
 	}
 
@@ -148,9 +168,9 @@ func (c Capabilities) Provides(f Field) bool {
 // FieldUnknown is never named: it is the zero value rather than a measurement
 // anything could have made.
 func (c Capabilities) Absent() []Field {
-	absent := make([]Field, 0, len(c.provided))
+	absent := make([]Field, 0, fieldCount-1)
 
-	for f := FieldUnknown + 1; int(f) < len(c.provided); f++ {
+	for f := FieldUnknown + 1; f < fieldCount; f++ {
 		if !c.provided[f] {
 			absent = append(absent, f)
 		}

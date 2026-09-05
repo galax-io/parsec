@@ -52,7 +52,8 @@ immediately whether the decoder or the conversion is wrong.
 ## 3. Absence is declared, not invented (User Story 2)
 
 ```bash
-go test -run 'TestCapabilities' ./gatling/text/ ./model/ -v
+go test -run TestCapabilities ./gatling/text/ ./model/ -v
+go test -tags=integration -run TestAbsentFieldsAreNeverFilledIn ./gatling/text/ -v
 ```
 
 **Expected**: `text.Capabilities()` reports every field of research R7 as absent by name, and no
@@ -75,7 +76,8 @@ EOF
 ## 4. A failure is never counted as a success (User Story 3)
 
 ```bash
-go test -run 'TestSuccessSelectionIsStable' ./model/ -v
+go test -run TestSuccessSelectionIsUnchangedByFailures ./model/ -v
+go test -tags=integration -run TestCorpusSuccessSelectionIsUnchangedByFailures ./gatling/text/ -v
 ```
 
 **What it does**: takes a decoded run, selects the successful samples, then re-runs the selection
@@ -93,15 +95,17 @@ go test -tags=integration -run TestModelPeakMemory ./gatling/text/ -v
 go test -bench BenchmarkRunReader -benchmem -run '^$' ./gatling/text/
 ```
 
-**Expected**: peak memory under 32 MiB on a 1 GB generated log, unchanged when the log is made ten
-times larger. The benchmark's `B/op` is compared against the decoder's own recorded figure; a
+**Expected**: peak memory under 32 MiB on a 256 MiB generated log, unchanged when the log is made ten
+times larger. Both `PeakMemory` tests run in the workflow's dedicated no-race step and are skipped
+by the race and coverage steps, whose instrumentation moves the very figure they assert on. The benchmark's `B/op` is compared against the decoder's own recorded figure; a
 regression is justified in the PR or it is a bug.
 
 Chunked and whole-file agreement is inherited from the decoder and re-asserted through the model, so
 a conversion that quietly buffered would fail here:
 
 ```bash
-go test -run TestModelChunkedAgreement ./gatling/text/ -v
+go test -run TestModelChunkedFixtures ./gatling/text/ -v
+go test -tags=integration -run TestModelChunkedCorpus ./gatling/text/ -v
 ```
 
 ---
@@ -192,3 +196,11 @@ which no test passed is a failure.
   Percentiles, ranges and series are v0.0.7 and v0.0.8.
 - **No summary-only run.** `Aggregate` is v0.5.0; see the Complexity Tracking row in
   [plan.md](plan.md).
+
+---
+
+## Note on the commands above
+
+Every `go test -run` here names a test that exists. `go test -run` on a pattern that matches nothing
+prints `no tests to run` and **exits 0**, so a stale name in this file would read as a passing proof
+of something that never ran. If you rename a test, rename it here in the same change.

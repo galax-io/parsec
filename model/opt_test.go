@@ -82,24 +82,6 @@ func TestOptRecordedZeroIsNotAbsent(t *testing.T) {
 	}
 }
 
-func TestOptOrReturnsFallbackOnlyWhenUnset(t *testing.T) {
-	t.Parallel()
-
-	if got := model.Some(7).Or(99); got != 7 {
-		t.Errorf("Or on a set Opt = %d, want the value 7", got)
-	}
-
-	if got := model.Some(0).Or(99); got != 0 {
-		t.Errorf("Or on a recorded zero = %d, want 0, not the fallback", got)
-	}
-
-	var absent model.Opt[int]
-
-	if got := absent.Or(99); got != 99 {
-		t.Errorf("Or on an unset Opt = %d, want the fallback 99", got)
-	}
-}
-
 // Opt is used for durations on every sample, so it must work for a non-numeric
 // type without any special casing.
 func TestOptCarriesADuration(t *testing.T) {

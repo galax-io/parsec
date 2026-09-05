@@ -61,7 +61,15 @@ Follow-up TODOs:
   v0.0.8 is retired and closed, its #9 absorbed into galaxio-cli#51; v0.1.0 keeps only the stability
   contract (#13), its #12 moved to galaxio-cli#61. No arithmetic remains in this backlog.
 - The coverage-floor follow-up from v1.1.0 is **closed**: CI enforces the floors, and the first
-  decoder package landed in v0.0.2 (`gatling/text`, 95.8% at v0.0.3).
+  decoder package landed in v0.0.2.
+- Carried forward from v1.1.0, still unresolved: `.claude/skills/speckit-tasks/SKILL.md` says test
+  tasks are OPTIONAL, which Principle III contradicts. The file is spec-kit managed and reinstalled
+  on upgrade, so it is left alone and recorded here rather than patched — dropping the note would
+  make the drift invisible, which is why it survives this amendment.
+- `.copier-answers.yml` still records the pre-v2.0.0 Structure and Architecture text, including a
+  `stats/` package and the `go-tdigest` pre-approval. The file forbids manual edits and is rewritten
+  by `copier update`, so the fix is to answer differently at the next update; until then a template
+  update would silently revert `AGENTS.md`.
 - Ratification date is the scaffold date (2026-09-02); no earlier constitution existed.
 -->
 # parsec Constitution
@@ -225,7 +233,8 @@ Every PR MUST be green on all CI jobs before merge:
 | End-to-end | `go test -tags=integration` over the golden corpus; an empty run fails | e2e |
 | Dependency boundary | stdlib-only check on `./model/...` and `./gatling/...` | deps |
 | Vulnerabilities | `govulncheck` (pinned) over the module | vuln |
-| Coverage | per-package against the floors below | coverage |
+| Coverage | per-package against the floors below, enforced | coverage |
+| Requirements document | the corpus probe's OpenNFR document against the published schema | nfr |
 
 Local equivalents: `gofmt -w .` before every commit; `go vet ./... && go test ./...` to
 verify; `go build ./... && go test ./...` is the definition of a green commit;

@@ -57,29 +57,34 @@ func modelTally(t *testing.T, path string) tally {
 		case model.ItemSample:
 			k := statsKey{path: strings.Join(it.Sample.Groups, ","), name: it.Sample.Name}
 			c := ta.requests[k]
-			c.add(status(it.Sample.Outcome))
+			c.add(okOutcome(t, it.Sample.Outcome, it.Sample.Name))
 			ta.requests[k] = c
-			ta.global.add(status(it.Sample.Outcome))
+			ta.global.add(okOutcome(t, it.Sample.Outcome, it.Sample.Name))
 			ta.injectStart = min(ta.injectStart, it.Sample.Start.UnixMilli())
 			ta.injectEnd = max(ta.injectEnd, endAfter(it.Sample.Start, it.Sample.Duration))
 		case model.ItemGroup:
 			k := statsKey{path: strings.Join(it.Group.Groups, ",")}
 			c := ta.groups[k]
-			c.add(status(it.Group.Outcome))
+			c.add(okOutcome(t, it.Group.Outcome, strings.Join(it.Group.Groups, ",")))
 			ta.groups[k] = c
 			ta.injectStart = min(ta.injectStart, it.Group.Start.UnixMilli())
 			ta.injectEnd = max(ta.injectEnd, endAfter(it.Group.Start, it.Group.Duration))
 		case model.ItemUser:
-			if it.User.Kind == model.UserStart {
+			switch it.User.Kind {
+			case model.UserStart:
 				ta.users[gatling.EventStart]++
 				ta.injectStart = min(ta.injectStart, it.User.At.UnixMilli())
-			} else {
+			case model.UserEnd:
 				ta.users[gatling.EventEnd]++
+			case model.UserEventUnknown:
+				t.Fatalf("%s: the conversion produced a user event with no kind", it.User.Scenario)
 			}
 
 			ta.injectEnd = max(ta.injectEnd, it.User.At.UnixMilli())
 		case model.ItemError:
 			ta.errors++
+		case model.ItemAssertion:
+			// An assertion written among the events; not a measurement.
 		case model.ItemUnknown:
 			t.Fatal("the conversion produced an item of unknown kind")
 		}
@@ -88,13 +93,18 @@ func modelTally(t *testing.T, path string) tally {
 	return ta
 }
 
-// status maps an outcome back to the wire status the shared triple counts in.
-func status(o model.Outcome) gatling.Status {
-	if o == model.OutcomeSuccess {
-		return gatling.StatusOK
+// okOutcome is the model path's outcome decision. Like the wire path's, it
+// fails rather than guessing: an OutcomeUnknown means the conversion lost the
+// value, and counting it as a failure would let that corruption read as an
+// ordinary count mismatch.
+func okOutcome(t *testing.T, o model.Outcome, what string) bool {
+	t.Helper()
+
+	if o == model.OutcomeUnknown {
+		t.Fatalf("%s: the conversion produced no outcome", what)
 	}
 
-	return gatling.StatusKO
+	return o == model.OutcomeSuccess
 }
 
 // endAfter reconstructs an end timestamp from a start and a wall-clock

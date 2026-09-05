@@ -79,16 +79,16 @@ required check never reports and a documentation-only pull request is blocked fo
 | `e2e` | `go test -tags=integration -race -shuffle=on -json ./internal/e2e/...` ▸ `scripts/e2e-inventory.sh`, under `set -o pipefail` | yes |
 | `deps` | stdlib-only boundary for `./model/...` and `./gatling/...`, excluding the module's own packages | yes |
 | `vuln` | `go run golang.org/x/vuln/cmd/govulncheck@<pinned> ./...` | yes |
-| `coverage` | `go test -coverprofile` ▸ `scripts/check-coverage.sh` | **report only** until the first decoder |
+| `coverage` | `go test -coverprofile` ▸ `scripts/check-coverage.sh --enforce` | yes |
 | `nfr` | the corpus probe's OpenNFR document against the published schema, validator and schema ref both pinned | yes |
 
 `nfr` arrives with [spec 003](../../003-canonical-model/plan.md), not with this feature; it is listed
 here because this table is where a reviewer looks to learn which gates exist, and a table that omits
 a required check is worse than one that names where it came from.
 
-`coverage` writes its table to `$GITHUB_STEP_SUMMARY` and exits 0. Turning it blocking is passing
-`--enforce`; the floors (90% decoder packages, 80% overall) are already in the script. See research
-D10 and the constitution's own recorded follow-up.
+`coverage` writes its table to `$GITHUB_STEP_SUMMARY` and enforces the floors — 90% for decoder
+packages, 80% overall. It was report-only until the first decoder landed; `--enforce` was passed
+when it did, and this row was corrected to match on 2026-09-05. See research D10.
 
 Four of these rows are exact for a reason, because the obvious shorter form of each is wrong:
 

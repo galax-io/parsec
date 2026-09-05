@@ -53,11 +53,15 @@ the decoder alone runs at ~504 MB/s with 1,062,728 B/op and 28 allocs/op; the co
 and they are flat — three allocations and ~200 bytes more across the whole run, so **nothing is
 allocated per item**. Peak heap over a 256 MiB log is 5.4 MiB, unchanged at ten times the size.
 
-The throughput cost — about a third — is the `model.Item` value copied out of `Next` on every call,
-and it is accepted rather than optimised away: a 1 GB log still converts in about three seconds,
-which no stated criterion is close to, and the alternatives (an interface per kind, or a
-fill-in-place `Next(*Item)`) trade a clearer API for a number nothing needs. A regression against
-these figures is justified in the PR or it is a bug.
+The throughput cost is about a third, and its attribution was measured rather than guessed: the
+returned copy ~28%, the `Record` argument copy ~10%, and the zero-and-fill of `Item`'s 392-byte
+concatenated union ~61%. An earlier draft of this paragraph blamed the returned copy alone, which
+explains under a third of the cost. Both copies are gone — `convert` takes and fills pointers — and
+the remaining majority is the price of a consumer-facing shape whose fields mean one thing each; see
+[research.md](research.md) R3, which also corrects the claim that `Item` follows `gatling.Record`'s
+shape. It does not: that one is flattened at 152 bytes. A 1 GB log still converts in about three
+seconds, which no stated criterion is close to. A regression against these figures is justified in
+the PR or it is a bug.
 
 **Constraints**: streaming with bounded memory; a run value holds nothing that grows with the run's
 length (FR-011a); counts through the model equal counts through the wire records equal the run's own
@@ -71,7 +75,7 @@ model item kinds out, plus the run.
 
 *GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
 
-Source: `.specify/memory/constitution.md` v1.1.0.
+Source: `.specify/memory/constitution.md` v2.0.0, which this feature amends — the gates below are evaluated against the amended text, including its new Principle I rule that this module computes no statistic.
 
 **Initial evaluation (before Phase 0)** and **post-design re-evaluation (after Phase 1)** agree on
 every gate. The one gate whose reasoning changed during Phase 0 is III, noted below.
