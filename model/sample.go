@@ -28,10 +28,9 @@ func (o Outcome) String() string {
 	case OutcomeFailure:
 		return "failure"
 	case OutcomeUnknown:
-		return unknownName
-	default:
-		return unknownName
 	}
+
+	return unknownName
 }
 
 // Failure is what the source recorded about an operation that did not succeed.
@@ -98,7 +97,10 @@ type GroupSample struct {
 	// the operations the traversal enclosed, and the OpenNFR metric
 	// loadtest.group.duration. Neither is derived from the other, and a run
 	// that pauses inside a group is not charged for the pause in the second.
-	Duration          Opt[time.Duration]
+	Duration Opt[time.Duration]
+	// CumulatedDuration is the sum of the durations of the operations the
+	// traversal enclosed, and the OpenNFR metric loadtest.group.duration. It is
+	// not derived from Duration and does not include a pause.
 	CumulatedDuration Opt[time.Duration]
 	// Outcome is the group's own, not the conjunction of what it enclosed: a
 	// group can fail while every operation inside it succeeded.
@@ -125,10 +127,9 @@ func (k UserEventKind) String() string {
 	case UserEnd:
 		return "end"
 	case UserEventUnknown:
-		return unknownName
-	default:
-		return unknownName
 	}
+
+	return unknownName
 }
 
 // UserEvent is one virtual user starting or ending a scenario.

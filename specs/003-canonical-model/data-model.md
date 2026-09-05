@@ -176,9 +176,9 @@ type Warning struct {
 
 ## Item
 
-One thing the stream yields. A discriminated struct rather than an interface: it allocates nothing
-per item, and it is the shape `gatling.Record` already set, which Principle VI asks for before a new
-convention (research R3).
+One thing the stream yields. A discriminated struct rather than an interface, so that streaming a run
+allocates nothing per item. It is **not** `gatling.Record`'s shape — that one is flattened, this one
+concatenated; research R3 corrects the claim and prices the difference.
 
 ```go
 type ItemKind uint8
@@ -291,8 +291,9 @@ Stated here because a test asserts each one, not because the types enforce them 
 1. `Failure` is set if and only if `Outcome == OutcomeFailure`.
 2. No adapter emits `OutcomeUnknown`, `ItemUnknown` or `UserEventUnknown`.
 3. A field the run's `Capabilities` does not provide is unset on every item of that run.
-4. `Duration` is unset rather than negative: an end at or before the start, or at the sentinel
-   Gatling's own reader branches on, yields no duration (FR-020).
+4. `Duration` is unset rather than negative: an end *before* the start, or at the sentinel Gatling's
+   own reader branches on, yields no duration, and so does a span too large to be a `time.Duration`
+   (FR-020). An end equal to the start is a recorded zero — a measurement, not an absence.
 5. Counts through the model equal counts through the wire records equal the run's own report, for
    the run and per request name and per group (FR-018, SC-002).
 6. Selecting `OutcomeSuccess` samples returns the same multiset whatever failures the run contains

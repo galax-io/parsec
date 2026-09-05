@@ -88,8 +88,9 @@ spec:
 #
 #   The request whose URL cannot be built ("unresolvable url") never reaches the wire, so Gatling
 #   records it as an ERROR and not as a KO request. It is why the recorded log has an ERROR record
-#   at all. No OpenNFR predicate reaches it: the format counts requests, and this was not one.
-#   The 36/18 totals above are what notice if it stops happening.
+#   at all. No OpenNFR predicate reaches it: the format counts requests, and this was not one — and
+#   because it is not one, the 36/18 totals above would NOT notice it disappearing. Nothing here
+#   guards it; the canary's own error count, checked against the recorded stream, is what does.
 #
 #   Per-request percentiles. The probe exists to produce every record kind, not to be fast, and a
 #   percentile bar on six samples would fail on a loaded CI machine for a reason unrelated to what

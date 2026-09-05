@@ -88,7 +88,7 @@ jobs:
           # Not a pipeline into the inventory: `cmd | inventory || true` would take the
           # trailing `|| true` for the whole pipeline and discard the test result. The
           # status is checked on its own, and the inventory is the second reading.
-          if ! go test -tags=integration -race -shuffle=on -count=1 -skip '^TestPeakMemory$' -json ./... > e2e.json; then
+          if ! go test -tags=integration -race -shuffle=on -count=1 -skip 'PeakMemory$' -json ./... > e2e.json; then
             jq -r 'select(.Action == "output") | .Output' e2e.json | grep -E 'FAIL|panic|\.go:[0-9]+:' | tail -60
             bash scripts/e2e-inventory.sh --summary < e2e.json || true
             exit 1
@@ -98,7 +98,7 @@ jobs:
         # Apart from the step above, and without -race. The test decodes 2.8 GiB through
         # one reader in one goroutine, so the detector has nothing to observe; instrumenting
         # it costs about ninety seconds and moves the very HeapAlloc figure it asserts on.
-        run: go test -tags=integration -count=1 -run '^TestPeakMemory$' ./...
+        run: go test -tags=integration -count=1 -run 'PeakMemory$' ./...
 
   canary:
     needs: quick
@@ -121,6 +121,7 @@ jobs:
     env:
       OPENNFR_REF: v0.8.0
       DOCUMENT: testdata/corpus/gatling/simulation/src/test/resources/nfr.yaml
+      MIRROR: specs/003-canonical-model/contracts/nfr.yaml
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v6
@@ -136,6 +137,13 @@ jobs:
           curl -sfL --retry 3 \
             "https://raw.githubusercontent.com/galax-io/opennfr/${OPENNFR_REF}/schema/opennfr.io/v1/requirementset.schema.json" \
             -o /tmp/requirementset.schema.json
+      - name: the spec's copy of the document matches the one the probe runs
+        # The contract mirrors the document so a reader of the spec need not open
+        # the corpus tree. Two copies drift; this is what stops them.
+        run: |
+          set -euo pipefail
+          test -f "$MIRROR" || { echo "no mirror at $MIRROR"; exit 1; }
+          diff -u "$MIRROR" "$DOCUMENT"
       - name: the probe's requirements validate against it
         # A gate that cannot find its input reports failure rather than success:
         # a missing document reads exactly like a valid one to a bare exit code.
@@ -223,6 +231,6 @@ jobs:
         # floors blocking once the first decoder package landed, and it has.
         run: |
           set -euo pipefail
-          go test -tags=integration -count=1 -skip '^TestPeakMemory$' \
+          go test -tags=integration -count=1 -skip 'PeakMemory$' \
             -coverpkg=./... -coverprofile=cover.out ./...
           bash scripts/check-coverage.sh --enforce cover.out

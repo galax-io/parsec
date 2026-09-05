@@ -131,15 +131,33 @@ is untouched, since its substance — a run does not hold what grows — is what
 
 **Shape**: one cursor per run, mirroring the decoder that already exists
 (`Header()` + `Next() (Record, error)`), so the module has one convention rather than two:
-`Run()` returns the O(1) header, `Next()` yields a `model.Item`. `Item` is a discriminated struct
-with a `Kind`, matching the flat `gatling.Record` the codebase already uses — Principle VI asks for
-the convention already in the codebase before a new one.
+`Run()` returns the O(1) header, `Next()` yields a `model.Item` discriminated by a `Kind`.
+
+**The convention claim in this document's first draft was wrong, and is corrected here.** It said
+`Item` matches "the flat `gatling.Record` the codebase already uses". It does not. `gatling.Record`
+is a *flattened* union — 152 bytes for five kinds, because `Groups`, `Start`, `End`, `Timestamp`,
+`Status` and `Message` are reused across them. `Item` is a *concatenated* union — 392 bytes for four
+kinds, storing `Groups` twice and a timestamp four times and sharing nothing. Measured with
+`unsafe.Sizeof`: Item 392, Sample 208, GroupSample 88, UserEvent 48, RunError 40.
+
+The nested shape is kept, and now on its real premise rather than a borrowed one: this is the
+canonical, consumer-facing model, and `it.Sample.Name` reading as a sample's name is worth more here
+than in a wire record whose per-kind field table a decoder author reads once. Flattening would buy
+throughput by making every field's meaning depend on `Kind`, which is exactly what `model` exists
+not to do.
+
+**What that costs, measured rather than assumed.** Against the raw decoder over a 64 MiB synthetic
+log, the conversion loses about 41.6 ms/op. Attribution: the returned copy ~28%, the `Record`
+argument copy ~10%, and the zero-and-fill of the oversized union ~61%. `plan.md`'s first draft blamed
+the returned copy alone, which explains under a third of it. The two copies are removed — `convert`
+now takes and fills pointers — and the remaining majority is the price of the shape, paid knowingly.
 
 **Alternatives considered**: an interface per item kind (rejected — one allocation per item in the
 hot path, and SC-004 is a memory criterion); four separate typed streams (rejected — a single
 `io.Reader` cannot be read four times, so three of them would have to buffer, which is the thing
 being avoided); `iter.Seq2` (rejected for the same single-pass reason, and it hides the error until
-the range ends).
+the range ends); flattening `Item` to `gatling.Record`'s shape (rejected above, with the measurement
+that prices it).
 
 ---
 

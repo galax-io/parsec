@@ -34,7 +34,7 @@ func TestCapabilitiesUnknownFieldIsAbsent(t *testing.T) {
 
 	var empty model.Capabilities
 
-	for f := model.FieldUnknown; f <= model.FieldIntervalSeries; f++ {
+	for _, f := range append([]model.Field{model.FieldUnknown}, model.FieldsKnown()...) {
 		if empty.Provides(f) {
 			t.Errorf("the zero Capabilities provides %v", f)
 		}
@@ -120,9 +120,10 @@ func TestCapabilitiesAbsentIsNotAliased(t *testing.T) {
 func TestFieldStringNamesEveryField(t *testing.T) {
 	t.Parallel()
 
-	seen := make(map[string]model.Field, int(model.FieldIntervalSeries)+1)
+	known := model.FieldsKnown()
+	seen := make(map[string]model.Field, len(known)+1)
 
-	for f := model.FieldUnknown; f <= model.FieldIntervalSeries; f++ {
+	for _, f := range append([]model.Field{model.FieldUnknown}, known...) {
 		s := f.String()
 		if s == "" {
 			t.Errorf("field %d has an empty name", int(f))
@@ -133,5 +134,38 @@ func TestFieldStringNamesEveryField(t *testing.T) {
 		}
 
 		seen[s] = f
+	}
+}
+
+// Every field this package names is reachable by the mechanism: declarable,
+// queryable, and reportable as absent. A field added to the enum without being
+// carried by the bounds would read as neither provided nor absent, which is the
+// one state Capabilities must never produce.
+func TestEveryKnownFieldIsReachable(t *testing.T) {
+	t.Parallel()
+
+	known := model.FieldsKnown()
+	if len(known) == 0 {
+		t.Fatal("FieldsKnown named nothing")
+	}
+
+	absent := model.NewCapabilities().Absent()
+	if len(absent) != len(known) {
+		t.Errorf("a source that provides nothing reports %d absent fields, but %d are known",
+			len(absent), len(known))
+	}
+
+	for _, f := range known {
+		if !slices.Contains(absent, f) {
+			t.Errorf("%v is known but never reported absent", f)
+		}
+
+		if !model.NewCapabilities(f).Provides(f) {
+			t.Errorf("%v is known but cannot be declared provided", f)
+		}
+
+		if f.String() == "unknown" {
+			t.Errorf("field %d is known but has no name", int(f))
+		}
 	}
 }

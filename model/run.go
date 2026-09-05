@@ -30,7 +30,11 @@ func (w Warning) String() string { return w.Version + ": " + w.Reason }
 // Assertions stays here because a source writes one per declared requirement —
 // a handful, however long the run.
 type Run struct {
-	// ID is the identifier the tool assigned this run.
+	// ID is the identifier the source recorded for this run.
+	//
+	// It is not guaranteed unique: Gatling, for one, records the simulation's
+	// identifier, so every run of one simulation carries the same string. A
+	// consumer keying stored results by run needs ID and Start together.
 	ID string
 	// Name is the simulation or scenario the run executed.
 	Name string
@@ -66,6 +70,11 @@ const (
 	ItemUser
 	// ItemError selects Item.Error.
 	ItemError
+	// ItemAssertion selects Item.Assertion. A source that writes its opaque
+	// payloads before the run's events puts them all on [Run.Assertions]; one
+	// that writes them among the events yields them here, so that neither
+	// placement loses them.
+	ItemAssertion
 )
 
 // String returns "sample", "group", "user", "error" or "unknown".
@@ -79,11 +88,12 @@ func (k ItemKind) String() string {
 		return "user"
 	case ItemError:
 		return "error"
+	case ItemAssertion:
+		return "assertion"
 	case ItemUnknown:
-		return unknownName
-	default:
-		return unknownName
 	}
+
+	return unknownName
 }
 
 // Item is one thing a run's stream yields.
@@ -105,4 +115,8 @@ type Item struct {
 	User UserEvent
 	// Error is meaningful when Kind is ItemError.
 	Error RunError
+	// Assertion is meaningful when Kind is ItemAssertion: one opaque payload,
+	// verbatim, exactly as [Run.Assertions] carries the ones written before the
+	// events. This module does not decode or interpret it.
+	Assertion string
 }

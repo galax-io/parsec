@@ -1,6 +1,7 @@
 package model_test
 
 import (
+	"math"
 	"math/rand/v2"
 	"testing"
 	"time"
@@ -182,6 +183,21 @@ func slicesCloneItems(in []model.Item) []model.Item {
 	return out
 }
 
+// absentDuration stands in for a sample the source recorded no duration for. It
+// is a value no measurement can take, so an absent duration and a recorded zero
+// cannot collide in the multiset — which is the one distinction Opt exists to
+// keep, and the one a bare `d, _ := …Get()` would throw away.
+const absentDuration = time.Duration(math.MinInt64)
+
+func durationOf(s model.Sample) time.Duration {
+	d, ok := s.Duration.Get()
+	if !ok {
+		return absentDuration
+	}
+
+	return d
+}
+
 // sameDurations compares two selections as multisets of duration, which is what
 // a percentile is computed over.
 func sameDurations(a, b []model.Sample) bool {
@@ -192,13 +208,11 @@ func sameDurations(a, b []model.Sample) bool {
 	count := map[time.Duration]int{}
 
 	for _, s := range a {
-		d, _ := s.Duration.Get()
-		count[d]++
+		count[durationOf(s)]++
 	}
 
 	for _, s := range b {
-		d, _ := s.Duration.Get()
-		count[d]--
+		count[durationOf(s)]--
 	}
 
 	for _, n := range count {

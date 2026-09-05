@@ -39,10 +39,10 @@ func (o Outcome) String() string
 //
 // Opt says this record does not carry the value. Capabilities says the source
 // never records it. Neither implies the other, which is why both exist.
-type Opt[T any] struct { /* unexported */ }
+type Opt[T comparable] struct { /* unexported */ }
 
 // Some returns an Opt holding v.
-func Some[T any](v T) Opt[T]
+func Some[T comparable](v T) Opt[T]
 
 // Get returns the value and whether it was set.
 func (o Opt[T]) Get() (T, bool)
@@ -194,6 +194,10 @@ func (w Warning) String() string
 // than the memory available to hold it. A consumer that needs all of one kind
 // at once collects it and owns that memory.
 type Run struct {
+    // ID is the identifier the source recorded for this run. It is not
+    // guaranteed unique: Gatling records the simulation's identifier, so every
+    // run of one simulation carries the same string, and a consumer keying
+    // stored results by run needs ID and Start together.
     ID          string
     Name        string
     Description string
@@ -206,7 +210,9 @@ type Run struct {
 
     Capabilities Capabilities
 
-    // Warnings is empty for a version the project has a recording for.
+    // Warnings is nil for a version the project has a recording for. Every
+    // slice on a Run is the caller's own; mutating one cannot disturb another
+    // caller or the reader.
     Warnings []Warning
 
     // Assertions is the opaque payloads the source wrote, one per declared
@@ -227,6 +233,9 @@ const (
     ItemGroup
     ItemUser
     ItemError
+    // ItemAssertion selects Item.Assertion: an opaque payload a source wrote
+    // among the events rather than ahead of them.
+    ItemAssertion
 )
 
 // String returns "sample", "group", "user", "error" or "unknown".
@@ -243,6 +252,9 @@ type Item struct {
     Group  GroupSample // valid when Kind is ItemGroup
     User   UserEvent   // valid when Kind is ItemUser
     Error  RunError    // valid when Kind is ItemError
+
+    // Assertion is meaningful when Kind is ItemAssertion.
+    Assertion string
 }
 ```
 
@@ -270,6 +282,12 @@ const (
     FieldRequirements
     FieldIntervalSeries
 )
+
+// FieldsKnown returns every field this package names, in ascending order. A
+// caller — or a test asserting it has accounted for all of them — walks this
+// rather than hardcoding the last constant, so a field added later is carried
+// by the mechanism instead of falling silently outside it.
+func FieldsKnown() []Field
 
 // String returns the field's name, for a report that names what is missing.
 func (f Field) String() string

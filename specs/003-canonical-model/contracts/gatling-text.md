@@ -79,7 +79,7 @@ func Capabilities() model.Capabilities
 | Wire record | Item | Notes |
 |---|---|---|
 | `RUN` | — | Becomes `Run`; never an item. |
-| `ASSERTION` | — | Becomes `Run.Assertions`, verbatim. |
+| `ASSERTION` | — or `ItemAssertion` | A payload in the preamble becomes `Run.Assertions`, verbatim. One written among the events — which only a version above the gate can do — is yielded as `ItemAssertion` rather than dropped. |
 | `REQUEST` | `ItemSample` | `Groups`, `Name`, `Start`, `Duration` from start/end, `Outcome`, `Failure` from the recorded message. |
 | `GROUP` | `ItemGroup` | `Groups`, `Start`, `Duration` (wall clock, from start and end), `CumulatedDuration`, `Outcome`. Two different quantities, and the record carries both. |
 | `USER` | `ItemUser` | `Scenario`, `Kind`, `At`. |
@@ -96,10 +96,14 @@ deterministically. No value is rounded or re-based against the run's start.
 
 ### Durations, and the sentinel
 
-`Duration` is `end - start`, and is **unset** rather than negative or enormous when the end is at or
-before the start, or equals the sentinel Gatling's own reader branches on (the minimum signed 64-bit
-integer). Whether a 3.11.5 or 3.12.0 run can actually produce the sentinel is unconfirmed; the
-conversion does not assume it cannot.
+`Duration` is `end - start`, and is **unset** rather than negative when the end is *before* the start
+or equals the sentinel Gatling's own reader branches on (the minimum signed 64-bit integer). An end
+equal to the start is a recorded zero, which is a measurement rather than an absence.
+
+A span is also unset when it is too large to be a `time.Duration`, which counts nanoseconds in an
+int64: anything past `MaxInt64 / 1e6` milliseconds would wrap to a negative. The same bound guards a
+group's cumulated response time. The log is untrusted input and its timestamps are unbounded, so the
+limit is checked rather than assumed.
 
 ### Failure
 
@@ -107,8 +111,12 @@ A `KO` request yields `Outcome == OutcomeFailure` and a `Failure` whose `Message
 recorded, character for character. `Type` is empty and `FieldSampleFailureType` is declared absent:
 Gatling text records a free-text message, not a classification, and inventing one would be faking.
 
-An exception-backed failure produces **both** a failed sample and a separate `ItemError`, because
-Gatling writes both. Neither is derived from the other.
+A run-level error is **not** the partner of a failed sample. In both recorded corpus entries the two
+sets are disjoint: 18 KO requests (`GET /fail`, `connect refused`, `unknown host` — six each) against
+exactly 6 `ERROR` records, which are the six requests whose URL could not be built and which
+therefore never reached the wire and produced no `REQUEST` record at all. A connection failure yields
+a KO request and no error record. Neither kind is derived from the other, and a consumer must not
+de-duplicate one against the other.
 
 ---
 

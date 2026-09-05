@@ -52,7 +52,7 @@ so a log larger than memory still reads.
 The log's own wire records are still there and still exported: they are the format's events rather
 than a result, and the binary codec will share them. Build on `model/`.
 
-Everything else in the table above is unimplemented.
+Every source in the table above except the Gatling text log is unimplemented.
 
 ## What this library will not do
 

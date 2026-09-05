@@ -119,10 +119,13 @@ func firstDiff(got, want []byte) string {
 // triple is the total/ok/ko split Gatling reports every count and rate in.
 type triple struct{ total, ok, ko int64 }
 
-func (c *triple) add(s gatling.Status) {
+// add counts one recorded operation. It takes the outcome already decided by
+// the caller rather than a status, so neither the wire path nor the model path
+// can quietly fold a value it failed to decode into a real category.
+func (c *triple) add(isOK bool) {
 	c.total++
 
-	if s == gatling.StatusOK {
+	if isOK {
 		c.ok++
 	} else {
 		c.ko++
@@ -183,15 +186,15 @@ func decodeTally(t *testing.T, path string) tally {
 		case gatling.KindRequest:
 			k := statsKey{path: strings.Join(rec.Groups, ","), name: rec.Name}
 			c := ta.requests[k]
-			c.add(rec.Status)
+			c.add(okStatus(t, rec.Status, rec.Line))
 			ta.requests[k] = c
-			ta.global.add(rec.Status)
+			ta.global.add(okStatus(t, rec.Status, rec.Line))
 			ta.injectStart = min(ta.injectStart, rec.Start)
 			ta.injectEnd = max(ta.injectEnd, rec.End)
 		case gatling.KindGroup:
 			k := statsKey{path: strings.Join(rec.Groups, ",")}
 			c := ta.groups[k]
-			c.add(rec.Status)
+			c.add(okStatus(t, rec.Status, rec.Line))
 			ta.groups[k] = c
 			ta.injectStart = min(ta.injectStart, rec.Start)
 			ta.injectEnd = max(ta.injectEnd, rec.End)
@@ -367,4 +370,16 @@ func maskedSorted(t *testing.T, dir string) []string {
 	slices.Sort(lines)
 
 	return lines
+}
+
+// okStatus is the wire path's outcome decision, and fails the read rather than
+// guessing when the decoder produced no status at all.
+func okStatus(t *testing.T, s gatling.Status, line int) bool {
+	t.Helper()
+
+	if s == gatling.StatusUnknown {
+		t.Fatalf("line %d: the decoder produced a record with no status", line)
+	}
+
+	return s == gatling.StatusOK
 }
