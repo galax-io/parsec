@@ -1,0 +1,96 @@
+# What the corpus probe must produce, stated once.
+#
+# This is the only place the probe's expectations are written. The Gatling assertions the run
+# evaluates are rendered from this file by OpenNfrAssertions.fromYaml; changing a number here
+# changes what every supported Gatling version is held to, and no Scala file is edited to do it.
+#
+# The numbers are exact on purpose. Six virtual users each make three requests that must succeed
+# and three that must fail. A broken environment — the stub down, an "invalid" domain that
+# resolves — then fails this run itself, instead of producing a log that is merely consistent with
+# its own report. The corpus is recorded from this run, so a log that passed a vaguer bar would be
+# evidence of nothing.
+#
+# Two spellings in here are not typos, and both are explained where they appear.
+
+apiVersion: opennfr.io/v1
+kind: RequirementSet
+metadata:
+  name: parsec-corpus-probe
+  displayName: What the corpus probe must produce
+
+spec:
+  requirements:
+    - name: whole-run
+      displayName: The run as a whole
+      selector: {}
+      criteria:
+        # 36 recorded requests, 18 of them failures. The probe's Scala DSL said this as
+        # "18 successful, 18 failed"; a selector matches presence and never absence, so a fraction
+        # can name what failed and cannot name what did not, and `good` is refused for that reason.
+        # A total plus a failure count is the same statement about the same run.
+        - {name: recorded-requests, displayName: Recorded requests, aggregation: count, op: eq, threshold: 36, unit: "{request}"}
+        - {name: failed-requests, displayName: Failed requests, bad: {error.type: "*"}, aggregation: count, op: eq, threshold: 18, unit: "{request}"}
+        # A ceiling, not a performance target: it exists so a hung environment fails the recording
+        # rather than producing a log with a plausible shape.
+        - {name: slowest, displayName: Slowest response, metric: loadtest.request.duration, aggregation: max, op: lt, threshold: 60000, unit: ms}
+
+    - name: root-ok
+      displayName: The root GET /ok never fails
+      selector: {loadtest.request.name: GET /ok}
+      criteria:
+        - {name: none-failed, bad: {error.type: "*"}, aggregation: rate, op: eq, threshold: 0, unit: "%"}
+
+    # The same request name inside a group is a different position, and states its own requirement.
+    - name: outer-ok
+      displayName: GET /ok inside outer never fails
+      selector: {loadtest.group.name: [outer], loadtest.request.name: GET /ok}
+      criteria:
+        - {name: none-failed, bad: {error.type: "*"}, aggregation: rate, op: eq, threshold: 0, unit: "%"}
+
+    # "inner  with comma" carries TWO spaces, and that is deliberate.
+    #
+    # The simulation declares the group as `inner, with comma`. Gatling replaces the comma with a
+    # space as it writes the log, and builds both its statistics and its assertion paths from what
+    # it wrote — so the recorded name is "inner" + space + space + "with comma". Assertions are
+    # addressed by recorded names, and the renderer applies no substitution, so the declared
+    # spelling here would match nothing and pass vacuously.
+    #
+    # The group keeps its comma on purpose: spec 002 requires a corpus run to contain one, because
+    # it is what proves the decoder's split on comma is lossless. Teaching the renderer the
+    # substitution belongs upstream in gatling-picatinny, not here.
+    - name: inner-slow
+      displayName: GET /slow two groups deep never fails
+      selector: {loadtest.group.name: [outer, "inner  with comma"], loadtest.request.name: GET /slow}
+      criteria:
+        - {name: none-failed, bad: {error.type: "*"}, aggregation: rate, op: eq, threshold: 0, unit: "%"}
+
+    - name: inner-fail
+      displayName: GET /fail two groups deep always fails
+      selector: {loadtest.group.name: [outer, "inner  with comma"], loadtest.request.name: GET /fail}
+      criteria:
+        - {name: all-failed, bad: {error.type: "*"}, aggregation: rate, op: eq, threshold: 100, unit: "%"}
+
+    # Two ways to crash a request before any response exists. Both must fail every time; between
+    # them they are what puts an exception-backed failure in the recorded log.
+    - name: connect-refused
+      displayName: The closed port always fails
+      selector: {loadtest.request.name: connect refused}
+      criteria:
+        - {name: all-failed, bad: {error.type: "*"}, aggregation: rate, op: eq, threshold: 100, unit: "%"}
+
+    - name: unknown-host
+      displayName: The unresolvable host always fails
+      selector: {loadtest.request.name: unknown host}
+      criteria:
+        - {name: all-failed, bad: {error.type: "*"}, aggregation: rate, op: eq, threshold: 100, unit: "%"}
+
+# Deliberately not stated here, and each for a reason:
+#
+#   The request whose URL cannot be built ("unresolvable url") never reaches the wire, so Gatling
+#   records it as an ERROR and not as a KO request. It is why the recorded log has an ERROR record
+#   at all. No OpenNFR predicate reaches it: the format counts requests, and this was not one.
+#   The 36/18 totals above are what notice if it stops happening.
+#
+#   Per-request percentiles. The probe exists to produce every record kind, not to be fast, and a
+#   percentile bar on six samples would fail on a loaded CI machine for a reason unrelated to what
+#   this document is protecting.
