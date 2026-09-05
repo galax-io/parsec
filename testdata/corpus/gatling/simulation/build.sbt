@@ -12,6 +12,6 @@ lazy val root = (project in file("."))
       ),
     ),
     name := "corpus",
-    libraryDependencies ++= gatling,
+    libraryDependencies ++= gatling ++ picatinny,
     scalacOptions ++= Seq("-encoding", "UTF-8", "-deprecation", "-feature", "-unchecked"),
   )
