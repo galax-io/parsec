@@ -38,6 +38,7 @@ page() { case "$args" in *--slurp*) jq -c '[.]' < "$1" ;; *) cat "$1" ;; esac | 
 
 case "$args" in
   "pr view 77 "*) emit < "$GH_FIXTURE/pr77.json" ;;
+  "pr view 99 "*) emit < "$GH_FIXTURE/pr99.json" ;;
   *"/milestones?state="*) page "$GH_FIXTURE/milestones.json" ;;
   *"/milestones/"*)
       n="${args##*/milestones/}"; n="${n%% *}"
@@ -49,6 +50,14 @@ case "$args" in
   *"/compare/"*)
       if [ -f "$GH_FIXTURE/compare.json" ]; then page "$GH_FIXTURE/compare.json"
       else printf '{"commits":[]}\n' | page /dev/stdin; fi ;;
+  *"/git/ref/tags/"*)
+      # The tag exists only when the fixture says so, which is what makes the
+      # "audit up to HEAD" branch reachable in a test.
+      if [ -f "$GH_FIXTURE/tagref.json" ]; then emit < "$GH_FIXTURE/tagref.json"; else exit 1; fi ;;
+  *"/commits/"*"/pulls"*)
+      sha="${args##*/commits/}"; sha="${sha%%/pulls*}"
+      f="$GH_FIXTURE/pulls-$sha.json"
+      if [ -f "$f" ]; then emit < "$f"; else printf '[]\n' | emit; fi ;;
   "pr view "*)   emit < "$GH_FIXTURE/pr.json" ;;
   "issue view "*) emit < "$GH_FIXTURE/issue.json" ;;
   *) printf 'gh stub: unhandled call: %s\n' "$args" >&2; exit 1 ;;
@@ -121,14 +130,31 @@ r=$(fixture range '[{"number":1,"title":"v0.0.2 Second","state":"open"}]' "$ITEM
 printf '{"number":10,"title":"t","state":"MERGED","milestone":{"title":"v0.0.2 Second"},"closingIssuesReferences":[{"number":11}],"body":""}\n' > "$r/pr.json"
 printf '{"milestone":{"title":"v0.0.2 Second"}}\n' > "$r/issue.json"
 printf '{"tag_name":"v0.0.1"}\n' > "$r/latest.json"
-printf '{"commits":[{"commit":{"message":"feat(x): thing (#10)"}},{"commit":{"message":"fix(y): other (#77)"}}]}\n' > "$r/compare.json"
-# PR #77 is in the range but not in the milestone, and the stub reports it milestone-less.
+printf '{"id":"x"}\n' > "$r/tagref.json"
+printf '{"commits":[{"sha":"aaa","commit":{"message":"feat(x): thing (#99)"}},{"sha":"bbb","commit":{"message":"fix(y): other (#77)"}}]}\n' > "$r/compare.json"
+# The commit subjects name issues #99 and #77 — this repository's convention puts
+# the issue number there. Commit aaa belongs to no pull request at all, so an audit
+# that read its subject would look up #99, find no milestone on it, and refuse a
+# release for a pull request that does not exist. Commit bbb really is in PR #77,
+# which really does lack a milestone, and that one must still be caught.
+printf '[]\n' > "$r/pulls-aaa.json"
+printf '{"number":99,"title":"an issue, not a PR","state":"MERGED","milestone":null,"closingIssuesReferences":[],"body":""}\n' > "$r/pr99.json"
+printf '[{"number":77}]\n' > "$r/pulls-bbb.json"
 printf '{"number":77,"title":"stray","state":"MERGED","milestone":null,"closingIssuesReferences":[],"body":""}\n' > "$r/pr77.json"
 out=$(GH_FIXTURE="$r" PATH="$tmp/bin:$PATH" REPO="acme/thing" bash "$script" --for-tag v0.0.2 2>&1)
 if grep -q "PR #77 merged since v0.0.1" <<<"$out"; then
   ok "sees a PR merged in the range that the milestone query cannot"
 else
   bad "range audit missed an unmilestoned merged PR" "$(tail -4 <<<"$out")"
+fi
+
+# The regression this release exposed: the audit used to read "(#NNN)" out of the
+# commit subjects, but AGENTS.md puts the *issue* number there, so every issue was
+# reported as a pull request carrying no milestone and no correct release could pass.
+if grep -q "PR #99 merged since" <<<"$out"; then
+  bad "range audit reads issue numbers out of commit subjects as PRs" "$(grep 'PR #99 merged since' <<<"$out")"
+else
+  ok "does not mistake an issue number in a commit subject for a pull request"
 fi
 
 printf '\n%d passed, %d failed\n' "$pass" "$fail"

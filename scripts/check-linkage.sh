@@ -244,12 +244,27 @@ if [ "$TAG_MODE" = 1 ]; then
   if [ -z "$prev_tag" ]; then
     ok "no previous release - $FOR_TAG is the first, nothing precedes it"
   else
-    # One paginated compare call, then PR numbers out of the commit subjects. This
-    # repository's convention puts them there ("feat(scope): ... (#NNN)"), and a
-    # squash merge adds them on its own.
-    range_prs=$(gh api --paginate --slurp "repos/$REPO/compare/$prev_tag...$FOR_TAG" 2>/dev/null \
-                 | jq -r 'add | .commits[].commit.message' \
-                 | grep -oE '\(#[0-9]+\)' | grep -oE '[0-9]+' | sort -un || true)
+    # The range end is the tag when it exists and HEAD when it does not. Before the
+    # push there is no tag to compare against, and comparing to a ref that 404s
+    # makes this whole section vacuous — which is how the one check that gates the
+    # push came to be the one check the pre-push run cannot exercise.
+    range_end="$FOR_TAG"
+    if ! gh api "repos/$REPO/git/ref/tags/${FOR_TAG#refs/tags/}" >/dev/null 2>&1; then
+      range_end=$(git rev-parse HEAD 2>/dev/null || echo "")
+      [ -n "$range_end" ] && printf '  (%s does not exist yet; auditing up to HEAD)\n' "$FOR_TAG"
+    fi
+
+    # Which pull requests contain each commit, asked of GitHub rather than read out
+    # of the commit subjects. The subjects carry "(#NNN)", but this repository's
+    # convention (AGENTS.md, "1 issue = 1 commit") makes that the *issue* number —
+    # so scanning them reports every issue as a milestone-less pull request, which
+    # is a refusal no correct release can avoid.
+    range_shas=$(gh api --paginate --slurp "repos/$REPO/compare/$prev_tag...$range_end" 2>/dev/null \
+                  | jq -r 'add | .commits[].sha' 2>/dev/null || true)
+
+    range_prs=$(for sha in $range_shas; do
+                  gh api "repos/$REPO/commits/$sha/pulls" --jq '.[].number' 2>/dev/null || true
+                done | sort -un)
 
     audited=" $(echo $pr_numbers) "   # collapse newlines; already checked above
     unseen=0
@@ -270,8 +285,10 @@ if [ "$TAG_MODE" = 1 ]; then
       fi
     done
 
-    if [ -z "$range_prs" ]; then
-      warn "no pull requests identified between $prev_tag and $FOR_TAG"
+    if [ -z "$range_shas" ]; then
+      err "no commits found between $prev_tag and $range_end — the range could not be read, so nothing was audited"
+    elif [ -z "$range_prs" ]; then
+      warn "commits between $prev_tag and $range_end belong to no pull request"
     elif [ "$unseen" = 0 ]; then
       ok "every PR merged since $prev_tag carries milestone '$ms_title'"
     fi
