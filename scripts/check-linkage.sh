@@ -56,6 +56,32 @@ while [ $# -gt 0 ]; do
   shift
 done
 
+# Which conventional-commit types must close a tracked issue.
+#
+# The constitution says "Every issue a PR fixes MUST be closed when the PR lands
+# on main" — a rule about the issues a PR has, not a requirement that it have
+# one. Some work legitimately has none, and the same document creates it: spec
+# artifacts land as `docs(speckit): …` before any feat commit, a constitution
+# amendment is its own PR, and a refactor outside an issue's scope is explicitly
+# sent to a PR of its own. Demanding a link from those means opening a
+# placeholder issue to satisfy a check, which is bookkeeping wearing the costume
+# of traceability.
+#
+# What does need one is the work a milestone is a manifest of — a feature, a fix,
+# a performance change — because "1 issue = 1 commit" maps those onto tracked
+# issues one for one, and a release whose notes miss one is a release that lies
+# about what shipped.
+#
+# Every PR still needs a milestone, without exception. That rule is unconditional
+# in the constitution and stays unconditional here.
+needs_closing_link() { # needs_closing_link <pr title> -> 0 when a link is required
+  local type=${1%%[:(]*}
+  case "$type" in
+    feat|fix|perf) return 0 ;;
+    *)             return 1 ;;
+  esac
+}
+
 # Gate one PR (the merge gate). Fails if the PR is missing a milestone, closes no
 # issue, or closes an issue in a different milestone. Strict: requires a registered
 # GitHub closing link (no body-text fallback — that lenient path is audit-mode only).
@@ -70,7 +96,11 @@ if [ -n "$PR_NUM" ]; then
   if [ -z "$p_ms" ]; then printf '  ✗ no milestone — assign one (gh pr edit %s --milestone "…")\n' "$PR_NUM"; e=1
   else printf '  ✓ milestone: %s\n' "$p_ms"; fi
   if [ -z "$p_closes" ]; then
-    printf '  ✗ closes no issue — add "Closes #<issue>" to the PR body\n'; e=1
+    if needs_closing_link "$p_title"; then
+      printf '  ✗ closes no issue — add "Closes #<issue>" to the PR body\n'; e=1
+    else
+      printf '  ✓ closes no issue (not required for this change type)\n'
+    fi
   else
     for i in $p_closes; do
       i_ms=$(gh issue view "$i" --repo "$REPO" --json milestone -q '.milestone.title // ""' 2>/dev/null || echo "")
@@ -183,7 +213,21 @@ for pr in $pr_numbers; do
   fi
 
   if [ -z "$ref_nums" ]; then
-    err "PR #$pr ($pr_state) closes no issue — add 'Closes #<issue>': $pr_title"
+    if needs_closing_link "$pr_title"; then
+      err "PR #$pr ($pr_state) closes no issue — add 'Closes #<issue>': $pr_title"
+    fi
+
+    # Still has to be merged before the tag, and still has to carry the
+    # milestone; only the closing link is waived. Reported either way, so a
+    # waived PR reads as checked rather than as one the audit forgot.
+    if [ "$TAG_MODE" = 1 ] && [ "$pr_state" != "MERGED" ]; then
+      err "PR #$pr is $pr_state — must be MERGED before tagging: $pr_title"
+    elif needs_closing_link "$pr_title"; then
+      : # already reported above
+    else
+      ok "PR #$pr ($pr_state) → closes no issue (not required for this change type)"
+    fi
+
     continue
   fi
 
