@@ -27,6 +27,37 @@ type canaryRun struct {
 func canaryRuns(t *testing.T) []canaryRun {
 	t.Helper()
 
+	runs := allRuns(t)
+
+	var mine []canaryRun
+
+	for _, run := range runs {
+		format, err := detectFormat(filepath.Join(run.dir, "simulation.log"))
+		if err != nil {
+			t.Fatalf("Gatling %s left no readable log: %v", run.version, err)
+		}
+
+		if format == gatling.FormatText {
+			mine = append(mine, run)
+		}
+	}
+
+	if len(mine) == 0 {
+		t.Skipf("PARSEC_CANARY_RUNS names no run whose simulation.log is a text one")
+	}
+
+	return mine
+}
+
+// allRuns is every run the value names, of either format and any version.
+//
+// The range gate reads this rather than canaryRuns. Filtering to this codec's
+// own runs first is what let a version list carrying no text run skip the text
+// codec's gate entirely, so trimming the workflow's matrix stopped a codec being
+// canaried while the build stayed green.
+func allRuns(t *testing.T) []canaryRun {
+	t.Helper()
+
 	spec := os.Getenv("PARSEC_CANARY_RUNS")
 	if spec == "" {
 		t.Skip("PARSEC_CANARY_RUNS is not set: point it at version=dir pairs of fresh Gatling runs, separated by \";\"")
@@ -174,10 +205,17 @@ func TestCanaryCrossVersion(t *testing.T) {
 func TestCanaryCoversSupportedRange(t *testing.T) {
 	t.Parallel()
 
+	if os.Getenv("PARSEC_CANARY_PARTIAL") != "" {
+		t.Skipf("PARSEC_CANARY_PARTIAL is set: this run was asked for a chosen subset of versions, " +
+			"so it is not the gate that holds the supported range to the canary")
+	}
+
 	oldest, newest := text.SupportedVersions()
 	ran := map[gatling.Version]bool{}
 
-	for _, run := range canaryRuns(t) {
+	// allRuns, not canaryRuns: a list carrying no text run must fail here rather
+	// than filter itself down to nothing and skip.
+	for _, run := range allRuns(t) {
 		ran[run.version] = true
 	}
 
