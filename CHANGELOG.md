@@ -5,6 +5,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.0.6] - 2026-09-06
+
+The two definitions a consumer folds a run by: where something was recorded, and where the run
+begins and ends.
+
 ### Added
 
 - `model.Position`, with `NewSamplePosition`, `NewGroupPosition`, `Sample.Position` and
