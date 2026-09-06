@@ -16,16 +16,25 @@ import (
 // gigabytes.
 //
 // No real log approaches it. The longest field is an assertion payload, which
-// runs to tens of kilobytes; the longest string is a failure message, which
-// Gatling truncates long before this.
+// runs to tens of kilobytes — the ten in the 3.14.9 recording are between 15 and
+// 51 bytes; the longest string is a failure message, which Gatling truncates
+// long before this.
 //
 // It bounds the bytes read from the file, not the peak while one field is
-// decoded: converting a string allocates the read buffer and the result, and a
-// Latin-1 field above ASCII doubles on the way out, so decoding one field at the
-// ceiling costs a small multiple of it. The ceiling is what stops a corrupt
-// length prefix asking the allocator for gigabytes, which is the failure it
-// exists for.
-const MaxStringLen = 8 << 20
+// decoded. Converting a string allocates the read buffer and then the result, a
+// Latin-1 field above ASCII doubles on the way out, and a UTF-16 field of
+// three-byte code points grows by half, so one field at the ceiling costs two to
+// three times it and a log carrying one of each costs the sum — measured at
+// about five and a half times the ceiling, because the garbage from one field is
+// not collected before the next is built.
+//
+// That measurement is what fixes the value. At 8 MiB, which this was until
+// v0.0.7, three such fields peaked at 44 MiB and made the 32 MiB budget
+// [Reader] documents false for a log of 24 MiB. At 1 MiB the same shape peaks
+// under 6 MiB. Refusing a corrupt length prefix — the failure this constant
+// exists for — is unaffected: a prefix claiming gigabytes is refused as flatly
+// by one ceiling as by the other.
+const MaxStringLen = 1 << 20
 
 // readBufferSize is the fixed size of the buffer between the caller's reader and
 // this one. It never grows, which is what keeps peak memory independent of the
