@@ -99,10 +99,23 @@ func Item(it *model.Item, rec *gatling.Record) bool {
 // instant in UTC. The conversion is exact; UTC only fixes how it prints, so the
 // same run reads the same way on every machine.
 //
+// A negative count is not a recorded instant. Both codecs write
+// gatling.AbsentTimestamp for a time the log could not resolve and refuse a run
+// that starts before the epoch, so a negative value here is an absence, and it
+// reads as the zero time rather than as a plausible date in the distant past.
+// That is what keeps the model's rule true — a recorded instant is never the zero
+// time — because nothing recorded is before 1970 and the zero time is the year 1.
+//
 // Exported because a codec needs it for the run header as well as for the
 // records: both formats store the run's start the same way, and a second copy
 // of one line is still a second place for the two to disagree.
-func Millis(ms int64) time.Time { return time.UnixMilli(ms).UTC() }
+func Millis(ms int64) time.Time {
+	if ms < 0 {
+		return time.Time{}
+	}
+
+	return time.UnixMilli(ms).UTC()
+}
 
 // maxMillis is the largest millisecond count that survives conversion to a
 // time.Duration, which counts nanoseconds in an int64. Anything above it wraps,
@@ -128,13 +141,15 @@ func millisDuration(ms int64) model.Opt[time.Duration] {
 // span is the duration between two recorded timestamps, and is unset when there
 // is none to be had.
 //
-// Gatling's own reader branches on an end equal to the minimum signed 64-bit
-// integer, treating it as an event that never completed. Whether a 3.11.5 or
-// 3.12.0 run can produce one is unconfirmed, so nothing here assumes the end is
-// at or after the start: an end before the start yields no duration, and so
-// does a span too large to be one.
+// A start the log could not resolve — gatling.AbsentTimestamp, the only negative
+// value a codec writes — has nothing to measure from, and is checked before the
+// subtraction so that it can never overflow. Gatling's own reader branches on an
+// end equal to that same value, treating it as an event that never completed.
+// Whether a 3.11.5 or 3.12.0 run can produce one is unconfirmed, so nothing here
+// assumes the end is at or after the start: an end before the start yields no
+// duration, and so does a span too large to be one.
 func span(start, end int64) model.Opt[time.Duration] {
-	if end < start {
+	if start < 0 || end < start {
 		return model.Opt[time.Duration]{}
 	}
 

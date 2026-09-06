@@ -1,6 +1,9 @@
 package gatling
 
-import "strconv"
+import (
+	"math"
+	"strconv"
+)
 
 // Kind identifies which record a simulation.log line carries. KindUnknown is
 // the zero value, so a Record that was never decoded cannot pass for one.
@@ -83,6 +86,27 @@ func (e Event) String() string {
 	}
 }
 
+// AbsentTimestamp is the value a Record carries in Start, End or Timestamp for a
+// time the log could not resolve: a negative offset in a binary log, a negative
+// value in a text one, and the sentinel Gatling itself writes for a request that
+// never completed, which is this very value. The canonical model reports such a
+// time as the zero time.Time.
+//
+// A resolved time never collides with it. Both codecs refuse a run that starts
+// before the epoch, so every timestamp a codec resolves is zero or above, and
+// the negative half of the number line means absence and nothing else.
+const AbsentTimestamp int64 = math.MinInt64
+
+// MaxRunStart is the latest run start either codec accepts.
+//
+// Every event time is resolved against the run start, and the binary format
+// stores each one as a 32-bit offset from it, so a start above this could not
+// carry an offset without running past the end of the int64 range. A log naming
+// a later start is refused rather than decoded into instants that would wrap —
+// and both codecs bound it here, so a value both formats can express cannot be
+// read by one and refused by the other.
+const MaxRunStart int64 = math.MaxInt64 - math.MaxInt32
+
 // Header is the run header every log carries exactly once. It is decoded from
 // the RUN record and is what the version gate reads.
 type Header struct {
@@ -135,14 +159,15 @@ type Record struct {
 	// Event says whether a user event opens or closes the scenario.
 	Event Event
 	// Start is a request's or group's start timestamp in milliseconds since the
-	// Unix epoch.
+	// Unix epoch, or AbsentTimestamp for one the log could not resolve.
 	Start int64
 	// End is a request's or group's end timestamp in milliseconds since the Unix
-	// epoch. For a request it may be a sentinel marking an event that never
-	// completed; nothing may assume End >= Start.
+	// epoch, or AbsentTimestamp: Gatling writes that value for a request that
+	// never completed, and a codec reports it for an end it could not resolve.
+	// Nothing may assume End >= Start.
 	End int64
 	// Timestamp is a user event's or error's time in milliseconds since the Unix
-	// epoch.
+	// epoch, or AbsentTimestamp for one the log could not resolve.
 	Timestamp int64
 	// Status is a request's or group's outcome.
 	Status Status
@@ -150,7 +175,8 @@ type Record struct {
 	// written. It is empty when the log wrote a lone space.
 	Message string
 	// CumulatedResponseTime is the sum of the response times of the requests
-	// inside a group, in milliseconds.
+	// inside a group, in milliseconds, exactly as written. A negative value is
+	// carried through, and the canonical model reports it unset.
 	CumulatedResponseTime int64
 	// Payload is an assertion's encoded blob, verbatim and uninterpreted.
 	Payload string

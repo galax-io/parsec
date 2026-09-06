@@ -166,6 +166,23 @@ type tally struct {
 	injectStart, injectEnd int64
 }
 
+// open and close fold one recorded instant into the span, ignoring a time the
+// log could not resolve. Without the guard a single absent value would collapse
+// injectStart to the sentinel and make the span 292 million years, so the
+// report comparison would be made against garbage instead of failing on the
+// defect that produced it.
+func (ta *tally) open(at int64) {
+	if at != gatling.AbsentTimestamp {
+		ta.injectStart = min(ta.injectStart, at)
+	}
+}
+
+func (ta *tally) close(at int64) {
+	if at != gatling.AbsentTimestamp {
+		ta.injectEnd = max(ta.injectEnd, at)
+	}
+}
+
 func decodeTally(t *testing.T, path string) tally {
 	t.Helper()
 
@@ -205,22 +222,22 @@ func decodeTally(t *testing.T, path string) tally {
 			c.add(okStatus(t, rec.Status, rec.Line))
 			ta.requests[k] = c
 			ta.global.add(okStatus(t, rec.Status, rec.Line))
-			ta.injectStart = min(ta.injectStart, rec.Start)
-			ta.injectEnd = max(ta.injectEnd, rec.End)
+			ta.open(rec.Start)
+			ta.close(rec.End)
 		case gatling.KindGroup:
 			k := statsKey{path: strings.Join(rec.Groups, ",")}
 			c := ta.groups[k]
 			c.add(okStatus(t, rec.Status, rec.Line))
 			ta.groups[k] = c
-			ta.injectStart = min(ta.injectStart, rec.Start)
-			ta.injectEnd = max(ta.injectEnd, rec.End)
+			ta.open(rec.Start)
+			ta.close(rec.End)
 		case gatling.KindUser:
 			ta.users[rec.Event]++
 			if rec.Event == gatling.EventStart {
-				ta.injectStart = min(ta.injectStart, rec.Timestamp)
+				ta.open(rec.Timestamp)
 			}
 
-			ta.injectEnd = max(ta.injectEnd, rec.Timestamp)
+			ta.close(rec.Timestamp)
 		case gatling.KindError:
 			ta.errors++
 		case gatling.KindRun, gatling.KindAssertion, gatling.KindUnknown:

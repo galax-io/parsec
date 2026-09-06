@@ -30,6 +30,12 @@
 // zero, an average or a guess, and how to show an absence is the consumer's
 // decision rather than this package's.
 //
+// A time is the one value that says so without [Opt]: a start or an event time
+// the source could not resolve is the zero [time.Time], the standard library's
+// own convention for a time that was never set, and a recorded instant is never
+// the zero Time — nothing recorded is before 1970, and the zero Time is the year
+// 1. Ask [time.Time.IsZero] before treating one as a measurement.
+//
 // # What this package does not do
 //
 // It computes nothing. There is no count, mean, percentile, range or series

@@ -1,7 +1,6 @@
 package binary
 
 import (
-	"math"
 	"strconv"
 
 	"github.com/galax-io/parsec/gatling"
@@ -57,10 +56,11 @@ func readRun(r *reader) (runHeader, error) {
 	}
 
 	// Every later record resolves against this, so it is checked once here
-	// rather than on each addition. A negative start is what the text codec
-	// already refuses; the ceiling is what keeps start + a 32-bit offset inside
-	// an int64, so no timestamp can wrap to a plausible instant in the past.
-	if start < 0 || start > math.MaxInt64-math.MaxInt32 {
+	// rather than on each addition. The bounds are gatling.MaxRunStart's, which
+	// the text codec applies to the same field: keeping them in one place is
+	// what stops a run start being readable by one codec and refused by the
+	// other.
+	if start < 0 || start > gatling.MaxRunStart {
 		return out, r.syntax(startAt, "the run start",
 			"an epoch millisecond of "+strconv.FormatInt(start, 10))
 	}
@@ -372,8 +372,12 @@ func (r *Reader) readError(rec *gatling.Record) error {
 // be reported absent and never wrapped or guessed, and one such field in a
 // ten-million-record log should not end the read.
 //
-// The addition cannot overflow: readRun bounds the start so that start plus any
-// int32 offset stays inside an int64.
+// The value reported is gatling.AbsentTimestamp, the one sentinel both codecs
+// write, so a consumer has one thing to check rather than two. readRun's bound on
+// the run start is what keeps a resolved time from colliding with it: a
+// non-negative start plus a non-negative offset is never negative, and the
+// addition cannot overflow because that bound keeps start plus any int32 offset
+// inside an int64.
 func (r *Reader) instant(expected string) (int64, error) {
 	offset, err := r.rd.i32(expected)
 	if err != nil {
@@ -381,19 +385,11 @@ func (r *Reader) instant(expected string) (int64, error) {
 	}
 
 	if offset < 0 {
-		return absentTime, nil
+		return gatling.AbsentTimestamp, nil
 	}
 
 	return r.run.header.Start + int64(offset), nil
 }
-
-// absentTime marks a time the format could not represent. It is the sentinel the
-// wire records already document for an event that never completed, so a consumer
-// has one thing to check rather than two.
-//
-// readRun's bound on the run start is what keeps a resolved time from colliding
-// with it: a non-negative start plus a non-negative offset is never negative.
-const absentTime = int64(-1) << 63
 
 func status(ok bool) gatling.Status {
 	if ok {

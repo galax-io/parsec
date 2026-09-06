@@ -5,6 +5,41 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+
+- `gatling.MaxRunStart`: the latest run start either codec accepts. Every event time is resolved
+  against the run start and the binary format adds a 32-bit offset to it, so a later start could not
+  carry one without running past the end of the int64 range. Both codecs bound the field here, so a
+  value both formats can express can no longer be read by one and refused by the other. (#56)
+- `gatling.AbsentTimestamp`: the one value both codecs write on a wire record for a time the log
+  could not resolve — a negative offset in a binary log, a negative value in a text one, and the
+  sentinel Gatling itself writes for a request that never completed. `gatling/binary` used it
+  privately; it is now named, shared and documented on `Record`. (#56)
+
+### Changed
+
+- An instant a codec could not resolve reaches the canonical model as the zero `time.Time` rather
+  than as a date 292 million years in the past. `Sample.Start`, `GroupSample.Start`, `UserEvent.At`
+  and `RunError.At` say so, and a recorded instant is never the zero time: nothing recorded is before
+  1970, and the zero time is the year 1. (#56)
+- `gatling/text` no longer refuses a log for a negative time or a negative cumulated response time.
+  It reports the time absent and the duration unset, which is what `gatling/binary` already did and
+  what spec 005 requires of both: one bad field does not end a ten-million-record read, and the two
+  codecs now give the same answer to the same malformed input. A test drives both with the same
+  inputs so a third answer cannot appear unnoticed. (#56)
+
+### Fixed
+
+- `gatling/text` read the negative half of a timestamp field without bounding it, so a value far too
+  wide for an int64 passed as an absent time while the identical positive magnitude was refused, and
+  `-0` read as an absence rather than as the epoch instant it spells. A line whose fields had shifted
+  could therefore clear the only structural check a timestamp gets. Both signs are now bounded alike,
+  and the most negative int64 — the one negative number Gatling writes — is carried in the cumulated
+  response time instead of being refused there while being accepted one field earlier. (#56)
+- Above the supported range, the reader scans back for the field that reads as an error record's
+  timestamp. It probed with a predicate that refused negatives while the parser accepted them, so it
+  walked past a real timestamp and refused the read on the field behind it. (#56)
+
 ## [0.0.5] - 2026-09-06
 
 Reading the binary `simulation.log` — the format every current Gatling writes.

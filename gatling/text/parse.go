@@ -48,9 +48,6 @@ const (
 	eventEnd      = "END"
 	// absent is how Gatling writes an empty description or message.
 	absent = " "
-	// neverCompleted is the end timestamp Gatling reserves for an event that
-	// never completed: the minimum signed 64-bit integer, written in decimal.
-	neverCompleted = "-9223372036854775808"
 )
 
 // Field counts per kind, the kind literal included. Inside the covered range
@@ -155,7 +152,10 @@ func parseHeader(line []byte, lineNo int) (gatling.Header, int, error) {
 		return gatling.Header{}, n, fieldCountError(lineNo, kindRun, runFields, n)
 	}
 
-	start, err := parseTimestamp(fields[3], lineNo, "start")
+	// The run start is the one time a log may not leave absent: every later
+	// instant is read against it, so it is refused here, once, against the same
+	// bounds the binary codec applies.
+	start, err := parseRunStart(fields[3], lineNo, "start")
 	if err != nil {
 		return gatling.Header{}, n, err
 	}
@@ -258,9 +258,9 @@ func (p *parser) parseRequest(line []byte, lineNo int) (gatling.Record, error) {
 		return gatling.Record{}, err
 	}
 
-	// The end may be the sentinel Gatling reserves for an event that never
-	// completed, which is the one negative timestamp the format admits.
-	end, err := parseEnd(f[4], lineNo)
+	// The end may be negative: Gatling writes the minimum int64 for an event
+	// that never completed, and parseTimestamp reports every negative absent.
+	end, err := parseTimestamp(f[4], lineNo, "end")
 	if err != nil {
 		return gatling.Record{}, err
 	}
@@ -298,7 +298,7 @@ func (p *parser) parseGroup(line []byte, lineNo int) (gatling.Record, error) {
 		return gatling.Record{}, err
 	}
 
-	cumulated, err := parseTimestamp(f[4], lineNo, "cumulated response time")
+	cumulated, err := parseSigned(f[4], lineNo, "cumulated response time")
 	if err != nil {
 		return gatling.Record{}, err
 	}
@@ -342,7 +342,10 @@ func (p *parser) parseError(line []byte, lineNo int) (gatling.Record, error) {
 
 	if p.isLenient {
 		for at > first {
-			if _, ok := parseDigits(line[at+1 : end]); ok {
+			// Probed with the same predicate that will parse it, so the scan
+			// cannot walk past a field parseTimestamp would have accepted and
+			// then refuse the read on a field behind it.
+			if _, ok := parseInt(line[at+1 : end]); ok {
 				break
 			}
 
@@ -459,14 +462,17 @@ func parseEvent(b []byte, lineNo int) (gatling.Event, error) {
 	}
 }
 
-// parseTimestamp reads a non-negative decimal integer without allocating.
-func parseTimestamp(b []byte, lineNo int, what string) (int64, error) {
-	v, ok := parseDigits(b)
-	if !ok {
+// parseRunStart reads the run start: an epoch millisecond within the range both
+// codecs accept. It is the one time a log may not leave absent, because every
+// later instant is resolved against it, and the ceiling is gatling.MaxRunStart's
+// so that the two codecs cannot disagree about a value both formats can express.
+func parseRunStart(b []byte, lineNo int, what string) (int64, error) {
+	v, ok := parseInt(b)
+	if !ok || v < 0 || v > gatling.MaxRunStart {
 		return 0, &gatling.SyntaxError{
 			Format:   gatling.FormatText,
 			Line:     lineNo,
-			Expected: "a non-negative integer " + what,
+			Expected: "an epoch millisecond " + what + " no later than " + strconv.FormatInt(gatling.MaxRunStart, 10),
 			Found:    quote(b),
 		}
 	}
@@ -474,32 +480,77 @@ func parseTimestamp(b []byte, lineNo int, what string) (int64, error) {
 	return v, nil
 }
 
-// parseEnd reads a request end: a non-negative timestamp, or the sentinel that
-// marks an event that never completed.
-func parseEnd(b []byte, lineNo int) (int64, error) {
-	if len(b) > 0 && b[0] == '-' {
-		if string(b) == neverCompleted {
-			return math.MinInt64, nil
-		}
-
+// parseTimestamp reads an event's time: a request or group start or end, a user
+// event's time, an error's time.
+//
+// A negative value is not an instant the log can mean — Gatling writes one only
+// as the sentinel for a request that never completed — so it is reported as
+// gatling.AbsentTimestamp rather than refused. Spec 005's FR-009 asks for a time
+// that cannot be resolved to be absent, never wrapped or guessed, and the binary
+// codec already answers a negative offset that way; one such field must not end
+// a ten-million-record read.
+//
+// The magnitude is bounded for both signs alike, so a field that could not be a
+// number at all is refused rather than mistaken for an absence: -0 is the epoch
+// instant it spells, and a value too wide for an int64 fails whichever sign it
+// carries.
+func parseTimestamp(b []byte, lineNo int, what string) (int64, error) {
+	v, ok := parseInt(b)
+	if !ok {
 		return 0, &gatling.SyntaxError{
 			Format:   gatling.FormatText,
 			Line:     lineNo,
-			Expected: "a non-negative integer end, or the never-completed sentinel",
+			Expected: "an integer " + what,
 			Found:    quote(b),
 		}
 	}
 
-	return parseTimestamp(b, lineNo, "end")
+	if v < 0 {
+		return gatling.AbsentTimestamp, nil
+	}
+
+	return v, nil
 }
 
-// parseDigits parses ASCII digits into an int64, rejecting anything else and
-// any value that overflows.
-func parseDigits(b []byte) (int64, bool) {
-	if len(b) == 0 || len(b) > 19 {
+// parseSigned reads a signed decimal the wire record carries verbatim: a group's
+// cumulated response time. A negative one is kept as written, as the binary
+// codec keeps a negative 32-bit field, and the canonical model reports it unset.
+func parseSigned(b []byte, lineNo int, what string) (int64, error) {
+	v, ok := parseInt(b)
+	if !ok {
+		return 0, &gatling.SyntaxError{
+			Format:   gatling.FormatText,
+			Line:     lineNo,
+			Expected: "an integer " + what,
+			Found:    quote(b),
+		}
+	}
+
+	return v, nil
+}
+
+// maxDigits is the widest decimal an int64 can hold, sign aside.
+const maxDigits = 19
+
+// parseInt reads a decimal integer, optionally signed, without allocating.
+//
+// It accepts the whole int64 range, the most negative value included — that one
+// is the sentinel Gatling writes for an event that never completed — and refuses
+// everything else: an empty field, a lone sign, a byte that is not a digit, and
+// a magnitude that does not fit. The bound applies to both signs, so a negative
+// cannot pass a check its positive twin would fail.
+func parseInt(b []byte) (int64, bool) {
+	isNeg := len(b) > 0 && b[0] == '-'
+	if isNeg {
+		b = b[1:]
+	}
+
+	if len(b) == 0 || len(b) > maxDigits {
 		return 0, false
 	}
 
+	// Accumulated negative, because that half of the range is the larger one:
+	// the most negative int64 has no positive counterpart to accumulate through.
 	var v int64
 
 	for _, c := range b {
@@ -507,8 +558,21 @@ func parseDigits(b []byte) (int64, bool) {
 			return 0, false
 		}
 
-		v = v*10 + int64(c-'0')
+		d := int64(c - '0')
+		if v < (math.MinInt64+d)/10 {
+			return 0, false
+		}
+
+		v = v*10 - d
 	}
 
-	return v, v >= 0
+	if isNeg {
+		return v, true
+	}
+
+	if v == math.MinInt64 {
+		return 0, false
+	}
+
+	return -v, true
 }

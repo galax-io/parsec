@@ -48,6 +48,17 @@ func TestParseHeader(t *testing.T) {
 		{name: "five fields", line: "RUN\ta\tb\t1\t3.11.5", wantSyntax: true},
 		{name: "start is not a number", line: "RUN\ta\tb\tnope\t \t3.11.5", wantSyntax: true},
 		{name: "start is negative", line: "RUN\ta\tb\t-1\t \t3.11.5", wantSyntax: true},
+		// Both codecs bound the run start by gatling.MaxRunStart, because every
+		// later instant is resolved against it and the binary format adds a
+		// 32-bit offset to it. A start one past the ceiling was readable here
+		// and refused by the binary codec.
+		{
+			name: "start at the ceiling both codecs share",
+			line: "RUN\t" + class + "\tid\t9223372034707292160\t \t3.11.5",
+			want: gatling.Header{SimulationClass: class, RunID: "id", Start: 9223372034707292160, Version: v(3, 11, 5)}, wantFields: 6,
+		},
+		{name: "start one past the ceiling", line: "RUN\ta\tb\t9223372034707292161\t \t3.11.5", wantSyntax: true},
+		{name: "start at the largest int64", line: "RUN\ta\tb\t9223372036854775807\t \t3.11.5", wantSyntax: true},
 		{name: "snapshot version", line: "RUN\ta\tb\t1\t \t3.13.0-SNAPSHOT", wantVerErr: "3.13.0-SNAPSHOT"},
 		{name: "milestone version", line: "RUN\ta\tb\t1\t \t3.12.0-M1", wantVerErr: "3.12.0-M1"},
 		{name: "garbage version", line: "RUN\ta\tb\t1\t \tgarbage", wantVerErr: "garbage"},
@@ -126,6 +137,47 @@ func TestParseRecord(t *testing.T) {
 			name: "request end sentinel for an event that never completed",
 			line: "REQUEST\t\tr\t1788379356162\t-9223372036854775808\tKO\t ",
 			want: gatling.Record{Kind: gatling.KindRequest, Groups: []string{}, Name: "r", Start: 1788379356162, End: math.MinInt64, Status: gatling.StatusKO},
+		},
+		// A negative time is reported absent, not refused — the answer the binary
+		// codec already gives to a negative offset — and a negative cumulated
+		// response time is carried as written, as the binary codec carries a
+		// negative 32-bit field. Neither ends the read.
+		{
+			name: "negative user timestamp is absent, not refused",
+			line: "USER\tscn\tSTART\t-5",
+			want: gatling.Record{Kind: gatling.KindUser, Scenario: "scn", Event: gatling.EventStart, Timestamp: gatling.AbsentTimestamp},
+		},
+		{
+			name: "negative request start and end are absent",
+			line: "REQUEST\t\tr\t-5\t-7\tOK\t ",
+			want: gatling.Record{Kind: gatling.KindRequest, Groups: []string{}, Name: "r", Start: gatling.AbsentTimestamp, End: gatling.AbsentTimestamp, Status: gatling.StatusOK},
+		},
+		{
+			name: "negative group times are absent and a negative cumulated time is kept",
+			line: "GROUP\tg\t-1\t-2\t-5\tKO",
+			want: gatling.Record{Kind: gatling.KindGroup, Groups: []string{"g"}, Start: gatling.AbsentTimestamp, End: gatling.AbsentTimestamp, CumulatedResponseTime: -5, Status: gatling.StatusKO},
+		},
+		{
+			name: "negative error timestamp is absent",
+			line: "ERROR\tboom\t-9",
+			want: gatling.Record{Kind: gatling.KindError, Message: "boom", Timestamp: gatling.AbsentTimestamp},
+		},
+		// A negative zero is the instant it spells. Reading it as an absence
+		// would make the epoch unrepresentable in one spelling and not the
+		// other, and the two parsers would disagree about identical bytes.
+		{
+			name: "negative zero is the epoch instant, not an absence",
+			line: "USER\tscn\tSTART\t-0",
+			want: gatling.Record{Kind: gatling.KindUser, Scenario: "scn", Event: gatling.EventStart, Timestamp: 0},
+		},
+		// The most negative int64 is the one negative number Gatling writes. It
+		// is an absence in a time field and a value in the cumulated field, and
+		// neither may refuse it: stripping the sign to parse the magnitude used
+		// to, because that magnitude has no positive counterpart.
+		{
+			name: "the most negative cumulated response time is kept as written",
+			line: "GROUP\tg\t1\t2\t-9223372036854775808\tKO",
+			want: gatling.Record{Kind: gatling.KindGroup, Groups: []string{"g"}, Start: 1, End: 2, CumulatedResponseTime: math.MinInt64, Status: gatling.StatusKO},
 		},
 		{
 			name: "group",
@@ -217,7 +269,23 @@ func TestParseRecordErrors(t *testing.T) {
 		{name: "assertion with one field", line: "ASSERTION"},
 		{name: "assertion with three fields, strict", line: "ASSERTION\tabc\textra"},
 		{name: "bad timestamp", line: "USER\tscn\tSTART\tsoon"},
-		{name: "negative timestamp", line: "USER\tscn\tSTART\t-1"},
+		{name: "timestamp that overflows", line: "USER\tscn\tSTART\t99999999999999999999"},
+		{name: "negative timestamp that is not digits", line: "USER\tscn\tSTART\t-1x"},
+		// The magnitude is bounded for both signs alike. A negative too wide for
+		// an int64 used to pass as an absence while its positive twin was
+		// refused, so a line whose fields had shifted could clear the only
+		// structural check a timestamp gets.
+		{name: "negative timestamp too wide for an int64", line: "USER\tscn\tSTART\t-99999999999999999999999"},
+		{name: "negative request start too wide for an int64", line: "REQUEST\t\tr\t-00000000000000000000001\t2\tOK\t "},
+		{name: "negative cumulated response time too wide for an int64", line: "GROUP\tg\t1\t2\t-99999999999999999999999\tOK"},
+		{name: "a lone minus sign", line: "USER\tscn\tSTART\t-"},
+		// Above the covered range a newer Gatling may append a field behind the
+		// timestamp, so the reader scans back for the field that reads as one.
+		// The scan probed with a predicate that refused negatives while the
+		// parser accepted them, so it walked past a real timestamp and refused
+		// the read on the field behind it.
+		{name: "lenient error record with an absent timestamp and an appended field", line: "ERROR\tboom\t-1\textra", isLenient: true, wantOK: true},
+		{name: "cumulated response time that overflows", line: "GROUP\tg\t1\t2\t-99999999999999999999\tOK"},
 		{name: "bad status", line: "REQUEST\t\tr\t1\t2\tok\t "},
 		{name: "bad event", line: "USER\tscn\tBEGIN\t1"},
 		{name: "bad cumulated response time", line: "GROUP\tg\t1\t2\tx\tOK"},
