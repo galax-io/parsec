@@ -22,6 +22,8 @@ Go 1.25, standard library only in model/ and gatling/, and no third-party module
 # build/test  go build ./... && go test ./...
 # integration go test -tags=integration ./...
 # canary      PARSEC_CANARY_RUNS="<version>=<run dir>;..." go test -tags=canary ./...
+# hooks       git config core.hooksPath .githooks   # once per clone: the local tag gate
+# shell tests for t in scripts/*_test.sh .claude/hooks/*_test.sh .githooks/*_test.sh; do bash "$t"; done
 ```
 
 ## Structure
@@ -98,5 +100,12 @@ Trunk-based with release branches. Trunk is `main`; `release/*` branches are cut
 - **Before tagging**: every PR merged since the previous tag must be assigned to the milestone; every issue in the milestone whose fix is on `main` must be closed
 
 <!-- The issue↔PR↔milestone contract above is enforced mechanically by         -->
-<!-- scripts/check-linkage.sh + the .claude/hooks/linkage-guard.sh PreToolUse   -->
-<!-- hook (gates release tagging only; normal push/PR/merge untouched).         -->
+<!-- scripts/check-linkage.sh, run from three places:                           -->
+<!--   .claude/hooks/linkage-guard.sh  in-session, before the command runs      -->
+<!--     (shared with the other Galaxio repos; LINKAGE_OFF=1 bypasses it)       -->
+<!--   .githooks/pre-push               on any push, from any client            -->
+<!--     enable once per clone: git config core.hooksPath .githooks             -->
+<!--   .github/workflows/release.yml    server-side, where nothing bypasses it  -->
+<!-- The first two are fast local failures; release.yml is the authority. The   -->
+<!-- pre-push hook reads the refs git hands it, so a branch push, a tag         -->
+<!-- deletion and a non-release tag are left alone.                             -->

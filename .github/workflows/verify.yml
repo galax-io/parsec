@@ -35,6 +35,18 @@ jobs:
         run: go vet ./...
       - name: go build
         run: go build ./...
+      - name: the shell gates test themselves
+        # These guard every release, and until now nothing guarded them: both
+        # scripts/*_test.sh files were committed and run by no workflow, so a
+        # regression in the machinery that gates a tag reached main unseen. It
+        # did, twice.
+        run: |
+          set -euo pipefail
+          for t in scripts/check-linkage_test.sh scripts/check-coverage_test.sh \
+                   .claude/hooks/linkage-guard_test.sh .githooks/pre-push_test.sh; do
+            echo "--- $t"
+            bash "$t"
+          done
 
   lint:
     needs: quick
