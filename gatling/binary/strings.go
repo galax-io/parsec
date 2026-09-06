@@ -2,6 +2,7 @@ package binary
 
 import (
 	"strconv"
+	"strings"
 	"unicode/utf16"
 	"unicode/utf8"
 )
@@ -58,27 +59,34 @@ func (r *reader) str(expected string) (string, error) {
 // latin1 decodes the JVM's one-byte-per-character form. Every byte is the code
 // point of the same value, so bytes below 0x80 are already UTF-8 and the common
 // case copies rather than converts.
+//
+// The conversion is sized exactly and built once. Going through a []rune would
+// reserve four bytes per input byte and then copy the result again, so a field
+// at MaxStringLen would allocate several times the ceiling that constant exists
+// to enforce.
 func latin1(b []byte) string {
-	ascii := true
+	high := 0
 
 	for _, c := range b {
 		if c >= utf8.RuneSelf {
-			ascii = false
-
-			break
+			high++
 		}
 	}
 
-	if ascii {
+	if high == 0 {
 		return string(b)
 	}
 
-	out := make([]rune, len(b))
-	for i, c := range b {
-		out[i] = rune(c)
+	// Every byte above 0x7f is two bytes of UTF-8; every other byte is one.
+	var out strings.Builder
+
+	out.Grow(len(b) + high)
+
+	for _, c := range b {
+		out.WriteRune(rune(c))
 	}
 
-	return string(out)
+	return out.String()
 }
 
 // utf16le decodes the JVM's two-bytes-per-character form.
@@ -88,20 +96,70 @@ func latin1(b []byte) string {
 // record proves it, because every machine one could be recorded on is
 // little-endian.
 //
-// An unpaired surrogate becomes U+FFFD, which is what utf16.Decode does and what
-// the JVM itself permits a String to hold: refusing would reject a name the
-// writer legitimately wrote.
+// An unpaired surrogate is refused rather than replaced. utf16.Decode would
+// substitute U+FFFD, and a name that decodes to a different name is worse than a
+// refusal: it groups two requests together or splits one in two, and the report
+// is then confidently wrong. FR-004 asks for exactly this.
+//
+// Two passes: the first validates and measures, the second builds. That way the
+// result is allocated once, at its exact size.
 func utf16le(b []byte, r *reader, at int64, expected string) (string, error) {
 	if len(b)%2 != 0 {
 		return "", r.syntax(at, expected, "a UTF-16 string of an odd number of bytes")
 	}
 
-	units := make([]uint16, len(b)/2)
-	for i := range units {
-		units[i] = uint16(b[2*i]) | uint16(b[2*i+1])<<8
+	size := 0
+
+	for i := 0; i < len(b); i += 2 {
+		u, pair := unit(b, i)
+
+		switch {
+		case !utf16.IsSurrogate(rune(u)):
+			size += utf8.RuneLen(rune(u))
+		case pair == 0:
+			return "", r.syntax(at, expected, "an unpaired UTF-16 surrogate")
+		default:
+			size += utf8.RuneLen(utf16.DecodeRune(rune(u), rune(pair)))
+			i += 2
+		}
 	}
 
-	return string(utf16.Decode(units)), nil
+	var out strings.Builder
+
+	out.Grow(size)
+
+	for i := 0; i < len(b); i += 2 {
+		u, pair := unit(b, i)
+
+		if !utf16.IsSurrogate(rune(u)) {
+			out.WriteRune(rune(u))
+
+			continue
+		}
+
+		out.WriteRune(utf16.DecodeRune(rune(u), rune(pair)))
+
+		i += 2
+	}
+
+	return out.String(), nil
+}
+
+// unit reads the code unit at i and, when it is a high surrogate followed by a
+// low one, its partner. A surrogate with no valid partner comes back with a zero
+// pair, which is not a code unit the format can write beside one.
+func unit(b []byte, i int) (u, pair uint16) {
+	u = uint16(b[i]) | uint16(b[i+1])<<8
+	if !utf16.IsSurrogate(rune(u)) || i+3 >= len(b) {
+		return u, 0
+	}
+
+	lo := uint16(b[i+2]) | uint16(b[i+3])<<8
+	if utf16.DecodeRune(rune(u), rune(lo)) == utf8.RuneError {
+		return u, 0
+	}
+
+	return u, lo
 }
 
 // cache rebuilds the table of strings the writer built, in the writer's order.
@@ -114,6 +172,18 @@ func utf16le(b []byte, r *reader, at int64, expected string) (string, error) {
 type cache struct {
 	entries []string
 }
+
+// maxCacheEntries bounds the table. Memory here is bounded by the number of
+// *distinct* strings, and for names and group paths a simulation declares a
+// fixed handful — but failure messages also go through the table, and Gatling
+// builds those from exception text that embeds addresses, ports and status
+// lines. A run that fails in a new way on every request would otherwise grow a
+// table linear in the record count, which is the one way this reader's memory
+// could follow the length of the log.
+//
+// A simulation with more than this many distinct strings is not something
+// Gatling produces; a log that claims one is damaged.
+const maxCacheEntries = 1 << 20
 
 // read reads one cached string: a big-endian index, then — when the index is
 // positive — the string being introduced.
@@ -139,6 +209,11 @@ func (c *cache) read(r *reader, expected string) (string, error) {
 				", where entry "+strconv.Itoa(len(c.entries)+1)+" comes next")
 		}
 
+		if len(c.entries) >= maxCacheEntries {
+			return "", r.syntax(at, expected, "more than "+strconv.Itoa(maxCacheEntries)+
+				" distinct strings, which no simulation declares")
+		}
+
 		s, err := r.str(expected)
 		if err != nil {
 			return "", err
@@ -153,9 +228,11 @@ func (c *cache) read(r *reader, expected string) (string, error) {
 		return "", r.syntax(at, expected, "cache index 0, which the format never writes")
 	}
 
-	k := int(-i)
-	if k > len(c.entries) {
-		return "", r.syntax(at, expected, "a reference to cache entry "+strconv.Itoa(k)+
+	// Negated in int64. Inside int32, math.MinInt32 negates to itself and stays
+	// negative, so a ">" bounds check would pass it straight through to an index.
+	k := -int64(i)
+	if k > int64(len(c.entries)) {
+		return "", r.syntax(at, expected, "a reference to cache entry "+strconv.FormatInt(k, 10)+
 			", where only "+strconv.Itoa(len(c.entries))+" have been introduced")
 	}
 

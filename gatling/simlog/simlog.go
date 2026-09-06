@@ -39,7 +39,8 @@ type RecordReader interface {
 }
 
 // RunReader yields canonical results: the same log as [RecordReader], decoded
-// into the model every source shares. [text.RunReader] satisfies it.
+// into the model every source shares. [text.RunReader] and [binary.RunReader]
+// both satisfy it.
 type RunReader interface {
 	// Run is everything about the run that does not grow with its length,
 	// including what the source cannot record and any version warning.
@@ -130,10 +131,16 @@ var codecs = [...]codec{
 // decodes with exactly one warning, or is refused with a
 // *gatling.UnverifiedError under [gatling.WithStrict].
 //
-// On success the codec sees the stream from its first byte. On a refusal the
-// bytes identification read are gone from r; they are handed back on the error
-// — [gatling.FormatError.Head] and [gatling.UnsupportedFormatError.Head] — so a
-// caller holding a stream it cannot rewind can still spool the log aside whole.
+// On success the codec sees the stream from its first byte. When identification
+// itself refuses — the bytes are not a Gatling simulation.log — the bytes it read
+// are handed back on [gatling.FormatError.Head], so a caller holding a stream it
+// cannot rewind can still spool the log aside whole.
+//
+// A refusal from the codec *after* identification does not carry them. A version
+// outside the supported range is refused with a *gatling.VersionError, which
+// names the version and the range and has nowhere to put bytes, and by then the
+// codec has consumed the head. A caller that must keep such a stream should tee
+// it rather than rely on the error.
 func NewReader(r io.Reader, opts ...gatling.Option) (RecordReader, error) {
 	c, stream, head, err := dispatch(r)
 	if err != nil {

@@ -46,3 +46,16 @@ The simulation's assertions were tightened after this run was made — from thre
 nine exact ones — so that a broken environment fails the run itself. This recording is the log as
 it was written under the three original assertions and is not re-made: a recording is captured
 once. Fresh runs of the same simulation now carry nine `ASSERTION` records ahead of the header.
+
+## The probe has changed since this recording
+
+This log was written by an earlier version of `testdata/corpus/gatling/simulation/`. That probe made
+36 requests per run; it now makes 102, because milestone v0.0.5 added a Cyrillic request name, a
+request repeated ten times inside a group, and a group name repeated across users — none of which the
+binary format could be tested against otherwise.
+
+So `src/test/resources/nfr.yaml` describes the probe **as it is now**, not the run recorded here, and
+re-running the probe today does not reproduce this log. That is the same rule the rest of this note
+follows: a recording is captured once and is never re-made. What it proves is unchanged — the decoder
+must still turn these bytes into the record stream beside them — and the numbers it is held to are
+its own `js/global_stats.json` and `js/stats.json`, not the current document.

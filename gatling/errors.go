@@ -32,8 +32,9 @@ type SyntaxError struct {
 	// can fail at byte 0 and a text log can fail before it has a line, so both
 	// positions are legitimately zero and neither can discriminate on its own.
 	//
-	// The zero value is FormatUnknown, which renders as a line for compatibility
-	// with errors constructed before this field existed.
+	// Both codecs in this module set it. The zero value is FormatUnknown, which
+	// renders as a line: that is what an error built by something other than a
+	// codec — a test, or a consumer constructing one by hand — reads as.
 	Format Format
 	// Expected says what the reader needed at that position.
 	Expected string
@@ -163,6 +164,11 @@ func (e *UnverifiedError) Error() string {
 // bytes were recognised, so this is not a *FormatError; nothing was decoded, so
 // it is not a *SyntaxError. A caller can tell a user that the file is fine and
 // the reader is not yet, which is a different message from either.
+//
+// No input produces one today: this module has a codec for both formats Gatling
+// writes. It is kept because the answer it gives — "this is a Gatling log, of a
+// format nothing here reads" — is the one a third format would need, and a
+// consumer's errors.As branch for it costs nothing while it cannot fire.
 type UnsupportedFormatError struct {
 	// Format is the format that was detected.
 	Format Format

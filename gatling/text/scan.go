@@ -40,6 +40,7 @@ func newScanner(r io.Reader) *scanner {
 // tooLong is the one error for a line past the ceiling, wherever it is caught.
 func (s *scanner) tooLong() error {
 	return &gatling.SyntaxError{
+		Format:   gatling.FormatText,
 		Line:     s.lineNo,
 		Expected: "a line of at most " + strconv.Itoa(MaxLineLen) + " bytes",
 		Found:    "a longer line",

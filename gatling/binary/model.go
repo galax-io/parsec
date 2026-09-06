@@ -2,6 +2,7 @@ package binary
 
 import (
 	"io"
+	"slices"
 
 	"github.com/galax-io/parsec/gatling"
 	"github.com/galax-io/parsec/internal/wire"
@@ -73,7 +74,16 @@ func NewRunReader(r io.Reader, opts ...gatling.Option) (*RunReader, error) {
 // Run is everything about the run that does not grow with its length: what the
 // header named, what this source cannot record, and any version warning. It is
 // complete before the first item and never changes.
-func (x *RunReader) Run() model.Run { return x.run }
+//
+// The slices are the caller's own — mutating them cannot disturb another caller
+// or this reader, which is the same promise gatling/text makes.
+func (x *RunReader) Run() model.Run {
+	run := x.run
+	run.Warnings = slices.Clone(x.run.Warnings)
+	run.Assertions = slices.Clone(x.run.Assertions)
+
+	return run
+}
 
 // Next returns the next item of the run, or [io.EOF] at the end.
 //

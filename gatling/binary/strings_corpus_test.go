@@ -1,11 +1,14 @@
 package binary_test
 
 import (
+	"bytes"
 	"path/filepath"
+	"strings"
 	"testing"
 	"unicode/utf8"
 
 	"github.com/galax-io/parsec/gatling"
+	"github.com/galax-io/parsec/gatling/binary"
 )
 
 // The name the simulation declares. It is Cyrillic on purpose: those characters
@@ -133,5 +136,62 @@ func TestNamesAreRepeatedFarMoreOftenThanTheyAreIntroduced(t *testing.T) {
 					total, len(distinct))
 			}
 		})
+	}
+}
+
+// The JVM stores every character below U+0100 in one byte, so a name like
+// `GET /café` reaches the decoder as Latin-1 with a byte above 0x7f — a path no
+// recording in this corpus takes, because the only non-ASCII name it holds is
+// Cyrillic and therefore UTF-16. Without this, the branch ships unexecuted in a
+// package with a 90% coverage floor.
+func TestLatin1AboveASCIIRoundTrips(t *testing.T) {
+	t.Parallel()
+
+	for _, name := range []string{"GET /café", "requête", "ÿ", "àÿé"} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			log := (&builder{}).
+				runRecord("3.15.1", []string{"s"}, nil).
+				request(name, true).
+				bytes()
+
+			recs := records(t, bytes.NewReader(log))
+			if len(recs) != 1 {
+				t.Fatalf("%d records; want 1", len(recs))
+			}
+
+			if recs[0].Name != name {
+				t.Fatalf("decoded %q; want %q", recs[0].Name, name)
+			}
+		})
+	}
+}
+
+// The assertion payloads are the one part of the grammar the fixture builder can
+// write and nothing round-trips: every other test passes nil assertions, so a
+// disagreement between the builder and readBlobs would go unnoticed until a
+// recording disagreed with both.
+func TestAssertionPayloadsRoundTripThroughTheBuilder(t *testing.T) {
+	t.Parallel()
+
+	want := []string{"", "\x00\x01\x02", strings.Repeat("payload", 100)}
+
+	log := (&builder{}).runRecord("3.15.1", []string{"s"}, want).bytes()
+
+	rd, err := binary.NewReader(bytes.NewReader(log))
+	if err != nil {
+		t.Fatalf("NewReader: %v", err)
+	}
+
+	got := rd.Assertions()
+	if len(got) != len(want) {
+		t.Fatalf("%d payloads; want %d", len(got), len(want))
+	}
+
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("payload %d = %q; want %q", i, got[i], want[i])
+		}
 	}
 }

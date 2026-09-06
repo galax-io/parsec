@@ -138,6 +138,7 @@ func split(dst [][]byte, line []byte, want int) ([][]byte, int) {
 
 func fieldCountError(lineNo int, kind string, want, got int) error {
 	return &gatling.SyntaxError{
+		Format:   gatling.FormatText,
 		Line:     lineNo,
 		Expected: kind + " with " + strconv.Itoa(want) + " fields",
 		Found:    strconv.Itoa(got) + " fields",
@@ -176,7 +177,7 @@ func parseHeader(line []byte, lineNo int) (gatling.Header, int, error) {
 // parse decodes one event line.
 func (p *parser) parse(line []byte, lineNo int) (gatling.Record, error) {
 	if len(line) == 0 {
-		return gatling.Record{}, &gatling.SyntaxError{Line: lineNo, Expected: "a record", Found: "an empty line"}
+		return gatling.Record{}, &gatling.SyntaxError{Format: gatling.FormatText, Line: lineNo, Expected: "a record", Found: "an empty line"}
 	}
 
 	kind := kindOf(line)
@@ -194,12 +195,14 @@ func (p *parser) parse(line []byte, lineNo int) (gatling.Record, error) {
 		return p.parseAssertion(line, lineNo)
 	case kindRun:
 		return gatling.Record{}, &gatling.SyntaxError{
+			Format:   gatling.FormatText,
 			Line:     lineNo,
 			Expected: "an event record",
 			Found:    "RUN, a second run header",
 		}
 	default:
 		return gatling.Record{}, &gatling.SyntaxError{
+			Format:   gatling.FormatText,
 			Line:     lineNo,
 			Expected: "a record kind",
 			Found:    quote(kind),
@@ -432,6 +435,7 @@ func parseStatus(b []byte, lineNo int) (gatling.Status, error) {
 		return gatling.StatusKO, nil
 	default:
 		return gatling.StatusUnknown, &gatling.SyntaxError{
+			Format:   gatling.FormatText,
 			Line:     lineNo,
 			Expected: "OK or KO",
 			Found:    quote(b),
@@ -447,6 +451,7 @@ func parseEvent(b []byte, lineNo int) (gatling.Event, error) {
 		return gatling.EventEnd, nil
 	default:
 		return gatling.EventUnknown, &gatling.SyntaxError{
+			Format:   gatling.FormatText,
 			Line:     lineNo,
 			Expected: "START or END",
 			Found:    quote(b),
@@ -459,6 +464,7 @@ func parseTimestamp(b []byte, lineNo int, what string) (int64, error) {
 	v, ok := parseDigits(b)
 	if !ok {
 		return 0, &gatling.SyntaxError{
+			Format:   gatling.FormatText,
 			Line:     lineNo,
 			Expected: "a non-negative integer " + what,
 			Found:    quote(b),
@@ -477,6 +483,7 @@ func parseEnd(b []byte, lineNo int) (int64, error) {
 		}
 
 		return 0, &gatling.SyntaxError{
+			Format:   gatling.FormatText,
 			Line:     lineNo,
 			Expected: "a non-negative integer end, or the never-completed sentinel",
 			Found:    quote(b),
