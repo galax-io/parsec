@@ -256,3 +256,80 @@ func TestMillisIsExactAndUTC(t *testing.T) {
 		t.Fatalf("Millis returned %v; UTC is what makes a run read the same on every machine", got.Location())
 	}
 }
+
+// An instant the log could not resolve reaches the model as the zero time, not
+// as a date 292 million years in the past. Both codecs write
+// gatling.AbsentTimestamp for one and refuse a run that starts before the epoch,
+// so the negative half of the number line is absence and nothing else — and zero
+// milliseconds is 1970, a recorded instant.
+func TestAnAbsentTimestampIsTheZeroTime(t *testing.T) {
+	t.Parallel()
+
+	for _, ms := range []int64{gatling.AbsentTimestamp, -1} {
+		if got := wire.Millis(ms); !got.IsZero() {
+			t.Errorf("Millis(%d) = %v; want the zero time", ms, got)
+		}
+	}
+
+	if got := wire.Millis(0); got.IsZero() || got.UnixMilli() != 0 {
+		t.Errorf("Millis(0) = %v; zero milliseconds is 1970, a recorded instant, not an absence", got)
+	}
+}
+
+// A record whose start the log could not resolve is still delivered — it is an
+// event of the run — with a zero start and no duration, because nothing can be
+// measured from an absent start. The same holds for a group.
+func TestAnAbsentStartYieldsAZeroStartAndNoDuration(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		rec  gatling.Record
+	}{
+		{
+			name: "a request with an absent start",
+			rec: gatling.Record{
+				Kind: gatling.KindRequest, Name: "r", Start: gatling.AbsentTimestamp, End: start,
+				Status: gatling.StatusOK,
+			},
+		},
+		{
+			name: "a request with an absent start and an absent end",
+			rec: gatling.Record{
+				Kind: gatling.KindRequest, Name: "r", Start: gatling.AbsentTimestamp, End: gatling.AbsentTimestamp,
+				Status: gatling.StatusOK,
+			},
+		},
+		{
+			name: "a group with an absent start",
+			rec: gatling.Record{
+				Kind: gatling.KindGroup, Groups: []string{"g"}, Start: gatling.AbsentTimestamp, End: start,
+				CumulatedResponseTime: 5, Status: gatling.StatusOK,
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			var it model.Item
+			if !wire.Item(&it, &tt.rec) {
+				t.Fatal("Item refused the record")
+			}
+
+			at, d := it.Sample.Start, it.Sample.Duration
+			if it.Kind == model.ItemGroup {
+				at, d = it.Group.Start, it.Group.Duration
+			}
+
+			if !at.IsZero() {
+				t.Errorf("Start = %v; want the zero time for a start the log could not resolve", at)
+			}
+
+			if v, ok := d.Get(); ok {
+				t.Errorf("Duration = %v; nothing can be measured from an absent start", v)
+			}
+		})
+	}
+}

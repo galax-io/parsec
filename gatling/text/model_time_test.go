@@ -172,3 +172,39 @@ func TestGroupCumulatedDurationIsMilliseconds(t *testing.T) {
 		t.Errorf("CumulatedDuration = %v, want %v", d, want)
 	}
 }
+
+// A time the log could not resolve — a negative value, which Gatling writes only
+// as its never-completed sentinel — reaches the model as the zero time, with no
+// duration measured from it, and a negative cumulated response time reaches it
+// unset. Neither ends the read: one bad field in a ten-million-record log is not
+// a reason to refuse the run, and this is what the binary codec already does for
+// the same input.
+func TestAnAbsentTimeIsTheZeroTimeNotADateInThePast(t *testing.T) {
+	t.Parallel()
+
+	log := modelPreamble +
+		"REQUEST\t\tGET /ok\t-5\t1788379356173\tOK\t \n" +
+		"GROUP\touter\t1788379356162\t1788379356200\t-5\tOK\n" +
+		"USER\ts\tEND\t-1\n"
+
+	got := modelItems(t, log)
+	if len(got) != 3 {
+		t.Fatalf("got %d items, want 3", len(got))
+	}
+
+	if !got[0].Sample.Start.IsZero() {
+		t.Errorf("Start = %v; want the zero time", got[0].Sample.Start)
+	}
+
+	if d, ok := got[0].Sample.Duration.Get(); ok {
+		t.Errorf("Duration = %v; nothing can be measured from an absent start", d)
+	}
+
+	if d, ok := got[1].Group.CumulatedDuration.Get(); ok {
+		t.Errorf("CumulatedDuration = %v; want unset for a negative value", d)
+	}
+
+	if !got[2].User.At.IsZero() {
+		t.Errorf("At = %v; want the zero time", got[2].User.At)
+	}
+}

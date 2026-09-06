@@ -60,27 +60,27 @@ func modelTally(t *testing.T, path string) tally {
 			c.add(okOutcome(t, it.Sample.Outcome, it.Sample.Name))
 			ta.requests[k] = c
 			ta.global.add(okOutcome(t, it.Sample.Outcome, it.Sample.Name))
-			ta.injectStart = min(ta.injectStart, it.Sample.Start.UnixMilli())
+			openAt(&ta, it.Sample.Start)
 			ta.injectEnd = max(ta.injectEnd, endAfter(it.Sample.Start, it.Sample.Duration))
 		case model.ItemGroup:
 			k := statsKey{path: strings.Join(it.Group.Groups, ",")}
 			c := ta.groups[k]
 			c.add(okOutcome(t, it.Group.Outcome, strings.Join(it.Group.Groups, ",")))
 			ta.groups[k] = c
-			ta.injectStart = min(ta.injectStart, it.Group.Start.UnixMilli())
+			openAt(&ta, it.Group.Start)
 			ta.injectEnd = max(ta.injectEnd, endAfter(it.Group.Start, it.Group.Duration))
 		case model.ItemUser:
 			switch it.User.Kind {
 			case model.UserStart:
 				ta.users[gatling.EventStart]++
-				ta.injectStart = min(ta.injectStart, it.User.At.UnixMilli())
+				openAt(&ta, it.User.At)
 			case model.UserEnd:
 				ta.users[gatling.EventEnd]++
 			case model.UserEventUnknown:
 				t.Fatalf("%s: the conversion produced a user event with no kind", it.User.Scenario)
 			}
 
-			ta.injectEnd = max(ta.injectEnd, it.User.At.UnixMilli())
+			closeAt(&ta, it.User.At)
 		case model.ItemError:
 			ta.errors++
 		case model.ItemAssertion:
@@ -105,6 +105,21 @@ func okOutcome(t *testing.T, o model.Outcome, what string) bool {
 	}
 
 	return o == model.OutcomeSuccess
+}
+
+// openAt and closeAt fold one recorded instant into the span, ignoring a time
+// the source could not resolve. The zero time's UnixMilli is year 1, so without
+// the guard one such value would silently open the run there.
+func openAt(ta *tally, at time.Time) {
+	if !at.IsZero() {
+		ta.injectStart = min(ta.injectStart, at.UnixMilli())
+	}
+}
+
+func closeAt(ta *tally, at time.Time) {
+	if !at.IsZero() {
+		ta.injectEnd = max(ta.injectEnd, at.UnixMilli())
+	}
 }
 
 // endAfter reconstructs an end timestamp from a start and a wall-clock

@@ -60,7 +60,9 @@ type Sample struct {
 	// attribute loadtest.request.name.
 	Name string
 	// Start is when the operation began, in UTC, exactly as the source recorded
-	// it: not rounded, and not re-based against the run's start.
+	// it: not rounded, and not re-based against the run's start. It is the zero
+	// Time when the source could not resolve it; a recorded instant is never the
+	// zero Time.
 	Start time.Time
 	// Duration is how long the operation took, and is the OpenNFR metric
 	// loadtest.request.duration. It is unset — never negative — when the source
@@ -88,7 +90,8 @@ type GroupSample struct {
 	// backed by a slice a reader reuses between calls: valid until the next
 	// call to Next, and a caller keeping it must copy it.
 	Groups []string
-	// Start is when the traversal began, in UTC, exactly as recorded.
+	// Start is when the traversal began, in UTC, exactly as recorded, or the
+	// zero Time when the source could not resolve it.
 	Start time.Time
 	// Duration is wall clock across the traversal, including any pause inside
 	// it.
@@ -142,7 +145,8 @@ type UserEvent struct {
 	Scenario string
 	// Kind is whether the user is starting or ending it.
 	Kind UserEventKind
-	// At is when it happened, in UTC, exactly as recorded.
+	// At is when it happened, in UTC, exactly as recorded, or the zero Time when
+	// the source could not resolve it.
 	At time.Time
 }
 
@@ -155,6 +159,7 @@ type UserEvent struct {
 type RunError struct {
 	// Message is what the source recorded, character for character.
 	Message string
-	// At is when it happened, in UTC, exactly as recorded.
+	// At is when it happened, in UTC, exactly as recorded, or the zero Time when
+	// the source could not resolve it.
 	At time.Time
 }
