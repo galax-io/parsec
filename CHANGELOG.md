@@ -7,6 +7,21 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
+- `model.Position`, with `NewSamplePosition`, `NewGroupPosition`, `Sample.Position` and
+  `GroupSample.Position`: where in a run something was recorded, as one comparable value a consumer
+  buckets by. Two consumers keying a map by it produce the same keys without agreeing on a spelling;
+  distinct paths never collide whatever the names contain; a group traversal and a sample never
+  share one; and it stays valid after the reader advances, unlike the `Groups` slice it is made
+  from. (#8)
+- `model.Bounds`: where a run begins and ends, exactly as Gatling's own report bounds it — by
+  sample, group and virtual-user events, never by the run's recorded start or its errors — folded
+  one item at a time with `Extend`. It is the span every rate divides by, and the one definition a
+  consumer was most likely to get subtly wrong: on the 3.15.1 recording it reproduces the console
+  summary's 25.5, 21 and 4.5 requests per second to the digit. (#8)
+- The package example in `model`: the consumer's loop over a real recording, checked against that
+  run's own console summary. This library still computes nothing; the example shows what a consumer
+  computes from, and `testdata/exports.golden` pins the exported surface so that a statistic cannot
+  be added unnoticed. (#8)
 - `gatling.MaxRunStart`: the latest run start either codec accepts. Every event time is resolved
   against the run start and the binary format adds a 32-bit offset to it, so a later start could not
   carry one without running past the end of the int64 range. Both codecs bound the field here, so a
@@ -27,7 +42,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   what spec 005 requires of both: one bad field does not end a ten-million-record read, and the two
   codecs now give the same answer to the same malformed input. A test drives both with the same
   inputs so a third answer cannot appear unnoticed. (#56)
-
+- `model.Bounds` reports no span rather than a wrong one. A fold that met an item it could not place
+  in time reports neither bound, because such an item's recorded end is unreachable from a model that
+  carries no end without a start, and a span that silently excluded it would be too short and every
+  rate derived from it too high. The end is never reported before the start either: a virtual-user
+  END extends only the end and a sample with no recorded end extends only the start, so the two can
+  cross. `Start` and `End` now take a value receiver, so bounds kept in a map can be read. (#8)
+- `model.Position` renders a group traversal with its kind, so a group at `a / b` and a request named
+  `b` inside group `a` no longer print the same label for two rows the type keeps distinct. (#8)
 ### Fixed
 
 - `gatling/binary` refused a valid run declaring more than 1,024 assertions or scenarios as
