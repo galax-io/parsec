@@ -5,6 +5,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.0.4] - 2026-09-06
+
 Telling which Gatling wrote a log, before anything tries to read it.
 
 ### Added
@@ -44,6 +46,16 @@ Telling which Gatling wrote a log, before anything tries to read it.
 - `gatling.Warning.String` returns the empty string for the zero `Warning`. The zero value is how
   "no warning" travels, so rendering it as a warning about version 0.0.0 put a false alarm in the
   log of every healthy run.
+
+### Fixed
+
+- `scripts/check-linkage.sh` requires a closing issue only from the change types a milestone is a
+  manifest of — `feat`, `fix` and `perf`. It demanded one from every pull request, which is stricter
+  than the rule it enforces: the constitution asks that every issue a pull request *fixes* be
+  closed, not that one exist. Spec artifacts, constitution amendments and out-of-scope refactors
+  land without an issue by design, and the gate refused a milestone that was otherwise ready. Every
+  pull request still needs a milestone, and a waived one is now reported as checked rather than
+  omitted from the audit.
 
 ## [0.0.3] - 2026-09-05
 
