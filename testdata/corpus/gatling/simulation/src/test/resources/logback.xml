@@ -1,105 +1,46 @@
 <?xml version="1.0" encoding="UTF-8"?>
+<!--
+    Logging for the corpus probe.
+
+    This file was scaffolded from the galaxio Gatling template, where it carried nested
+    <if>/<then>/<else> blocks driven by CONSOLE_LOGGING, FILE_LOGGING and GRAYLOG_LOGGING
+    properties. The probe sets none of them, so every branch was false and the whole
+    apparatus resolved to what is written plainly below.
+
+    It is written plainly now because the logback that ships with Gatling 3.13.0 and newer
+    cannot parse those blocks: an <else> inside an <if> inside an <if> raises
+    EmptyStackException in ElseModelHandler before any appender is created, and the run then
+    fails at startup. Simplifying keeps the probe recordable on every version the corpus
+    covers, and changes nothing about what is logged on the versions that could parse it.
+
+    Nothing here reaches simulation.log. Gatling writes that itself, and no logging
+    configuration changes a byte of it.
+-->
 <configuration>
 
-    <!-- Discard logback's own config status output (nested <if> warnings). -->
+    <!-- Discard logback's own config status output. -->
     <statusListener class="ch.qos.logback.core.status.NopStatusListener" />
 
-    <if condition='property("CONSOLE_LOGGING").contains("ON")'>
-        <then>
-            <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
-                <encoder>
-                    <pattern>%date{yyy-MM-dd'T'HH:mm:ss.SSSXXX, UTC} ${PROJECT:-debug}%replace(%msg){'[\r\n]+', ' '}%n</pattern>
-                </encoder>
-            </appender>
-        </then>
-    </if>
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%msg%n</pattern>
+        </encoder>
+    </appender>
 
-    <if condition='property("FILE_LOGGING").contains("ON")'>
-        <then>
-            <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
-                <!-- Threshold, not LevelFilter: the previous DEBUG-only filter denied
-                     every INFO/WARN/ERROR event, including the picatinny banner. -->
-                <filter class="ch.qos.logback.classic.filter.ThresholdFilter">
-                    <level>DEBUG</level>
-                </filter>
-                <encoder>
-                    <pattern>%date{yyy-MM-dd'T'HH:mm:ss.SSSXXX, UTC} ${PROJECT:-debug}%replace(%msg){'[\r\n]+', ' '}%n</pattern>
-                </encoder>
-                <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
-                    <fileNamePattern>target/gatling-%d{yyyy-MM-dd}.%i.log</fileNamePattern>
-                    <maxFileSize>100MB</maxFileSize>
-                    <maxHistory>5</maxHistory>
-                    <totalSizeCap>500MB</totalSizeCap>
-                </rollingPolicy>
-            </appender>
-
-            <appender name="ASYNC_FILE" class="ch.qos.logback.classic.AsyncAppender">
-                <appender-ref ref="FILE"/>
-            </appender>
-        </then>
-    </if>
-
-    <!-- Picatinny startup banner / diagnostics. Since picatinny 1.23.0 these are emitted
-         through SLF4J (logger org.galaxio.gatling.diagnostics) instead of stdout, so without
-         this binding the root level below would swallow them. The whole block arrives as one
-         log event: %msg%n prints it verbatim and keeps the ASCII box aligned, and
-         additivity="false" stops it also printing through the prefixed root appenders.
-         Whether the blocks are produced at all is controlled by
-         picatinny.startup.banner.enabled / picatinny.diagnostics.enabled in simulation.conf;
-         CONSOLE_LOGGING=OFF suppresses them here like any other console output, and
-         FILE_LOGGING=ON archives them alongside the run they describe. Logback rejects <if>
-         nested inside <logger>, so each reachable combination selects a whole element. -->
-    <if condition='!property("CONSOLE_LOGGING").contains("OFF")'>
-        <then>
-            <appender name="BANNER" class="ch.qos.logback.core.ConsoleAppender">
-                <encoder>
-                    <pattern>%msg%n</pattern>
-                </encoder>
-            </appender>
-
-            <if condition='property("FILE_LOGGING").contains("ON")'>
-                <then>
-                    <logger name="org.galaxio.gatling.diagnostics" level="INFO" additivity="false">
-                        <appender-ref ref="BANNER"/>
-                        <appender-ref ref="ASYNC_FILE"/>
-                    </logger>
-                </then>
-                <else>
-                    <logger name="org.galaxio.gatling.diagnostics" level="INFO" additivity="false">
-                        <appender-ref ref="BANNER"/>
-                    </logger>
-                </else>
-            </if>
-        </then>
-        <else>
-            <if condition='property("FILE_LOGGING").contains("ON")'>
-                <then>
-                    <logger name="org.galaxio.gatling.diagnostics" level="INFO" additivity="false">
-                        <appender-ref ref="ASYNC_FILE"/>
-                    </logger>
-                </then>
-            </if>
-        </else>
-    </if>
+    <!-- Picatinny's startup banner and diagnostics. Since picatinny 1.23.0 these arrive
+         through SLF4J instead of stdout, and the root level below would swallow them. The
+         whole block arrives as one log event, so %msg%n prints it verbatim and keeps the
+         ASCII box aligned. On the versions where picatinny is absent this logger simply
+         never fires. -->
+    <logger name="org.galaxio.gatling.diagnostics" level="INFO" additivity="false">
+        <appender-ref ref="CONSOLE"/>
+    </logger>
 
     <logger name="io.gatling.http.engine.response.DefaultStatsProcessor" level="WARN"/>
 
-    <root level="${ROOT_LOGGING_LEVEL:-ERROR}">
-        <if condition='property("CONSOLE_LOGGING").contains("ON")'>
-            <then>
-                <appender-ref ref="CONSOLE"/>
-            </then>
-        </if>
-        <if condition='property("FILE_LOGGING").contains("ON")'>
-            <then>
-                <appender-ref ref="ASYNC_FILE"/>
-            </then>
-        </if>
-        <if condition='property("GRAYLOG_LOGGING").contains("ON")'>
-            <then>
-                <appender-ref ref="ASYNC_GELF"/>
-            </then>
-        </if>
-    </root>
+    <!-- No appender: the template attached one only under a property the probe never sets,
+         so errors were already going nowhere. Gatling's own console summary is what the
+         recording keeps. -->
+    <root level="${ROOT_LOGGING_LEVEL:-ERROR}"/>
 
 </configuration>

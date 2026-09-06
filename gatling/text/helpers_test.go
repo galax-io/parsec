@@ -39,9 +39,25 @@ func corpusDirs(t *testing.T) []string {
 		t.Fatal("no recorded run under testdata/corpus/gatling/<version>/ — the corpus is missing, not optional")
 	}
 
-	dirs := make([]string, 0, len(logs))
+	// The corpus spans both Gatling log formats. This codec reads one of them,
+	// so an entry is included only when its log is the text one — asked of the
+	// recording rather than assumed from the version, so a mis-recorded entry
+	// fails loudly instead of quietly leaving a version untested.
+	var dirs []string
+
 	for _, log := range logs {
-		dirs = append(dirs, filepath.Dir(log))
+		format, err := detectFormat(log)
+		if err != nil {
+			t.Fatalf("detecting the format of %s: %v", log, err)
+		}
+
+		if format == gatling.FormatText {
+			dirs = append(dirs, filepath.Dir(log))
+		}
+	}
+
+	if len(dirs) == 0 {
+		t.Fatal("no text recording under testdata/corpus/gatling/<version>/ — the corpus is missing, not optional")
 	}
 
 	return dirs

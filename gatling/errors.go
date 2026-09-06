@@ -5,14 +5,37 @@ import (
 	"strconv"
 )
 
-// SyntaxError ends a read: the line it names could not be decoded, and no line
-// after it was read. There is no partial result beside it — records delivered
-// before it are not a result, and no total may be derived from them.
+// SyntaxError ends a read: the position it names could not be decoded, and
+// nothing after it was read. There is no partial result beside it — records
+// delivered before it are not a result, and no total may be derived from them.
+//
+// One type serves both Gatling log formats. A caller catching a malformed log
+// wants one errors.As for either, and a decoder that gives up is the same event
+// whichever grammar it was reading; two types would make every consumer branch
+// on the format to ask the same question. Which position field is meaningful
+// depends on the format the error came from, and Error renders whichever is set.
 type SyntaxError struct {
-	// Line is the 1-based number of the line that could not be decoded. It is 0
-	// when the input was empty.
+	// Line is the 1-based number of the line that could not be decoded, for a
+	// text log. It is 0 when the input was empty, and 0 for a binary log, where
+	// Offset carries the position instead.
 	Line int
-	// Expected says what the reader needed at that line.
+	// Offset is the 0-based byte offset at which decoding stopped, for a binary
+	// log. It is 0 for a text log.
+	//
+	// Exactly one of Line and Offset is meaningful, and Format says which.
+	// Principle II asks a decoder for "the byte offset (line number for text
+	// formats)", so both positions are real and this type carries both rather
+	// than pretending one is the other.
+	Offset int64
+	// Format is the log format the failing decoder was reading. It says which of
+	// Line and Offset to read, and it is not redundant with them: a binary log
+	// can fail at byte 0 and a text log can fail before it has a line, so both
+	// positions are legitimately zero and neither can discriminate on its own.
+	//
+	// The zero value is FormatUnknown, which renders as a line for compatibility
+	// with errors constructed before this field existed.
+	Format Format
+	// Expected says what the reader needed at that position.
 	Expected string
 	// Found says what was there instead.
 	Found string
@@ -20,6 +43,10 @@ type SyntaxError struct {
 
 // Error names the line, what was expected there and what was found.
 func (e *SyntaxError) Error() string {
+	if e.Format == FormatBinary {
+		return fmt.Sprintf("gatling: byte %d: expected %s, found %s", e.Offset, e.Expected, e.Found)
+	}
+
 	return fmt.Sprintf("gatling: line %d: expected %s, found %s", e.Line, e.Expected, e.Found)
 }
 

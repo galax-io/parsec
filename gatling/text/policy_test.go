@@ -12,6 +12,26 @@ import (
 	"github.com/galax-io/parsec/gatling/text"
 )
 
+// detectFormat reads just enough of a corpus log to say which Gatling format
+// wrote it.
+func detectFormat(path string) (gatling.Format, error) {
+	f, err := os.Open(path) //nolint:gosec // a corpus path this test spells out itself
+	if err != nil {
+		return gatling.FormatUnknown, err
+	}
+
+	defer f.Close() //nolint:errcheck // read-only
+
+	buf := make([]byte, gatling.DetectSize)
+
+	n, err := f.Read(buf)
+	if n == 0 && err != nil {
+		return gatling.FormatUnknown, err
+	}
+
+	return gatling.Detect(buf[:n])
+}
+
 // Principle II binds the gate to the evidence: "a codec's supported range MUST
 // equal the range covered by its golden corpus". This is that rule as a test,
 // and it is the one the other tests in this file rely on — they name versions
@@ -38,8 +58,23 @@ func TestSupportedRangeEqualsTheCorpus(t *testing.T) {
 			continue
 		}
 
-		if _, err := os.Stat(filepath.Join("..", "..", "testdata", "corpus", "gatling", e.Name(), "simulation.log")); err != nil {
+		log := filepath.Join("..", "..", "testdata", "corpus", "gatling", e.Name(), "simulation.log")
+		if _, err := os.Stat(log); err != nil {
 			t.Fatalf("%s has no simulation.log: a corpus entry without its log proves nothing", e.Name())
+		}
+
+		// The corpus spans both Gatling log formats. This codec's range is bound
+		// to the runs *it* can read, so an entry is folded in only when its log
+		// is the text one — asked of the recording itself rather than assumed
+		// from the version, so that a mis-recorded entry fails here loudly
+		// instead of silently widening or narrowing the range.
+		format, err := detectFormat(log)
+		if err != nil {
+			t.Fatalf("detecting the format of %s: %v", log, err)
+		}
+
+		if format != gatling.FormatText {
+			continue
 		}
 
 		recorded = append(recorded, v)
