@@ -325,11 +325,25 @@ func TestACorruptCountIsRefusedBeforeAllocating(t *testing.T) {
 func TestAssertionPayloadsPastTheByteCeilingAreRefused(t *testing.T) {
 	t.Parallel()
 
-	// Two payloads, each inside MaxStringLen, together past the ceiling.
-	const half = 4608 * 1024
+	// Payloads each exactly at MaxStringLen, and one more of them than fits
+	// inside the separate ceiling on what they come to in total.
+	//
+	// The count is derived from the constant rather than written out. It used to
+	// be two payloads of 4608 KiB, chosen to sit inside an 8 MiB string ceiling;
+	// when that ceiling came down to 1 MiB in v0.0.7 each payload was refused by
+	// sized() first, and this test went on failing while no longer exercising
+	// maxAssertionBytes at all. Sizing from MaxStringLen keeps it pointed at the
+	// ceiling it is named for whatever that constant becomes.
+	const maxAssertionBytes = 8 << 20
 
-	payload := strings.Repeat("a", half)
-	log := (&builder{}).runRecord("3.15.1", []string{"scenario"}, []string{payload, payload}).bytes()
+	payload := strings.Repeat("a", binary.MaxStringLen)
+	blobs := make([]string, maxAssertionBytes/binary.MaxStringLen+1)
+
+	for i := range blobs {
+		blobs[i] = payload
+	}
+
+	log := (&builder{}).runRecord("3.15.1", []string{"scenario"}, blobs).bytes()
 
 	_, err := binary.NewReader(bytes.NewReader(log))
 

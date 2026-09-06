@@ -209,3 +209,97 @@ func TestFoldPeakMemory(t *testing.T) {
 			float64(peak1)/mib, float64(peak2)/mib)
 	}
 }
+
+// peakOf decodes a whole log and reports the highest heap seen.
+//
+// The draw after the loop is not decoration: the largest allocation of a record
+// happens while that record is being built, after the reader has stopped pulling
+// its bytes, so a sampler wrapped around the input alone can miss it entirely.
+func peakOf(t *testing.T, src io.Reader, every int64) (records int, peak uint64) {
+	t.Helper()
+
+	runtime.GC()
+
+	s := &sampler{r: src, every: every}
+
+	rd, err := binary.NewReader(s)
+	if err != nil {
+		t.Fatalf("NewReader: %v", err)
+	}
+
+	for {
+		_, err := rd.Next()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+
+		if err != nil {
+			t.Fatalf("Next after %d records: %v", records, err)
+		}
+
+		records++
+	}
+
+	var m runtime.MemStats
+
+	runtime.ReadMemStats(&m)
+
+	return records, max(s.peak, m.HeapAlloc)
+}
+
+// The budget Reader documents must hold for the field the ceiling is written
+// for.
+//
+// TestPeakMemory measures a log whose longest name is seven ASCII bytes, so the
+// claim it proves is about that run's shape and not about the format's. A single
+// field at MaxStringLen costs a multiple of the ceiling — the read buffer, then
+// the result, and for Latin-1 above ASCII twice the result — and a log carrying
+// one of each encoding costs the sum, because the garbage from one is not
+// collected before the next is built.
+//
+// A bound with an unstated exclusion is not a bound, and the excluded shape here
+// is the one a long failure message takes.
+//
+//nolint:paralleltest // measures peak heap and must run alone
+func TestPeakMemoryAtTheStringCeiling(t *testing.T) {
+	records, peak := peakOf(t, newCeilingLog(), int64(binary.MaxStringLen)/8)
+
+	t.Logf("%d fields at the %d MiB ceiling, one per encoding: peak heap %.1f MiB (%.1f x the ceiling)",
+		records, binary.MaxStringLen/mib, float64(peak)/mib, float64(peak)/float64(binary.MaxStringLen))
+
+	if records != len(ceilingFields) {
+		t.Fatalf("decoded %d records, want one per encoding (%d)", records, len(ceilingFields))
+	}
+
+	if peak >= 32*mib {
+		t.Fatalf("peak heap %.1f MiB decoding one field at the %d MiB ceiling in each encoding, "+
+			"want under the 32 MiB this package documents",
+			float64(peak)/mib, binary.MaxStringLen/mib)
+	}
+}
+
+// The other ceiling: what a run record's assertion payloads come to in total.
+//
+// They are held for the whole read and copied again by Assertions, so this is
+// live memory where a string field is transient. The synthetic log declares no
+// assertions, so nothing measured this until now.
+//
+//nolint:paralleltest // measures peak heap and must run alone
+func TestPeakMemoryAtTheAssertionCeiling(t *testing.T) {
+	// maxAssertionBytes is unexported; 8 MiB is the figure record.go states, and
+	// filling it with payloads at the string ceiling is the worst shape that
+	// stays inside both limits.
+	const maxAssertionBytes = 8 << 20
+
+	payloads := max(maxAssertionBytes/binary.MaxStringLen, 1)
+
+	_, peak := peakOf(t, newAssertionLog(payloads, binary.MaxStringLen), int64(binary.MaxStringLen)/8)
+
+	t.Logf("%d assertion payloads of %d MiB, %d MiB retained: peak heap %.1f MiB",
+		payloads, binary.MaxStringLen/mib, payloads*binary.MaxStringLen/mib, float64(peak)/mib)
+
+	if peak >= 32*mib {
+		t.Fatalf("peak heap %.1f MiB reading a run record's assertion payloads, "+
+			"want under the 32 MiB this package documents", float64(peak)/mib)
+	}
+}

@@ -5,6 +5,29 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Changed
+
+- `gatling/binary.MaxStringLen` is **1 MiB**, down from 8 MiB. A string or assertion payload
+  between the two sizes is now refused with a `*gatling.SyntaxError` where it previously decoded.
+  No Gatling log is affected: the longest field the format carries is an assertion payload, and the
+  ten in the 3.14.9 recording are between 15 and 51 bytes, while a failure message is truncated by
+  Gatling long before either ceiling. The constant's purpose — refusing a corrupt length prefix
+  that claims gigabytes — is unchanged, and 1 MiB serves it as flatly as 8 MiB did.
+
+  The reason for the change is the peak-memory bound. Decoding one field costs the read buffer and
+  then the result, and a Latin-1 field above ASCII doubles on the way out, so a log carrying one
+  field at the ceiling in each of the three encodings peaked at **44 MiB** — against a 32 MiB
+  budget, on a log of 24 MiB. At 1 MiB the same shape peaks under 6 MiB. (#61)
+
+### Added
+
+- The 32 MiB peak-heap budget is now **stated** in `gatling/binary.Reader`'s documentation, where
+  it previously existed only inside the tests, and `TestPeakMemoryAtTheStringCeiling` and
+  `TestPeakMemoryAtTheAssertionCeiling` hold the codec to it for the two shapes that cost most per
+  record — a field at `MaxStringLen` in each encoding, and a run record whose assertion payloads
+  fill their own ceiling. The existing bound was measured on a synthetic log whose longest field
+  was seven ASCII bytes, so it described that run's shape rather than the format's. (#61)
+
 ## [0.0.6] - 2026-09-06
 
 The two definitions a consumer folds a run by: where something was recorded, and where the run
