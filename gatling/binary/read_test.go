@@ -103,17 +103,19 @@ func TestPrimitivesRefuseMalformedInput(t *testing.T) {
 			wantFound:  "end of input",
 		},
 		{
-			name:       "an int32 cut short",
-			in:         []byte{0x00, 0x00, 0x01},
-			read:       func(r *reader) error { _, err := r.i32("a count"); return err },
-			wantOffset: 0,
+			name: "an int32 cut short",
+			in:   []byte{0x00, 0x00, 0x01},
+			read: func(r *reader) error { _, err := r.i32("a count"); return err },
+			// A truncation names the first byte that was not there, which is
+			// where a reader would open the file to see the end of it.
+			wantOffset: 3,
 			wantFound:  "end of input",
 		},
 		{
 			name:       "an int64 cut short",
 			in:         []byte{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01},
 			read:       func(r *reader) error { _, err := r.i64("the run start"); return err },
-			wantOffset: 0,
+			wantOffset: 7,
 			wantFound:  "end of input",
 		},
 		{
@@ -136,9 +138,9 @@ func TestPrimitivesRefuseMalformedInput(t *testing.T) {
 			name: "a length past the end of the file",
 			in:   []byte{0x00, 0x00, 0x10, 0x00, 'a', 'b'},
 			read: func(r *reader) error { _, err := r.str("a name"); return err },
-			// A truncation names where the missing bytes should have started,
-			// which is after the length prefix, not the start of the string.
-			wantOffset: 4,
+			// A truncation names the first byte that was not there: two of the
+			// four thousand it claimed did arrive.
+			wantOffset: 6,
 			wantFound:  "end of input",
 		},
 		{

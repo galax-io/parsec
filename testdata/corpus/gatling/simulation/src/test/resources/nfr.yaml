@@ -10,6 +10,12 @@
 # its own report. The corpus is recorded from this run, so a log that passed a vaguer bar would be
 # evidence of nothing.
 #
+# It describes the probe as it is NOW. The 3.11.5 and 3.12.0 recordings in this corpus were made
+# before milestone v0.0.5 grew the probe from 36 requests to 102, so they do not satisfy the numbers
+# below and re-running the probe does not reproduce them. That is deliberate — a recording is
+# captured once and never re-made — and each of those RECORDING.md files says so. Their own
+# statistics files are what they are held to.
+#
 # This document serves the versions that write a TEXT simulation.log — up to 3.12.0. It is not
 # rendered for the versions that write a binary one, and the reason is the format rather than the
 # tool: an OpenNFR loadtest.group.name is the literal *recorded* name, the two formats record

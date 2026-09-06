@@ -42,14 +42,24 @@ func (w *builder) i64(v int64) *builder {
 
 // str writes a string the way the writer does: a length, the bytes, and a coder
 // byte — except for the empty string, which carries no coder.
+//
+// The coder is chosen the way the JVM chooses it: Latin-1 whenever every
+// character is below U+0100, not merely when every character is ASCII. A builder
+// that reached for UTF-16 at the first byte above 0x7f could never produce the
+// Latin-1 high-byte path, which is the one a run named `GET /café` takes.
 func (w *builder) str(s string) *builder {
 	if s == "" {
 		return w.i32(0)
 	}
 
-	if ascii(s) {
-		w.i32(length(len(s)))
-		w.b = append(w.b, s...)
+	if latin1able(s) {
+		b := make([]byte, 0, len(s))
+		for _, r := range s {
+			b = append(b, byte(r&0xff))
+		}
+
+		w.i32(length(len(b)))
+		w.b = append(w.b, b...)
 
 		return w.u8(latin1)
 	}
@@ -74,9 +84,10 @@ func (w *builder) newString(s string) *builder {
 // ref refers back to an entry already introduced.
 func (w *builder) ref(index int32) *builder { return w.i32(-index) }
 
-func ascii(s string) bool {
-	for i := range len(s) {
-		if s[i] >= 0x80 {
+// latin1able reports whether the JVM would store s as one byte per character.
+func latin1able(s string) bool {
+	for _, r := range s {
+		if r > 0xff {
 			return false
 		}
 	}

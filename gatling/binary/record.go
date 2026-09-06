@@ -1,6 +1,7 @@
 package binary
 
 import (
+	"math"
 	"strconv"
 
 	"github.com/galax-io/parsec/gatling"
@@ -48,9 +49,20 @@ func readRun(r *reader) (runHeader, error) {
 		return out, err
 	}
 
+	startAt := r.off
+
 	start, err := r.i64("the run start")
 	if err != nil {
 		return out, err
+	}
+
+	// Every later record resolves against this, so it is checked once here
+	// rather than on each addition. A negative start is what the text codec
+	// already refuses; the ceiling is what keeps start + a 32-bit offset inside
+	// an int64, so no timestamp can wrap to a plausible instant in the past.
+	if start < 0 || start > math.MaxInt64-math.MaxInt32 {
+		return out, r.syntax(startAt, "the run start",
+			"an epoch millisecond of "+strconv.FormatInt(start, 10))
 	}
 
 	description, err := r.str("the run description")
@@ -175,6 +187,15 @@ func (r *Reader) groups() ([]string, error) {
 		return nil, r.rd.syntax(at, "a group depth", "a depth of "+strconv.Itoa(int(depth)))
 	}
 
+	if r.path == nil {
+		// Allocated once so that a record with no groups always hands out an
+		// empty, non-nil slice. Slicing a nil scratch at [:0] would yield nil
+		// for the first such record and an empty non-nil slice for every later
+		// one, and `Groups == nil` and `len(Groups) == 0` would then disagree
+		// depending on what was read before.
+		r.path = make([]string, 0, maxGroupDepth/128)
+	}
+
 	path := r.path[:0]
 
 	for range depth {
@@ -188,7 +209,10 @@ func (r *Reader) groups() ([]string, error) {
 
 	r.path = path
 
-	return path, nil
+	// Handed out with no spare capacity. A caller appending to a group path —
+	// which reads as a copy — would otherwise write into the reader's own array
+	// and see the next record's groups appear in its slice.
+	return path[:len(path):len(path)], nil
 }
 
 // readRequest decodes a REQUEST record: the group path it ran under, its name,
@@ -209,7 +233,7 @@ func (r *Reader) readRequest(rec *gatling.Record) error {
 		return err
 	}
 
-	end, err := r.endInstant("a request end")
+	end, err := r.instant("a request end")
 	if err != nil {
 		return err
 	}
@@ -293,7 +317,7 @@ func (r *Reader) readGroup(rec *gatling.Record) error {
 		return err
 	}
 
-	end, err := r.endInstant("a group end")
+	end, err := r.instant("a group end")
 	if err != nil {
 		return err
 	}
@@ -343,30 +367,14 @@ func (r *Reader) readError(rec *gatling.Record) error {
 // The offset is signed and Gatling's own writer overflows past about 24.8 days,
 // so the format cannot represent a longer run. A negative offset would place the
 // event before the run began, which the writer never intends — it stores a delta
-// from the start — and none of the recorded runs contains one. There is no way
-// to report an instant as absent, so rather than invent a number this refuses.
+// from the start — and none of the recorded runs contains one. It is reported as
+// absent rather than refused: FR-009 asks for a value that cannot be resolved to
+// be reported absent and never wrapped or guessed, and one such field in a
+// ten-million-record log should not end the read.
+//
+// The addition cannot overflow: readRun bounds the start so that start plus any
+// int32 offset stays inside an int64.
 func (r *Reader) instant(expected string) (int64, error) {
-	at := r.rd.off
-
-	offset, err := r.rd.i32(expected)
-	if err != nil {
-		return 0, err
-	}
-
-	if offset < 0 {
-		return 0, r.rd.syntax(at, expected, "an offset of "+strconv.Itoa(int(offset))+
-			", which would place the event before the run began")
-	}
-
-	return r.run.header.Start + int64(offset), nil
-}
-
-// endInstant is instant for the end of a request or group, where absence *is*
-// representable: the wire records already carry a sentinel for an event that
-// never completed, and a duration computed from it comes out unset rather than
-// negative. This is the same refusal to invent a number the text codec makes for
-// a duration it cannot compute.
-func (r *Reader) endInstant(expected string) (int64, error) {
 	offset, err := r.rd.i32(expected)
 	if err != nil {
 		return 0, err
@@ -379,9 +387,12 @@ func (r *Reader) endInstant(expected string) (int64, error) {
 	return r.run.header.Start + int64(offset), nil
 }
 
-// absentTime marks an end the format could not represent. It is the sentinel the
+// absentTime marks a time the format could not represent. It is the sentinel the
 // wire records already document for an event that never completed, so a consumer
 // has one thing to check rather than two.
+//
+// readRun's bound on the run start is what keeps a resolved time from colliding
+// with it: a non-negative start plus a non-negative offset is never negative.
 const absentTime = int64(-1) << 63
 
 func status(ok bool) gatling.Status {

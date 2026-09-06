@@ -178,7 +178,14 @@ func records(t *testing.T, r io.Reader, opts ...gatling.Option) []gatling.Record
 			t.Fatalf("Next: %v", err)
 		}
 
-		rec.Groups = append([]string(nil), rec.Groups...)
+		// Copied without changing whether it is nil. `append([]string(nil), ...)`
+		// and slices.Clone both flatten an empty non-nil slice to nil, which
+		// would hide from every test built on this helper whether the reader
+		// hands out one or the other.
+		if rec.Groups != nil {
+			rec.Groups = append(make([]string, 0, len(rec.Groups)), rec.Groups...)
+		}
+
 		out = append(out, rec)
 	}
 }

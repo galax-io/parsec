@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"io"
 
 	"github.com/galax-io/parsec/gatling"
@@ -17,6 +18,13 @@ import (
 // No real log approaches it. The longest field is an assertion payload, which
 // runs to tens of kilobytes; the longest string is a failure message, which
 // Gatling truncates long before this.
+//
+// It bounds the bytes read from the file, not the peak while one field is
+// decoded: converting a string allocates the read buffer and the result, and a
+// Latin-1 field above ASCII doubles on the way out, so decoding one field at the
+// ceiling costs a small multiple of it. The ceiling is what stops a corrupt
+// length prefix asking the allocator for gigabytes, which is the failure it
+// exists for.
 const MaxStringLen = 8 << 20
 
 // readBufferSize is the fixed size of the buffer between the caller's reader and
@@ -59,13 +67,28 @@ func (r *reader) truncated(at int64, expected string) error {
 	return r.syntax(at, expected, "end of input")
 }
 
+// sourceFailed reports a stream that broke rather than ended. The cause is
+// wrapped, because a caller told its log is truncated will re-record a run that
+// was never corrupt: a reset connection and a short file are different problems
+// and only one of them is about the file.
+//
+// io.EOF and io.ErrUnexpectedEOF are the two the format's own grammar explains,
+// and they alone become a truncation.
+func (r *reader) sourceFailed(at int64, expected string, err error) error {
+	if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+		return r.truncated(at, expected)
+	}
+
+	return fmt.Errorf("gatling: byte %d: reading %s: %w", at, expected, err)
+}
+
 // u8 reads one byte.
 func (r *reader) u8(expected string) (byte, error) {
 	at := r.off
 
 	b, err := r.src.ReadByte()
 	if err != nil {
-		return 0, r.truncated(at, expected)
+		return 0, r.sourceFailed(at, expected, err)
 	}
 
 	r.off++
@@ -129,8 +152,11 @@ func (r *reader) fixed(n int, expected string) ([]byte, error) {
 
 	buf := r.scratch[:n]
 
-	if _, err := io.ReadFull(r.src, buf); err != nil {
-		return nil, r.truncated(at, expected)
+	// ReadFull's count is what says where the stream actually stopped, which is
+	// the byte a reader would open the file at — not where the value began.
+	read, err := io.ReadFull(r.src, buf)
+	if err != nil {
+		return nil, r.sourceFailed(at+int64(read), expected, err)
 	}
 
 	r.off += int64(n)
@@ -178,10 +204,16 @@ func (r *reader) atEnd() (bool, error) {
 	switch {
 	case err == nil:
 		return false, nil
-	case errors.Is(err, io.EOF):
+	case errors.Is(err, io.EOF) && err == io.EOF: //nolint:err113 // identity is the point; see below
 		return true, nil
 	default:
-		// bufio reports a reader that keeps returning (0, nil) as
+		// Compared with == and not errors.Is. A source that fails with an error
+		// merely *wrapping* io.EOF — a truncated decompressor, a closed
+		// transport — would otherwise be read as the clean end of the log, and
+		// a partial run reported as complete. gatling/simlog holds the same
+		// rule for the same reason.
+		//
+		// bufio also reports a reader that keeps returning (0, nil) as
 		// io.ErrNoProgress rather than spinning, and it surfaces here.
 		return false, err
 	}

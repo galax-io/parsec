@@ -86,6 +86,7 @@ func NewReader(r io.Reader, opts ...gatling.Option) (*Reader, error) {
 
 			if rd.assertsN += len(fields[1]); rd.assertsN > maxAssertionBytes {
 				return nil, &gatling.SyntaxError{
+					Format:   gatling.FormatText,
 					Line:     rd.sc.lineNo,
 					Expected: "a run header within " + strconv.Itoa(maxAssertionBytes) + " bytes of assertions",
 					Found:    "assertions still",
@@ -99,6 +100,7 @@ func NewReader(r io.Reader, opts ...gatling.Option) (*Reader, error) {
 
 		default:
 			return nil, &gatling.SyntaxError{
+				Format:   gatling.FormatText,
 				Line:     rd.sc.lineNo,
 				Expected: "ASSERTION or RUN before the run header",
 				Found:    quote(kind),
@@ -111,7 +113,7 @@ func NewReader(r io.Reader, opts ...gatling.Option) (*Reader, error) {
 // gives any other read failure its line.
 func (r *Reader) preambleError(err error) error {
 	if errors.Is(err, io.EOF) {
-		return &gatling.SyntaxError{Line: r.sc.lineNo, Expected: "a run header", Found: "end of input"}
+		return &gatling.SyntaxError{Format: gatling.FormatText, Line: r.sc.lineNo, Expected: "a run header", Found: "end of input"}
 	}
 
 	return readError(r.sc.lineNo+1, err)
@@ -129,7 +131,7 @@ func readError(lineNo int, err error) error {
 }
 
 func unterminated(lineNo int) error {
-	return &gatling.SyntaxError{Line: lineNo, Expected: "a line terminator", Found: "end of input"}
+	return &gatling.SyntaxError{Format: gatling.FormatText, Line: lineNo, Expected: "a line terminator", Found: "end of input"}
 }
 
 // finishPreamble decodes the header, applies the gate and settles the field

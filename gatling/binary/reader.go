@@ -14,7 +14,9 @@ import (
 // Assertions and Warnings are available before the first Next. Records then
 // arrive one at a time in file order. Peak memory does not grow with the log: it
 // is bounded by a fixed read buffer, the deepest group nesting, and the number
-// of distinct strings the simulation declares — not by the number of records.
+// of distinct strings the log introduces — not by the number of records. The
+// string table is capped, so a log whose every failure message differs cannot
+// make that table follow the record count.
 //
 // The first byte that cannot be decoded ends the read with a
 // *gatling.SyntaxError naming its offset, and every later Next returns that same

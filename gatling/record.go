@@ -100,15 +100,18 @@ type Header struct {
 	Version Version
 }
 
-// Record is one decoded line of a simulation.log. Kind says which of the other
+// Record is one decoded record of a simulation.log. Kind says which of the other
 // fields are meaningful; the rest hold their zero value.
 //
 //	Kind          Meaningful fields
-//	KindUser      Line, Scenario, Event, Timestamp
-//	KindRequest   Line, Groups, Name, Start, End, Status, Message
-//	KindGroup     Line, Groups, Start, End, CumulatedResponseTime, Status
-//	KindError     Line, Message, Timestamp
-//	KindAssertion Line, Payload
+//	KindUser      Scenario, Event, Timestamp
+//	KindRequest   Groups, Name, Start, End, Status, Message
+//	KindGroup     Groups, Start, End, CumulatedResponseTime, Status
+//	KindError     Message, Timestamp
+//	KindAssertion Payload
+//
+// Line is meaningful for every kind above, but only for a text log; see its own
+// documentation.
 //
 // Groups is backed by a slice the reader reuses between calls: it is valid until
 // the next call to Next, and a caller keeping it must copy it. String fields are
@@ -117,7 +120,10 @@ type Header struct {
 type Record struct {
 	// Kind says which record this is.
 	Kind Kind
-	// Line is the 1-based line number the record was decoded from.
+	// Line is the 1-based line number the record was decoded from, for a text
+	// simulation.log. A binary log has no lines and leaves it 0; the position of
+	// a record in one is a byte offset, which only a failure needs and which
+	// SyntaxError.Offset carries.
 	Line int
 	// Groups is the ordered path of enclosing group names, outermost first. It
 	// is empty for a request outside any group.

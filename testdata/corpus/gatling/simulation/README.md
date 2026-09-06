@@ -55,7 +55,9 @@ be reproduced for a future version, and so a reader of the corpus can see exactl
    them.
 
    Then write `RECORDING.md` there with what `specs/005-gatling-binary-decoder/tasks.md` T008–T010
-   asks for. Nothing can be added after the run is archived: the console output exists only if it
+   asks for. **If the probe has changed since an existing entry was recorded, say so in that
+   entry's note** rather than re-recording it: the older recordings under `../3.11.5/` and
+   `../3.12.0/` predate the v0.0.5 probe and do not satisfy the current `nfr.yaml`, and both say so. Nothing can be added after the run is archived: the console output exists only if it
    was redirected, and neither account can be recovered from a run that has already finished.
 
 ## Change what the probe must produce

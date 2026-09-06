@@ -92,8 +92,9 @@ What a reader holds between records, and what bounds it.
 | every other time | `int32`, milliseconds after `start` | `start + offset`, as an instant in UTC |
 
 The signed 32-bit offset covers about **24.8 days**. Past that Gatling's own writer overflows, so the
-format cannot represent a longer run. An offset that resolves to an instant before the run's start is
-reported as **absent** rather than as a wrapped value — the same refusal to invent a number the text
+format cannot represent a longer run. The run's `start` is bounded when it is read — non-negative,
+and low enough that any offset stays inside an `int64` — so no resolved time can wrap; an offset that
+would resolve before the run's start is reported as **absent** rather than as a wrapped value — the same refusal to invent a number the text
 codec already makes for a duration it cannot compute (research [R3](./research.md)).
 
 ---
