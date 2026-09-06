@@ -21,6 +21,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
+- Every per-request and per-group figure a recording's own Gatling report states is now compared
+  against the same figure folded from the decoded records, for every recorded version. A binary
+  recording was previously held to three numbers — the run's total, ok and ko — so a decoder that
+  renamed every request, moved one between groups, or flipped an outcome and compensated with
+  another, passed. Reports are read through a new internal package that gives `stats.json`, the
+  generated `index.html` and the captured console summary one shape, because Gatling stopped
+  writing machine-readable statistics at 3.14.0. (#14)
 - Every `Fuzz*` target in the module now runs under `-fuzz` on every pull request, one CI job per
   target, discovered from `go test -list '^Fuzz'` rather than from a list that would silently stop
   covering a target added later. A crasher fails the job and is uploaded; nothing generated is

@@ -4,6 +4,12 @@ name: gatling-canary
 # probe simulation and holds the decoder to the report each run generated for itself;
 # then one job holds the runs to each other. The recorded corpus proves the decoder
 # against the past; this proves it against a Gatling that ran a minute ago.
+#
+# Both formats. Until v0.0.7 the list was 3.11.5 and 3.12.0, both text, so the binary
+# codec — the newer half, and the one that shipped a panic in v0.0.5 — was never run
+# against a live Gatling at all. The version list is now every version in both
+# supported ranges, and each codec's canary takes the runs whose log it reads and
+# leaves the rest to the other, asking the log rather than the version.
 
 on:
   workflow_call:
@@ -11,7 +17,7 @@ on:
       versions:
         description: Gatling versions to run, as a JSON list
         type: string
-        default: '["3.11.5", "3.12.0"]'
+        default: '["3.11.5", "3.12.0", "3.13.1", "3.14.9", "3.15.1"]'
   workflow_dispatch:
     inputs:
       versions:
@@ -19,7 +25,7 @@ on:
           Gatling versions to run, as a JSON list. A version above the supported range
           decodes unverified and is reported as a candidate for widening the range.
         type: string
-        default: '["3.11.5", "3.12.0"]'
+        default: '["3.11.5", "3.12.0", "3.13.1", "3.14.9", "3.15.1"]'
   schedule:
     - cron: '17 6 * * 1'
 
@@ -35,7 +41,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        gatling: ${{ fromJSON(inputs.versions || '["3.11.5", "3.12.0"]') }}
+        gatling: ${{ fromJSON(inputs.versions || '["3.11.5", "3.12.0", "3.13.1", "3.14.9", "3.15.1"]') }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
@@ -87,7 +93,7 @@ jobs:
         run: |
           set -euo pipefail
           echo "## Gatling canary — ${{ matrix.gatling }}" >> "$GITHUB_STEP_SUMMARY"
-          if ! go test -tags=canary -race -count=1 -run '^TestCanary$' -json ./gatling/text/ > canary.json; then
+          if ! go test -tags=canary -race -count=1 -run '^TestCanary$' -json ./gatling/text/ ./gatling/binary/ > canary.json; then
             jq -r 'select(.Action == "output") | .Output' canary.json | grep -E 'FAIL|Gatling|\.go:[0-9]+:' | tail -60
             exit 1
           fi
@@ -126,7 +132,9 @@ jobs:
           done
           echo "## Gatling canary — across versions" >> "$GITHUB_STEP_SUMMARY"
           export PARSEC_CANARY_RUNS="$runs"
-          if ! go test -tags=canary -race -count=1 -run '^TestCanary(CrossVersion|CoversSupportedRange)$' -json ./gatling/text/ > compare.json; then
+          if ! go test -tags=canary -race -count=1 \
+            -run '^TestCanary(CrossVersion|CrossFormat|CoversSupportedRange|RefusesAVersionBelowTheRange)$' \
+            -json ./gatling/text/ ./gatling/binary/ > compare.json; then
             jq -r 'select(.Action == "output") | .Output' compare.json | grep -E 'FAIL|Gatling|\.go:[0-9]+:' | tail -60
             exit 1
           fi

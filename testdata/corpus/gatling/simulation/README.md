@@ -9,6 +9,29 @@ be reproduced for a future version, and so a reader of the corpus can see exactl
 
 ## Record a version
 
+**One dispatch does it:**
+
+```sh
+gh workflow run record-corpus.yml -f version=3.16.0
+gh run download <run-id> -n corpus-entry-3.16.0 -D ../3.16.0/
+```
+
+Then **finish `RECORDING.md`** — the download carries a scaffold with the mechanical facts, and what
+was *checked* at capture time is yours to state — and commit. The job publishes and never commits: a
+corpus entry is the specification for an undocumented format, and it enters the repository through
+review.
+
+Two things follow from the job running on a runner rather than on your machine. Entries recorded
+this way are made on `ubuntu-latest`, where the five existing ones record macOS/arm64 — which is why
+the scaffold carries a Machine line and why it is not optional. And widening the supported range
+stays a separate decision: a new version decodes with a warning until its entry is committed *and*
+`SupportedVersions()` is widened in the same change.
+
+### By hand
+
+The manual procedure below is the fallback for iterating on a failure. It is what the workflow
+automates, step for step.
+
 1. Start the stub the simulation talks to (from the repository root):
 
    ```sh

@@ -1,0 +1,211 @@
+name: record-corpus
+
+# One dispatch produces a corpus entry for one Gatling version.
+#
+# Recording used to be a nine-step procedure in
+# testdata/corpus/gatling/simulation/README.md needing a local JDK, sbt and the
+# stub. A procedure that long is one that will be skipped when a new Gatling
+# appears, and a version that is skipped is a version the gate cannot honestly be
+# widened to — Principle II ties a codec's supported range to its corpus.
+#
+# The job assembles the entry and uploads it. It never commits: a corpus entry is
+# the specification for an undocumented format, and it enters the repository
+# through review like any other change. The workflow is granted no write
+# permission, so that is enforced rather than intended.
+#
+# What it cannot do is write RECORDING.md. That note states what was checked at
+# the moment of capture and which absences are the tool's own — judgements a job
+# cannot make — so the job scaffolds it, marked incomplete, and the recorder
+# finishes it.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: The Gatling version to record, e.g. 3.16.0
+        type: string
+        required: true
+      description:
+        description: Anything about this recording a later reader should know
+        type: string
+        required: false
+
+permissions:
+  contents: read
+
+env:
+  SIMULATION: testdata/corpus/gatling/simulation
+
+jobs:
+  record:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: sbt/setup-sbt@v1
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/coursier
+            ~/.sbt
+          key: sbt-${{ runner.os }}-${{ inputs.version }}-${{ hashFiles('**/*.sbt', '**/project/**') }}
+          restore-keys: |
+            sbt-${{ runner.os }}-${{ inputs.version }}-
+
+      - name: start the stub the probe simulation talks to
+        run: |
+          set -euo pipefail
+          go build -o "$RUNNER_TEMP/stub" ./testdata/corpus/gatling/simulation/stub
+          "$RUNNER_TEMP/stub" > "$RUNNER_TEMP/stub.log" 2>&1 &
+          for _ in $(seq 1 150); do
+            curl -sf http://127.0.0.1:8089/ok > /dev/null && exit 0
+            sleep 0.2
+          done
+          echo "the stub did not come up within 30 s"
+          cat "$RUNNER_TEMP/stub.log"
+          exit 1
+
+      - name: run the probe under Gatling ${{ inputs.version }}
+        working-directory: ${{ env.SIMULATION }}
+        # Standard output is captured, not just displayed. From 3.14.0 the console
+        # summary is one of only two accounts Gatling gives of its own numbers, it
+        # exists nowhere on disk, and it cannot be recovered from a run that has
+        # already finished. The build picks the OpenNFR or the plain-DSL assertion
+        # flavour from the version itself, so nothing here says which.
+        run: |
+          set -euo pipefail
+          if ! sbt -batch -Dgatling.version='${{ inputs.version }}' \
+               "Gatling/testOnly io.galaxio.parsec.corpus.CorpusSimulation" 2>&1 | tee "$RUNNER_TEMP/console.txt"; then
+            echo "Gatling ${{ inputs.version }} could not run the probe, or the run missed the expectations the probe declares."
+            echo "Either way this is not a corpus entry: a log that is merely consistent with itself proves nothing."
+            exit 1
+          fi
+
+      - name: assemble the entry
+        id: assemble
+        # Files are selected by presence, never from a table of what a version is
+        # expected to write. Gatling changed that twice already — it stopped writing
+        # global_stats.json and stats.json at 3.14.0, and moved them under js/ at
+        # 3.13.0 — and a version whose shape is not yet known must still record
+        # whatever it did write.
+        run: |
+          set -euo pipefail
+          run_dir=$(ls -d "$SIMULATION"/target/gatling/corpussimulation-* 2>/dev/null | head -1 || true)
+          if [ -z "$run_dir" ]; then
+            echo "the run produced no report directory."
+            echo "A run with no second, independent account of its own numbers cannot be a corpus entry —"
+            echo "which is why Gatling 3.13.0 is deliberately absent from this corpus."
+            exit 1
+          fi
+
+          entry="$RUNNER_TEMP/entry"
+          mkdir -p "$entry"
+
+          for f in simulation.log index.html \
+                   js/global_stats.json js/stats.json js/stats.js js/all_sessions.js js/assertions.xml; do
+            if [ -f "$run_dir/$f" ]; then
+              mkdir -p "$entry/$(dirname "$f")"
+              cp "$run_dir/$f" "$entry/$f"
+              echo "kept $f"
+            fi
+          done
+          cp "$RUNNER_TEMP/console.txt" "$entry/console.txt"
+
+          if [ ! -f "$entry/simulation.log" ]; then
+            echo "the run produced no simulation.log"
+            exit 1
+          fi
+
+          # Everything dropped is what the report needs only to render: it carries
+          # nothing about this run, is byte-identical across runs of a version, and
+          # comes to about a megabyte an entry.
+          echo "run_dir=$run_dir" >> "$GITHUB_OUTPUT"
+          echo "entry=$entry" >> "$GITHUB_OUTPUT"
+
+      - name: decode the entry into records.golden
+        # The same generator the corpus tests use, so the recorded stream and the
+        # stream a test compares against are produced by one piece of code.
+        run: |
+          set -euo pipefail
+          entry='${{ steps.assemble.outputs.entry }}'
+          dest="testdata/corpus/gatling/${{ inputs.version }}"
+          mkdir -p "$dest"
+          cp -R "$entry/." "$dest/"
+
+          if head -c 1 "$dest/simulation.log" | od -An -tx1 | grep -q '00'; then
+            pkg=./gatling/binary/
+          else
+            pkg=./gatling/text/
+          fi
+          echo "decoding with $pkg"
+          go test -tags=integration -count=1 -run '^TestGolden$' -update "$pkg"
+          cp "$dest/records.golden" "$entry/records.golden"
+
+      - name: scaffold the recording note
+        run: |
+          set -euo pipefail
+          entry='${{ steps.assemble.outputs.entry }}'
+          {
+            echo "# Recording: Gatling ${{ inputs.version }}"
+            echo
+            echo "> **INCOMPLETE — the recorder finishes this note.** The facts below are the ones a job"
+            echo "> can state. What was *checked* at capture time, and which absences are Gatling's own"
+            echo "> rather than the recorder's, are judgements and belong here in prose. Nothing can be"
+            echo "> added after the run is archived."
+            echo
+            echo "Recorded $(date -u +%Y-%m-%d) by .github/workflows/record-corpus.yml from a real run of"
+            echo "\`testdata/corpus/gatling/simulation/\` (\`io.galaxio.parsec.corpus.CorpusSimulation\`)"
+            echo "against the stub in \`simulation/stub\`. Everything beside this note is exactly as"
+            echo "Gatling wrote it; nothing has been edited."
+            echo
+            echo "| Fact | Value |"
+            echo "|---|---|"
+            echo "| Gatling version | ${{ inputs.version }} |"
+            echo "| Build | \`sbt -Dgatling.version=${{ inputs.version }} \"Gatling/testOnly io.galaxio.parsec.corpus.CorpusSimulation\"\` |"
+            echo "| Machine | ${{ runner.os }} on GitHub Actions, $(uname -m) |"
+            echo "| JVM | $(java -version 2>&1 | head -1) |"
+            echo "| \`simulation.log\` | $(wc -c < "$entry/simulation.log" | tr -d ' ') bytes |"
+            echo "| Artefacts kept | $(cd "$entry" && find . -type f | sed 's|^\./||' | sort | tr '\n' ' ') |"
+            echo "| Note from the dispatcher | ${{ inputs.description || '—' }} |"
+            echo
+            echo "## What was checked at capture time"
+            echo
+            echo "**TODO.** State which artefacts carry the run's own numbers, which figures they agree"
+            echo "on, and any absence that is the tool's rather than the recorder's — the 3.14.9 entry"
+            echo "is the model."
+            echo
+            echo "## What is kept, and what is not"
+            echo
+            echo "**TODO.** The render-only assets were dropped; say so and say why."
+          } > "$entry/RECORDING.md"
+          cat "$entry/RECORDING.md"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: corpus-entry-${{ inputs.version }}
+          path: ${{ steps.assemble.outputs.entry }}
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: what to do with it
+        run: |
+          echo "## Corpus entry for Gatling ${{ inputs.version }}" >> "$GITHUB_STEP_SUMMARY"
+          {
+            echo
+            echo 'Download `corpus-entry-${{ inputs.version }}` and place it at'
+            echo '`testdata/corpus/gatling/${{ inputs.version }}/`, then **finish `RECORDING.md`** and commit.'
+            echo
+            echo 'The job does not commit: a corpus entry is the specification for an undocumented'
+            echo 'format, and it enters the repository through review.'
+            echo
+            echo 'Widening the supported range is a separate decision. A new version decodes with a'
+            echo 'warning until its entry is committed **and** `SupportedVersions()` is widened in the'
+            echo 'same change, and the canary must run the new bound or'
+            echo '`TestCanaryCoversSupportedRange` fails.'
+          } >> "$GITHUB_STEP_SUMMARY"
