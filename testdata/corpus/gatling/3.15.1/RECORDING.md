@@ -20,6 +20,9 @@ Everything beside this note is exactly as Gatling wrote it; nothing has been edi
 The same simulation as every other entry in this corpus, unchanged — that is what lets the runs be
 compared against each other with timing, identity and order set aside.
 
+- the log opens with `00 | 00 00 00 06 | "3.15.1"` — the run record's kind byte, the four-byte
+  big-endian length of the release string, then the string itself. These are the bytes
+  `gatling.Detect` checks, and this recording is their provenance
 - 10 declared assertions → 10 assertion payloads in the RUN record (15, 15, 16, 25, 38, 31, 51, 51,
   33 and 30 bytes), all evaluated true by Gatling itself
 - 6 virtual users (`atOnceUsers(2)` + `rampUsers(4).during(2s)`) → 12 `USER` records
