@@ -3,7 +3,9 @@
 package binary_test
 
 import (
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"slices"
@@ -12,6 +14,7 @@ import (
 
 	"github.com/galax-io/parsec/gatling"
 	"github.com/galax-io/parsec/gatling/binary"
+	"github.com/galax-io/parsec/gatling/simlog"
 	"github.com/galax-io/parsec/internal/corpus"
 )
 
@@ -213,9 +216,29 @@ func TestCanaryCrossVersion(t *testing.T) {
 func maskedShape(t *testing.T, dir string) []string {
 	t.Helper()
 
+	// Read through simlog rather than through this package's own reader. The
+	// cross-format comparison hands this function a text log as often as a
+	// binary one, and simlog is the module's own dispatcher: it identifies the
+	// format from the bytes and hands the log to the codec that reads it. Using
+	// it here also means the comparison exercises the dispatcher a consumer
+	// actually calls.
+	rd, err := simlog.NewReader(openCorpus(t, dir))
+	if err != nil {
+		t.Fatalf("%s: %v", dir, err)
+	}
+
 	var out []string
 
-	for _, rec := range records(t, openCorpus(t, dir)) {
+	for {
+		rec, err := rd.Next()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+
+		if err != nil {
+			t.Fatalf("%s: %v", dir, err)
+		}
+
 		if rec.Kind == gatling.KindRun {
 			continue
 		}
@@ -229,14 +252,20 @@ func maskedShape(t *testing.T, dir string) []string {
 	return out
 }
 
+// firstShapeDiff leads with the two counts and then names the first row they
+// disagree on. The counts come first because they usually say what happened on
+// their own: two runs of the same probe produce the same number of records, so a
+// difference there is a different probe rather than a different reading of one.
 func firstShapeDiff(a, b []string) string {
+	head := fmt.Sprintf("  %d records against %d", len(a), len(b))
+
 	for i := 0; i < len(a) && i < len(b); i++ {
 		if a[i] != b[i] {
-			return fmt.Sprintf("  %s\n  %s", a[i], b[i])
+			return fmt.Sprintf("%s; first disagreement:\n  %s\n  %s", head, a[i], b[i])
 		}
 	}
 
-	return fmt.Sprintf("  %d lines against %d", len(a), len(b))
+	return head + "; they agree as far as the shorter one goes"
 }
 
 // TestCanaryCrossFormat holds a fresh binary run to a fresh text one.
