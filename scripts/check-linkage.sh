@@ -19,7 +19,7 @@ Usage:
   scripts/check-linkage.sh --pr <N>          # GATE one PR: milestone + Closes #issue + same milestone
   scripts/check-linkage.sh --for-tag vX.Y.Z  # GATE a release: tag-readiness of that version's milestone
                                              #   resolves the milestone titled vX.Y.Z, else vX.Y.0
-  scripts/check-linkage.sh [milestone]       # audit a milestone (default: lowest-numbered open)
+  scripts/check-linkage.sh [milestone]       # audit a milestone (default: the open one with the lowest version)
   scripts/check-linkage.sh --tag [ms]        # also assert tag-readiness (all issues closed, all PRs merged)
   scripts/check-linkage.sh --help
 
@@ -151,11 +151,20 @@ if [ -n "$FOR_TAG" ]; then
   TAG_MODE=1
 fi
 
-# Default to the lowest-numbered open milestone (the "active" one).
+# Default to the open milestone carrying the lowest version in its title (the
+# "active" one). By version, not by GitHub's milestone number: that number is
+# assigned at creation and never changes, so it only tracks release order for as
+# long as milestones are created in release order and never renamed. A milestone
+# whose title carries no vX.Y.Z is not a release and is never the active one.
 if [ -z "$MS" ]; then
   MS=$(gh api --paginate --slurp "repos/$REPO/milestones?state=open&per_page=100" \
-        | jq -r 'add | sort_by(.number) | .[0].number // empty')
-  [ -n "$MS" ] || { echo "error: no open milestone found in $REPO" >&2; exit 2; }
+        | jq -r 'add
+          | map(select(.title | test("^v[0-9]+\\.[0-9]+\\.[0-9]+")))
+          | map(. + {v: (.title
+              | capture("^v(?<a>[0-9]+)\\.(?<b>[0-9]+)\\.(?<c>[0-9]+)")
+              | [(.a|tonumber), (.b|tonumber), (.c|tonumber)])})
+          | sort_by(.v) | .[0].number // empty')
+  [ -n "$MS" ] || { echo "error: no open vX.Y.Z milestone found in $REPO" >&2; exit 2; }
 fi
 
 # Reuse the list already in hand when --for-tag fetched it; only the default path
