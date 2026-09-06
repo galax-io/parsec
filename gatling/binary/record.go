@@ -16,10 +16,40 @@ const (
 	kindError   = 4
 )
 
-// maxGroupDepth caps the group nesting one record may claim. The depth is read
-// from the file, so without a ceiling a corrupt count would size a slice from
-// untrusted input. Gatling's own DSL nests far below this.
-const maxGroupDepth = 1024
+// Every count read from the file has its own ceiling, named for what it bounds
+// and justified on its own. A count sizes an allocation — a slice of string
+// headers, sixteen bytes each — so a corrupt one must be stopped before the
+// allocator sees it. That is what a ceiling is for, and it is not policy:
+// raising one moves nothing else.
+const (
+	// maxGroupDepth caps the group nesting one request or group record may
+	// claim. Gatling's own DSL nests far below it.
+	maxGroupDepth = 1024
+	// maxScenarios caps the scenario names a run record declares. A simulation
+	// declares its scenarios in code, a few at most; at this ceiling a corrupt
+	// count can force at most 1 MiB of headers, against a 32 MiB budget.
+	maxScenarios = 1 << 16
+	// maxAssertions caps the assertion payloads a run record carries. A
+	// generated suite may run to thousands — two thousand is the floor the spec
+	// fixes — and the same 1 MiB bound holds on the headers.
+	maxAssertions = 1 << 16
+	// maxAssertionBytes caps what those payloads come to in total. The count
+	// bounds the headers; this bounds what the reader keeps, and the two are not
+	// the same ceiling: a payload is retained for the life of the read and
+	// copied again by Assertions, so a count alone would let 65,536 payloads
+	// read under MaxStringLen hold hundreds of megabytes against the budget this
+	// package documents. Every recorded run's assertions come to a few hundred
+	// bytes.
+	maxAssertionBytes = 8 << 20
+	// initialCountCap is how much of an untrusted count is reserved up front.
+	// The count comes from the file, so the slice grows with what is actually
+	// decoded rather than with what the file claims, and a corrupt count costs
+	// nothing until the elements behind it read.
+	initialCountCap = 64
+	// initialPathCap is the first capacity of the reused group-path scratch: a
+	// sizing hint for the usual nesting, not a ceiling.
+	initialPathCap = 8
+)
 
 // runHeader is what the run record carries: the header the version gate reads,
 // the scenario names user records index into, and the assertion payloads.
@@ -70,7 +100,7 @@ func readRun(r *reader) (runHeader, error) {
 		return out, err
 	}
 
-	if out.scenarios, err = readStrings(r, "the scenario count", "a scenario name"); err != nil {
+	if out.scenarios, err = readStrings(r, maxScenarios, "the scenario count", "a scenario name"); err != nil {
 		return out, err
 	}
 
@@ -104,8 +134,9 @@ func readRun(r *reader) (runHeader, error) {
 	return out, nil
 }
 
-// readStrings reads a count and that many plain strings.
-func readStrings(r *reader, countExpected, itemExpected string) ([]string, error) {
+// readStrings reads a count and that many plain strings, refusing a count above
+// the ceiling the caller names for it.
+func readStrings(r *reader, limit int32, countExpected, itemExpected string) ([]string, error) {
 	at := r.off
 
 	n, err := r.i32(countExpected)
@@ -113,7 +144,7 @@ func readStrings(r *reader, countExpected, itemExpected string) ([]string, error
 		return nil, err
 	}
 
-	if n < 0 || n > maxGroupDepth {
+	if n < 0 || n > limit {
 		return nil, r.syntax(at, countExpected, "a count of "+strconv.Itoa(int(n)))
 	}
 
@@ -121,12 +152,15 @@ func readStrings(r *reader, countExpected, itemExpected string) ([]string, error
 		return nil, nil
 	}
 
-	out := make([]string, n)
+	out := make([]string, 0, min(int(n), initialCountCap))
 
-	for i := range out {
-		if out[i], err = r.str(itemExpected); err != nil {
+	for range n {
+		s, err := r.str(itemExpected)
+		if err != nil {
 			return nil, err
 		}
+
+		out = append(out, s)
 	}
 
 	return out, nil
@@ -143,7 +177,7 @@ func readBlobs(r *reader) ([]string, error) {
 		return nil, err
 	}
 
-	if n < 0 || n > maxGroupDepth {
+	if n < 0 || n > maxAssertions {
 		return nil, r.syntax(at, "the assertion count", "a count of "+strconv.Itoa(int(n)))
 	}
 
@@ -151,9 +185,11 @@ func readBlobs(r *reader) ([]string, error) {
 		return nil, nil
 	}
 
-	out := make([]string, n)
+	out := make([]string, 0, min(int(n), initialCountCap))
 
-	for i := range out {
+	var total int
+
+	for range n {
 		blobAt := r.off
 
 		size, err := r.i32("an assertion payload length")
@@ -166,7 +202,14 @@ func readBlobs(r *reader) ([]string, error) {
 			return nil, err
 		}
 
-		out[i] = string(buf)
+		// The payloads are held for the whole read, so what they come to is
+		// checked as they arrive rather than left to the count alone.
+		if total += len(buf); total > maxAssertionBytes {
+			return nil, r.syntax(blobAt, "the assertion payloads",
+				strconv.Itoa(total)+" bytes, past the ceiling of "+strconv.Itoa(maxAssertionBytes))
+		}
+
+		out = append(out, string(buf))
 	}
 
 	return out, nil
@@ -193,7 +236,7 @@ func (r *Reader) groups() ([]string, error) {
 		// for the first such record and an empty non-nil slice for every later
 		// one, and `Groups == nil` and `len(Groups) == 0` would then disagree
 		// depending on what was read before.
-		r.path = make([]string, 0, maxGroupDepth/128)
+		r.path = make([]string, 0, initialPathCap)
 	}
 
 	path := r.path[:0]
