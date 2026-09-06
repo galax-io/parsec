@@ -47,6 +47,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   life of the read, so 65,536 of them read under `MaxStringLen` could hold hundreds of megabytes
   against the budget the package documents. What they come to in total is now checked as they
   arrive, and an untrusted count no longer sizes its slice before the elements behind it read. (#57)
+- The README still described a binary `simulation.log` as refused for want of a codec, and two
+  comments justified the binary detection rule by a sample directory v0.0.5 deleted. The README now
+  matches the package documentation, and the rule's provenance is the 3.15.1 recording. (#55)
 
 ## [0.0.5] - 2026-09-06
 

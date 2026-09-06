@@ -25,7 +25,7 @@ func TestDetect(t *testing.T) {
 	}{
 		// 00 | 00 00 00 06 | '3' — the kind byte, the release string's length,
 		// and its first digit. Taken from a real 3.15.1 log; see
-		// testdata/samples/gatling/binary/SAMPLE.md.
+		// testdata/corpus/gatling/3.15.1/RECORDING.md.
 		{name: "binary run record", head: []byte{0x00, 0x00, 0x00, 0x00, 0x06, '3'}, want: gatling.FormatBinary},
 		{name: "binary, whole window", head: []byte{0x00, 0x00, 0x00, 0x00, 0x06, '3', '.', '1', '5', '.'}, want: gatling.FormatBinary},
 		{name: "text opening with RUN", head: []byte("RUN\tsim\trun\t1"), want: gatling.FormatText},

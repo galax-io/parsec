@@ -50,7 +50,8 @@ const binaryRunRecord = 0x00
 // BOM artefact starts with one. Answering "binary simulation.log, no codec yet"
 // for such a file promises that a later release will read something that is not
 // a Gatling log at all — the same confident misdiagnosis this package exists to
-// remove. The recording under testdata/samples shows what a real one opens with:
+// remove. The 3.15.1 recording, testdata/corpus/gatling/3.15.1/RECORDING.md,
+// shows what a real one opens with:
 //
 //	00 | 00 00 00 06 | "3.15.1" | ...
 //

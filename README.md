@@ -36,6 +36,8 @@ The Gatling log format is internal to Gatling, undocumented, and has already cha
                     every Gatling codec shares                                           (v0.0.4)
     gatling/text/   the text simulation.log codec for 3.11.5 and 3.12.0, and the         (v0.0.2)
                     conversion of a log into model types                                 (v0.0.3)
+    gatling/binary/ the binary simulation.log codec for 3.13.1 through 3.15.1            (v0.0.5)
+                    — the format every Gatling from 3.13.0 writes
     gatling/simlog/ opens a simulation.log without being told which Gatling wrote it     (v0.0.4)
 
 `model` and `gatling` depend on the standard library only, and CI checks that. No module is pre-approved anywhere: `go.mod` naming no requirement is the intended steady state, not a property of a young project.
@@ -43,7 +45,9 @@ The Gatling log format is internal to Gatling, undocumented, and has already cha
 ## Status
 
 `gatling/` and `gatling/text/` decode a Gatling 3.11.5 or 3.12.0 text `simulation.log` from a
-stream, in bounded memory, gated on the version the log names.
+stream, in bounded memory, gated on the version the log names; `gatling/binary/` does the same for
+the binary `simulation.log` every Gatling from 3.13.0 writes, over 3.13.1 through 3.15.1 — the range
+its golden corpus covers.
 
 `model/` is the canonical form every source is decoded into, and `gatling/text.NewRunReader` reads a
 log straight into it — so a report can be written once and work for every tool. What a source cannot
@@ -52,18 +56,18 @@ does not grow with its length; its samples, groups, virtual-user events and erro
 so a log larger than memory still reads.
 
 `gatling/simlog` opens a log without being told which Gatling wrote it: it reads the first ten bytes,
-names the format, and hands the stream to the codec that reads it. A binary `simulation.log` — every
-Gatling from 3.13.0 — is refused with an error naming the format and saying no codec reads it yet,
-rather than failing as a syntax error on the first line. What the module accepts is readable
-programmatically, so a tool reports it instead of hard-coding a version range.
+names the format, and hands the stream to the codec that reads it: a text log and a binary log of the
+same simulation come back through the same entry point, as the same model types, distinguishable only
+by the version each names. What the module accepts is readable programmatically, so a tool reports it
+instead of hard-coding a version range.
 
 A caller that cannot use a number nothing has verified can say so: `gatling.WithStrict` refuses a
 version above the recorded range instead of decoding it with a warning.
 
 The log's own wire records are still there and still exported: they are the format's events rather
-than a result, and the binary codec will share them. Build on `model/`.
+than a result, and both codecs share them. Build on `model/`.
 
-Every source in the table above except the Gatling text log is unimplemented.
+Every source in the table above except Gatling is unimplemented.
 
 ## What this library will not do
 
