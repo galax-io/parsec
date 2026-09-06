@@ -157,5 +157,42 @@ else
   ok "does not mistake an issue number in a commit subject for a pull request"
 fi
 
+printf '\nthe active milestone is the lowest version, not the lowest GitHub number\n'
+# Numbers and versions deliberately disagree, as they do after milestones are
+# renamed: #6 carries v0.0.8, #7 carries v0.0.6, #12 carries v0.0.7. A title with
+# no version at all is never a release and must never be picked.
+A='[{"number":6,"title":"v0.0.8 An incomplete record","state":"open"},
+    {"number":7,"title":"v0.0.6 The primitives a consumer folds","state":"open"},
+    {"number":12,"title":"v0.0.7 The corpus and the canary","state":"open"},
+    {"number":13,"title":"retired — percentiles and ranges (was v0.0.8)","state":"open"}]'
+a=$(fixture active "$A" "$ITEMS")
+printf '{"number":10,"title":"t","state":"MERGED","milestone":{"title":"x"},"closingIssuesReferences":[{"number":11}],"body":""}\n' > "$a/pr.json"
+printf '{"milestone":{"title":"x"}}\n' > "$a/issue.json"
+active() { # active <fixture-dir> <expected title>
+  local out got
+  out=$(run "$1")
+  got=$(sed -n 's/^Milestone: #[0-9]*  \(.*\)  (.*)$/\1/p' <<<"$out" | head -1)
+  if [ "$got" = "$2" ]; then ok "default → $2"; else bad "default → expected '$2'" "got '$got'"; fi
+}
+active "$a" "v0.0.6 The primitives a consumer folds"
+
+# With v0.0.6 gone the next version up is active, still regardless of number.
+B='[{"number":6,"title":"v0.0.8 An incomplete record","state":"open"},
+    {"number":12,"title":"v0.0.7 The corpus and the canary","state":"open"},
+    {"number":13,"title":"retired — percentiles and ranges (was v0.0.8)","state":"open"}]'
+b=$(fixture active2 "$B" "$ITEMS")
+cp "$a/pr.json" "$a/issue.json" "$b/"
+active "$b" "v0.0.7 The corpus and the canary"
+
+# Only a version-less milestone open: not a release, so nothing is active.
+C='[{"number":13,"title":"retired — percentiles and ranges (was v0.0.8)","state":"open"}]'
+c=$(fixture active3 "$C" "$ITEMS")
+out=$(run "$c"); rc=$?
+if [ "$rc" -eq 2 ] && grep -q "no open vX.Y.Z milestone" <<<"$out"; then
+  ok "refuses to treat a version-less milestone as active"
+else
+  bad "a version-less milestone must not be active" "exit=$rc $(head -2 <<<"$out")"
+fi
+
 printf '\n%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

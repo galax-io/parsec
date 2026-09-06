@@ -62,7 +62,7 @@ Every piece of work is tied to a milestone. No exceptions unless explicitly told
 - **Every PR** must be assigned to the active milestone before merging. No milestone = do not merge.
 - **Every issue** fixed by a PR must be closed when that PR lands on `main`. Do not leave completed issues open.
 - **Spec work** (`specs/NNN-*/`) belongs to the milestone that owns the spec. Link the spec PR to the milestone immediately when creating it.
-- **Active milestone** = the lowest-numbered open milestone that matches the current spec/plan. Check `gh api repos/galax-io/parsec/milestones` if unsure.
+- **Active milestone** = the open milestone whose title carries the lowest version (`vX.Y.Z`, compared as numbers) and that matches the current spec/plan — never GitHub's milestone number, which is assigned at creation and survives renames. `scripts/check-linkage.sh` with no argument names it.
 
 ## Commits & PRs
 
