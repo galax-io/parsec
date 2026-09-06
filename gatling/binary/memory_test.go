@@ -260,8 +260,13 @@ func peakOf(t *testing.T, src io.Reader, every int64) (records int, peak uint64)
 // A bound with an unstated exclusion is not a bound, and the excluded shape here
 // is the one a long failure message takes.
 //
+// The name ends in PeakMemory because CI selects this class of test by
+// `-run 'PeakMemory$'` and runs it without the race detector, which moves the
+// very HeapAlloc figure being asserted. A name this pattern misses lands in the
+// raced step instead and measures the detector.
+//
 //nolint:paralleltest // measures peak heap and must run alone
-func TestPeakMemoryAtTheStringCeiling(t *testing.T) {
+func TestStringCeilingPeakMemory(t *testing.T) {
 	records, peak := peakOf(t, newCeilingLog(), int64(binary.MaxStringLen)/8)
 
 	t.Logf("%d fields at the %d MiB ceiling, one per encoding: peak heap %.1f MiB (%.1f x the ceiling)",
@@ -285,7 +290,7 @@ func TestPeakMemoryAtTheStringCeiling(t *testing.T) {
 // assertions, so nothing measured this until now.
 //
 //nolint:paralleltest // measures peak heap and must run alone
-func TestPeakMemoryAtTheAssertionCeiling(t *testing.T) {
+func TestAssertionCeilingPeakMemory(t *testing.T) {
 	// maxAssertionBytes is unexported; 8 MiB is the figure record.go states, and
 	// filling it with payloads at the string ceiling is the worst shape that
 	// stays inside both limits.

@@ -37,8 +37,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   behind a `verify.yml` input so it covers pull requests and not the release path: fuzzing is
   nondeterministic, and a tag must not be blocked by a finding that depends on the seed. (#60)
 - The 32 MiB peak-heap budget is now **stated** in `gatling/binary.Reader`'s documentation, where
-  it previously existed only inside the tests, and `TestPeakMemoryAtTheStringCeiling` and
-  `TestPeakMemoryAtTheAssertionCeiling` hold the codec to it for the two shapes that cost most per
+  it previously existed only inside the tests, and `TestStringCeilingPeakMemory` and
+  `TestAssertionCeilingPeakMemory` hold the codec to it for the two shapes that cost most per
   record — a field at `MaxStringLen` in each encoding, and a run record whose assertion payloads
   fill their own ceiling. The existing bound was measured on a synthetic log whose longest field
   was seven ASCII bytes, so it described that run's shape rather than the format's. (#61)
