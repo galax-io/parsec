@@ -6,6 +6,9 @@
 //     version type and the version gate every Gatling codec shares.
 //   - gatling/text: the codec for the tab-separated simulation.log written
 //     by Gatling 3.11.5 through 3.12.0.
+//   - gatling/binary: the codec for the binary simulation.log Gatling writes
+//     from 3.13.0, accepting 3.13.1 through 3.15.1 — the range its golden
+//     corpus covers.
 //   - gatling/simlog: opens a simulation.log without being told which Gatling
 //     wrote it, by identifying the format from the file's leading bytes.
 //   - model: the canonical result types every source is decoded into, and the

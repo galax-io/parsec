@@ -73,5 +73,5 @@ func ExampleSupported() {
 
 	// Output:
 	// text: 3.11.5 through 3.12.0
-	// binary: known, no codec yet
+	// binary: 3.13.1 through 3.15.1
 }

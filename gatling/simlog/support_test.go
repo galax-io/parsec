@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/galax-io/parsec/gatling"
+	"github.com/galax-io/parsec/gatling/binary"
 	"github.com/galax-io/parsec/gatling/simlog"
 	"github.com/galax-io/parsec/gatling/text"
 )
@@ -41,13 +42,15 @@ func TestSupportedTextRangeComesFromTheCodec(t *testing.T) {
 	}
 }
 
-// A format that is known and unreadable is a third answer, and a consumer has
-// to be able to give it: "your run is a Gatling binary log, which this version
-// cannot read" is useful, and "unknown format" is not.
-func TestSupportedReportsBinaryAsKnownAndUnreadable(t *testing.T) {
+// The reported range must be the codec's own, read from the same table dispatch
+// uses. A hard-coded range here goes stale the first time a codec widens one,
+// and nobody notices until a user is told their supported log is unsupported.
+func TestSupportedReportsBinaryOverTheRangeItsCorpusCovers(t *testing.T) {
 	t.Parallel()
 
 	var found bool
+
+	oldest, newest := binary.SupportedVersions()
 
 	for _, s := range simlog.Supported() {
 		if s.Format != gatling.FormatBinary {
@@ -56,12 +59,13 @@ func TestSupportedReportsBinaryAsKnownAndUnreadable(t *testing.T) {
 
 		found = true
 
-		if s.Readable {
-			t.Fatal("the binary codec is v0.0.5; nothing here reads one yet")
+		if !s.Readable {
+			t.Fatal("the binary format is reported unreadable, but this module has a codec for it")
 		}
 
-		if s.Oldest != (gatling.Version{}) || s.Newest != (gatling.Version{}) {
-			t.Fatalf("an unreadable format carries no range, got %s through %s", s.Oldest, s.Newest)
+		if s.Oldest != oldest || s.Newest != newest {
+			t.Fatalf("Supported() reports %s through %s; the codec accepts %s through %s",
+				s.Oldest, s.Newest, oldest, newest)
 		}
 	}
 
@@ -130,7 +134,7 @@ func TestSupportedIsNotACallersToChange(t *testing.T) {
 
 	first := simlog.Supported()
 	first[0].Newest = gatling.Version{Major: 9, Minor: 9, Patch: 9}
-	first[1].Readable = true
+	first[1].Oldest = gatling.Version{Major: 1}
 
 	second := simlog.Supported()
 
@@ -139,7 +143,8 @@ func TestSupportedIsNotACallersToChange(t *testing.T) {
 		t.Fatalf("Supported() came back mutated: %s; the codec says %s", second[0].Newest, newest)
 	}
 
-	if second[1].Readable {
-		t.Fatal("Supported() came back with the binary format marked readable")
+	oldest, _ := binary.SupportedVersions()
+	if second[1].Oldest != oldest {
+		t.Fatalf("Supported() came back mutated: %s; the codec says %s", second[1].Oldest, oldest)
 	}
 }

@@ -1,0 +1,143 @@
+HEADER class="io.galaxio.parsec.corpus.CorpusSimulation" run="io.galaxio.parsec.corpus.CorpusSimulation" start=1788670061110 description="" version=3.13.1
+ASSERTION payload="\x00\x01\x01\x00\x01\x05\x00\x00\x00\x00\x00\x00\x80Y@"
+ASSERTION payload="\x00\x01\x01\x00\x03\x05\x00\x00\x00\x00\x00\x00\x002@"
+ASSERTION payload="\x00\x01\x03\x00\x01\x02\x03\x00\x00\x00\x00\x00\x00L\xed@"
+ASSERTION payload="\x00\x03\x00\x01\aGET /ok\x02\x00\x03\x05\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+ASSERTION payload="\x00\x03\x00\x01\f\x9f\x10\x80\x11\xbe\x10\xb2\x10\xb5\x10\x80\x11\xba\x10\xb0\x10 /ok\x02\x00\x03\x05\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+ASSERTION payload="\x00\x03\x00\x02\x05outer\aGET /ok\x02\x00\x03\x05\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+ASSERTION payload="\x00\x03\x00\x03\x05outer\x11inner, with comma\tGET /slow\x02\x00\x03\x05\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+ASSERTION payload="\x00\x03\x00\x03\x05outer\x11inner, with comma\tGET /fail\x02\x00\x03\x05\x00\x00\x00\x00\x00\x00\x00Y@"
+ASSERTION payload="\x00\x03\x00\x01\x0fconnect refused\x02\x00\x03\x05\x00\x00\x00\x00\x00\x00\x00Y@"
+ASSERTION payload="\x00\x03\x00\x01\funknown host\x02\x00\x03\x05\x00\x00\x00\x00\x00\x00\x00Y@"
+1 USER scenario="Corpus recording" event=START timestamp=1788670061603
+2 USER scenario="Corpus recording" event=START timestamp=1788670061603
+3 USER scenario="Corpus recording" event=START timestamp=1788670061603
+4 REQUEST groups=[] name="GET /ok" start=1788670061612 end=1788670061618 status=OK message=""
+5 REQUEST groups=[] name="GET /ok" start=1788670061612 end=1788670061618 status=OK message=""
+6 REQUEST groups=[] name="GET /ok" start=1788670061612 end=1788670061618 status=OK message=""
+7 REQUEST groups=[] name="Проверка /ok" start=1788670061622 end=1788670061623 status=OK message=""
+8 REQUEST groups=[] name="Проверка /ok" start=1788670061622 end=1788670061623 status=OK message=""
+9 REQUEST groups=[] name="Проверка /ok" start=1788670061622 end=1788670061623 status=OK message=""
+10 REQUEST groups=["outer"] name="GET /ok" start=1788670061726 end=1788670061726 status=OK message=""
+11 REQUEST groups=["outer"] name="GET /ok" start=1788670061726 end=1788670061726 status=OK message=""
+12 REQUEST groups=["outer"] name="GET /ok" start=1788670061726 end=1788670061726 status=OK message=""
+13 REQUEST groups=["outer"] name="GET /ok" start=1788670061728 end=1788670061728 status=OK message=""
+14 REQUEST groups=["outer"] name="GET /ok" start=1788670061728 end=1788670061728 status=OK message=""
+15 REQUEST groups=["outer"] name="GET /ok" start=1788670061728 end=1788670061728 status=OK message=""
+16 REQUEST groups=["outer"] name="GET /ok" start=1788670061728 end=1788670061729 status=OK message=""
+17 REQUEST groups=["outer"] name="GET /ok" start=1788670061728 end=1788670061729 status=OK message=""
+18 REQUEST groups=["outer"] name="GET /ok" start=1788670061728 end=1788670061729 status=OK message=""
+19 REQUEST groups=["outer"] name="GET /ok" start=1788670061729 end=1788670061729 status=OK message=""
+20 REQUEST groups=["outer"] name="GET /ok" start=1788670061729 end=1788670061729 status=OK message=""
+21 REQUEST groups=["outer"] name="GET /ok" start=1788670061729 end=1788670061729 status=OK message=""
+22 REQUEST groups=["outer"] name="GET /ok" start=1788670061729 end=1788670061730 status=OK message=""
+23 REQUEST groups=["outer"] name="GET /ok" start=1788670061729 end=1788670061730 status=OK message=""
+24 REQUEST groups=["outer"] name="GET /ok" start=1788670061729 end=1788670061730 status=OK message=""
+25 REQUEST groups=["outer"] name="GET /ok" start=1788670061730 end=1788670061730 status=OK message=""
+26 REQUEST groups=["outer"] name="GET /ok" start=1788670061730 end=1788670061730 status=OK message=""
+27 REQUEST groups=["outer"] name="GET /ok" start=1788670061730 end=1788670061730 status=OK message=""
+28 REQUEST groups=["outer"] name="GET /ok" start=1788670061730 end=1788670061730 status=OK message=""
+29 REQUEST groups=["outer"] name="GET /ok" start=1788670061730 end=1788670061730 status=OK message=""
+30 REQUEST groups=["outer"] name="GET /ok" start=1788670061730 end=1788670061731 status=OK message=""
+31 REQUEST groups=["outer"] name="GET /ok" start=1788670061730 end=1788670061731 status=OK message=""
+32 REQUEST groups=["outer"] name="GET /ok" start=1788670061731 end=1788670061731 status=OK message=""
+33 REQUEST groups=["outer"] name="GET /ok" start=1788670061731 end=1788670061731 status=OK message=""
+34 REQUEST groups=["outer"] name="GET /ok" start=1788670061731 end=1788670061731 status=OK message=""
+35 REQUEST groups=["outer"] name="GET /ok" start=1788670061731 end=1788670061731 status=OK message=""
+36 REQUEST groups=["outer"] name="GET /ok" start=1788670061731 end=1788670061731 status=OK message=""
+37 REQUEST groups=["outer"] name="GET /ok" start=1788670061731 end=1788670061731 status=OK message=""
+38 REQUEST groups=["outer"] name="GET /ok" start=1788670061731 end=1788670061731 status=OK message=""
+39 REQUEST groups=["outer"] name="GET /ok" start=1788670061731 end=1788670061732 status=OK message=""
+40 REQUEST groups=["outer"] name="GET /ok" start=1788670061732 end=1788670061732 status=OK message=""
+41 REQUEST groups=["outer"] name="GET /ok" start=1788670061732 end=1788670061732 status=OK message=""
+42 REQUEST groups=["outer"] name="GET /ok" start=1788670061732 end=1788670061732 status=OK message=""
+43 USER scenario="Corpus recording" event=START timestamp=1788670062103
+44 REQUEST groups=[] name="GET /ok" start=1788670062104 end=1788670062109 status=OK message=""
+45 REQUEST groups=[] name="Проверка /ok" start=1788670062110 end=1788670062111 status=OK message=""
+46 REQUEST groups=["outer"] name="GET /ok" start=1788670062213 end=1788670062214 status=OK message=""
+47 REQUEST groups=["outer"] name="GET /ok" start=1788670062215 end=1788670062216 status=OK message=""
+48 REQUEST groups=["outer"] name="GET /ok" start=1788670062216 end=1788670062217 status=OK message=""
+49 REQUEST groups=["outer"] name="GET /ok" start=1788670062217 end=1788670062218 status=OK message=""
+50 REQUEST groups=["outer"] name="GET /ok" start=1788670062218 end=1788670062219 status=OK message=""
+51 REQUEST groups=["outer"] name="GET /ok" start=1788670062219 end=1788670062220 status=OK message=""
+52 REQUEST groups=["outer"] name="GET /ok" start=1788670062220 end=1788670062221 status=OK message=""
+53 REQUEST groups=["outer"] name="GET /ok" start=1788670062221 end=1788670062222 status=OK message=""
+54 REQUEST groups=["outer"] name="GET /ok" start=1788670062222 end=1788670062222 status=OK message=""
+55 REQUEST groups=["outer"] name="GET /ok" start=1788670062223 end=1788670062223 status=OK message=""
+56 REQUEST groups=["outer"] name="GET /ok" start=1788670062223 end=1788670062224 status=OK message=""
+57 USER scenario="Corpus recording" event=START timestamp=1788670062603
+58 REQUEST groups=[] name="GET /ok" start=1788670062605 end=1788670062612 status=OK message=""
+59 REQUEST groups=[] name="Проверка /ok" start=1788670062612 end=1788670062613 status=OK message=""
+60 REQUEST groups=["outer"] name="GET /ok" start=1788670062715 end=1788670062716 status=OK message=""
+61 REQUEST groups=["outer"] name="GET /ok" start=1788670062717 end=1788670062717 status=OK message=""
+62 REQUEST groups=["outer"] name="GET /ok" start=1788670062718 end=1788670062719 status=OK message=""
+63 REQUEST groups=["outer"] name="GET /ok" start=1788670062720 end=1788670062721 status=OK message=""
+64 REQUEST groups=["outer"] name="GET /ok" start=1788670062721 end=1788670062722 status=OK message=""
+65 REQUEST groups=["outer"] name="GET /ok" start=1788670062722 end=1788670062723 status=OK message=""
+66 REQUEST groups=["outer"] name="GET /ok" start=1788670062723 end=1788670062724 status=OK message=""
+67 REQUEST groups=["outer"] name="GET /ok" start=1788670062724 end=1788670062725 status=OK message=""
+68 REQUEST groups=["outer"] name="GET /ok" start=1788670062725 end=1788670062726 status=OK message=""
+69 REQUEST groups=["outer"] name="GET /ok" start=1788670062726 end=1788670062727 status=OK message=""
+70 REQUEST groups=["outer"] name="GET /ok" start=1788670062727 end=1788670062727 status=OK message=""
+71 USER scenario="Corpus recording" event=START timestamp=1788670063101
+72 REQUEST groups=[] name="GET /ok" start=1788670063102 end=1788670063105 status=OK message=""
+73 REQUEST groups=[] name="Проверка /ok" start=1788670063105 end=1788670063106 status=OK message=""
+74 REQUEST groups=["outer"] name="GET /ok" start=1788670063207 end=1788670063208 status=OK message=""
+75 REQUEST groups=["outer"] name="GET /ok" start=1788670063208 end=1788670063209 status=OK message=""
+76 REQUEST groups=["outer"] name="GET /ok" start=1788670063209 end=1788670063210 status=OK message=""
+77 REQUEST groups=["outer"] name="GET /ok" start=1788670063210 end=1788670063211 status=OK message=""
+78 REQUEST groups=["outer"] name="GET /ok" start=1788670063211 end=1788670063212 status=OK message=""
+79 REQUEST groups=["outer"] name="GET /ok" start=1788670063212 end=1788670063212 status=OK message=""
+80 REQUEST groups=["outer"] name="GET /ok" start=1788670063213 end=1788670063213 status=OK message=""
+81 REQUEST groups=["outer"] name="GET /ok" start=1788670063213 end=1788670063214 status=OK message=""
+82 REQUEST groups=["outer"] name="GET /ok" start=1788670063214 end=1788670063215 status=OK message=""
+83 REQUEST groups=["outer"] name="GET /ok" start=1788670063215 end=1788670063215 status=OK message=""
+84 REQUEST groups=["outer"] name="GET /ok" start=1788670063215 end=1788670063216 status=OK message=""
+85 REQUEST groups=["outer" "inner, with comma"] name="GET /slow" start=1788670061732 end=1788670063234 status=OK message=""
+86 REQUEST groups=["outer" "inner, with comma"] name="GET /slow" start=1788670061732 end=1788670063234 status=OK message=""
+87 REQUEST groups=["outer" "inner, with comma"] name="GET /slow" start=1788670061732 end=1788670063234 status=OK message=""
+88 REQUEST groups=["outer" "inner, with comma"] name="GET /fail" start=1788670063234 end=1788670063234 status=KO message="status.find.is(200), but actually found 500"
+89 REQUEST groups=["outer" "inner, with comma"] name="GET /fail" start=1788670063234 end=1788670063234 status=KO message="status.find.is(200), but actually found 500"
+90 REQUEST groups=["outer" "inner, with comma"] name="GET /fail" start=1788670063234 end=1788670063234 status=KO message="status.find.is(200), but actually found 500"
+91 GROUP groups=["outer" "inner, with comma"] start=1788670061732 end=1788670063236 cumulated=1503 status=KO
+92 GROUP groups=["outer" "inner, with comma"] start=1788670061732 end=1788670063237 cumulated=1503 status=KO
+93 GROUP groups=["outer"] start=1788670061725 end=1788670063237 cumulated=1514 status=KO
+94 GROUP groups=["outer"] start=1788670061725 end=1788670063237 cumulated=1514 status=KO
+95 GROUP groups=["outer" "inner, with comma"] start=1788670061732 end=1788670063236 cumulated=1503 status=KO
+96 GROUP groups=["outer"] start=1788670061725 end=1788670063237 cumulated=1514 status=KO
+97 REQUEST groups=[] name="connect refused" start=1788670063339 end=1788670063341 status=KO message="j.n.ConnectException: Connection refused"
+98 REQUEST groups=[] name="connect refused" start=1788670063339 end=1788670063341 status=KO message="j.n.ConnectException: Connection refused"
+99 REQUEST groups=[] name="connect refused" start=1788670063339 end=1788670063341 status=KO message="j.n.ConnectException: Connection refused"
+100 REQUEST groups=[] name="unknown host" start=1788670063343 end=1788670063347 status=KO message="j.n.UnknownHostException: nonexistent.invalid: nodename nor servname provided, or not known"
+101 REQUEST groups=[] name="unknown host" start=1788670063343 end=1788670063347 status=KO message="j.n.UnknownHostException: nonexistent.invalid"
+102 REQUEST groups=[] name="unknown host" start=1788670063343 end=1788670063347 status=KO message="j.n.UnknownHostException: nonexistent.invalid"
+103 ERROR message="unresolvable url: No attribute named 'undefinedAttribute' is defined " timestamp=1788670063351
+104 ERROR message="unresolvable url: No attribute named 'undefinedAttribute' is defined " timestamp=1788670063351
+105 ERROR message="unresolvable url: No attribute named 'undefinedAttribute' is defined " timestamp=1788670063351
+106 USER scenario="Corpus recording" event=END timestamp=1788670063353
+107 USER scenario="Corpus recording" event=END timestamp=1788670063353
+108 USER scenario="Corpus recording" event=END timestamp=1788670063353
+109 REQUEST groups=["outer" "inner, with comma"] name="GET /slow" start=1788670062224 end=1788670063726 status=OK message=""
+110 REQUEST groups=["outer" "inner, with comma"] name="GET /fail" start=1788670063727 end=1788670063728 status=KO message="status.find.is(200), but actually found 500"
+111 GROUP groups=["outer" "inner, with comma"] start=1788670062224 end=1788670063729 cumulated=1503 status=KO
+112 GROUP groups=["outer"] start=1788670062213 end=1788670063729 cumulated=1514 status=KO
+113 REQUEST groups=[] name="connect refused" start=1788670063831 end=1788670063832 status=KO message="j.n.ConnectException: Connection refused"
+114 REQUEST groups=[] name="unknown host" start=1788670063833 end=1788670063833 status=KO message="j.n.UnknownHostException: nonexistent.invalid"
+115 ERROR message="unresolvable url: No attribute named 'undefinedAttribute' is defined " timestamp=1788670063833
+116 USER scenario="Corpus recording" event=END timestamp=1788670063833
+117 REQUEST groups=["outer" "inner, with comma"] name="GET /slow" start=1788670062728 end=1788670064230 status=OK message=""
+118 REQUEST groups=["outer" "inner, with comma"] name="GET /fail" start=1788670064230 end=1788670064231 status=KO message="status.find.is(200), but actually found 500"
+119 GROUP groups=["outer" "inner, with comma"] start=1788670062728 end=1788670064231 cumulated=1503 status=KO
+120 GROUP groups=["outer"] start=1788670062714 end=1788670064231 cumulated=1514 status=KO
+121 REQUEST groups=[] name="connect refused" start=1788670064333 end=1788670064334 status=KO message="j.n.ConnectException: Connection refused"
+122 REQUEST groups=[] name="unknown host" start=1788670064335 end=1788670064335 status=KO message="j.n.UnknownHostException: nonexistent.invalid"
+123 ERROR message="unresolvable url: No attribute named 'undefinedAttribute' is defined " timestamp=1788670064335
+124 USER scenario="Corpus recording" event=END timestamp=1788670064335
+125 REQUEST groups=["outer" "inner, with comma"] name="GET /slow" start=1788670063216 end=1788670064719 status=OK message=""
+126 REQUEST groups=["outer" "inner, with comma"] name="GET /fail" start=1788670064720 end=1788670064721 status=KO message="status.find.is(200), but actually found 500"
+127 GROUP groups=["outer" "inner, with comma"] start=1788670063216 end=1788670064721 cumulated=1504 status=KO
+128 GROUP groups=["outer"] start=1788670063207 end=1788670064722 cumulated=1515 status=KO
+129 REQUEST groups=[] name="connect refused" start=1788670064824 end=1788670064826 status=KO message="j.n.ConnectException: Connection refused"
+130 REQUEST groups=[] name="unknown host" start=1788670064827 end=1788670064827 status=KO message="j.n.UnknownHostException: nonexistent.invalid"
+131 ERROR message="unresolvable url: No attribute named 'undefinedAttribute' is defined " timestamp=1788670064828
+132 USER scenario="Corpus recording" event=END timestamp=1788670064829

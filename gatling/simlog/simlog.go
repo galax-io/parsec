@@ -6,13 +6,14 @@ import (
 	"io"
 
 	"github.com/galax-io/parsec/gatling"
+	"github.com/galax-io/parsec/gatling/binary"
 	"github.com/galax-io/parsec/gatling/text"
 	"github.com/galax-io/parsec/model"
 )
 
 // RecordReader yields a log's own wire records: the events the file contains,
-// rather than the canonical result model. [text.Reader] satisfies it, and so
-// will the binary codec.
+// rather than the canonical result model. [text.Reader] and [binary.Reader] both
+// satisfy it without an adapter: the two codecs share these method sets.
 //
 // Reach for [RunReader] unless you need to see what the log actually held.
 type RecordReader interface {
@@ -91,10 +92,26 @@ var codecs = [...]codec{
 			return rd, nil
 		},
 	},
-	// Known, and not readable until the codec lands in v0.0.5. Listed rather
-	// than omitted: a caller handed a binary log needs to be told what it is
-	// holding.
-	{format: gatling.FormatBinary},
+	{
+		format:   gatling.FormatBinary,
+		versions: binary.SupportedVersions,
+		records: func(r io.Reader, opts ...gatling.Option) (RecordReader, error) {
+			rd, err := binary.NewReader(r, opts...)
+			if err != nil {
+				return nil, err
+			}
+
+			return rd, nil
+		},
+		run: func(r io.Reader, opts ...gatling.Option) (RunReader, error) {
+			rd, err := binary.NewRunReader(r, opts...)
+			if err != nil {
+				return nil, err
+			}
+
+			return rd, nil
+		},
+	},
 }
 
 // NewReader identifies the format of the log in r and returns a reader for its
@@ -102,10 +119,10 @@ var codecs = [...]codec{
 // yields when handed the same log directly: this package adds identification
 // and forwarding, and nothing else.
 //
-// It reads Gatling 3.11.5 through 3.12.0, the range the text codec's golden
-// corpus covers; [Supported] reports it without a decode. A binary log — every
-// Gatling from 3.13.0 — is identified and refused with a
-// *gatling.UnsupportedFormatError until that codec lands.
+// It reads both formats Gatling has written: the tab-separated text log through
+// 3.12.0, and the binary one from 3.13.1. [Supported] reports each range without
+// a decode, read from the same table this dispatches on, so a format cannot be
+// readable in one and not the other.
 //
 // It returns a *gatling.FormatError when r is not a Gatling simulation.log. The
 // version gate belongs to the codec and is applied once: a version below the

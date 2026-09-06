@@ -1,0 +1,32 @@
+<testsuite name="io.galaxio.parsec.corpus.CorpusSimulation" tests="10" errors="0" failures="0" time="0">
+  <testcase name="Global: count of all events is 102.0" status="true" time="0">
+  <system-out>Global: count of all events is 102.0</system-out>
+</testcase>
+<testcase name="Global: count of failed events is 18.0" status="true" time="0">
+  <system-out>Global: count of failed events is 18.0</system-out>
+</testcase>
+<testcase name="Global: max of response time is less than 60000.0" status="true" time="0">
+  <system-out>Global: max of response time is less than 60000.0</system-out>
+</testcase>
+<testcase name="GET /ok: percentage of failed events is 0.0" status="true" time="0">
+  <system-out>GET /ok: percentage of failed events is 0.0</system-out>
+</testcase>
+<testcase name="Проверка /ok: percentage of failed events is 0.0" status="true" time="0">
+  <system-out>Проверка /ok: percentage of failed events is 0.0</system-out>
+</testcase>
+<testcase name="outer / GET /ok: percentage of failed events is 0.0" status="true" time="0">
+  <system-out>outer / GET /ok: percentage of failed events is 0.0</system-out>
+</testcase>
+<testcase name="outer / inner, with comma / GET /slow: percentage of failed events is 0.0" status="true" time="0">
+  <system-out>outer / inner, with comma / GET /slow: percentage of failed events is 0.0</system-out>
+</testcase>
+<testcase name="outer / inner, with comma / GET /fail: percentage of failed events is 100.0" status="true" time="0">
+  <system-out>outer / inner, with comma / GET /fail: percentage of failed events is 100.0</system-out>
+</testcase>
+<testcase name="connect refused: percentage of failed events is 100.0" status="true" time="0">
+  <system-out>connect refused: percentage of failed events is 100.0</system-out>
+</testcase>
+<testcase name="unknown host: percentage of failed events is 100.0" status="true" time="0">
+  <system-out>unknown host: percentage of failed events is 100.0</system-out>
+</testcase>
+</testsuite>

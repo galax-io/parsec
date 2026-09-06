@@ -4,11 +4,19 @@
 # evaluates are rendered from this file by OpenNfrAssertions.fromYaml; changing a number here
 # changes what every supported Gatling version is held to, and no Scala file is edited to do it.
 #
-# The numbers are exact on purpose. Six virtual users each make three requests that must succeed
+# The numbers are exact on purpose. Six virtual users each make fourteen requests that must succeed
 # and three that must fail. A broken environment — the stub down, an "invalid" domain that
 # resolves — then fails this run itself, instead of producing a log that is merely consistent with
 # its own report. The corpus is recorded from this run, so a log that passed a vaguer bar would be
 # evidence of nothing.
+#
+# This document serves the versions that write a TEXT simulation.log — up to 3.12.0. It is not
+# rendered for the versions that write a binary one, and the reason is the format rather than the
+# tool: an OpenNFR loadtest.group.name is the literal *recorded* name, the two formats record
+# `inner, with comma` differently (see the note on that requirement below), and one document cannot
+# spell it both ways. Those versions state the same expectations in Gatling's own DSL in
+# src/test/scala-plain instead, and the two must be kept in step by hand. That cost is named in
+# specs/005-gatling-binary-decoder/research.md R8.
 #
 # Two spellings in here are not typos, and both are explained where they appear.
 
@@ -24,11 +32,15 @@ spec:
       displayName: The run as a whole
       selector: {}
       criteria:
-        # 36 recorded requests, 18 of them failures. The probe's Scala DSL said this as
-        # "18 successful, 18 failed"; a selector matches presence and never absence, so a fraction
+        # 102 recorded requests, 18 of them failures. The probe's Scala DSL would say this as
+        # "84 successful, 18 failed"; a selector matches presence and never absence, so a fraction
         # can name what failed and cannot name what did not, and `good` is refused for that reason.
         # A total plus a failure count is the same statement about the same run.
-        - {name: recorded-requests, displayName: Recorded requests, aggregation: count, op: eq, threshold: 36, unit: "{request}"}
+        #
+        # The total is dominated by "GET /ok" repeated inside the outer group. That repetition is
+        # what exercises the binary format's string cache: the name is written once and referred to
+        # by index every other time.
+        - {name: recorded-requests, displayName: Recorded requests, aggregation: count, op: eq, threshold: 102, unit: "{request}"}
         - {name: failed-requests, displayName: Failed requests, bad: {error.type: "*"}, aggregation: count, op: eq, threshold: 18, unit: "{request}"}
         # A ceiling, not a performance target: it exists so a hung environment fails the recording
         # rather than producing a log with a plausible shape.
@@ -37,6 +49,14 @@ spec:
     - name: root-ok
       displayName: The root GET /ok never fails
       selector: {loadtest.request.name: GET /ok}
+      criteria:
+        - {name: none-failed, bad: {error.type: "*"}, aggregation: rate, op: eq, threshold: 0, unit: "%"}
+
+    # Cyrillic, so the name cannot be encoded in Latin-1 and Gatling stores it as UTF-16 with the
+    # other coder byte. What is being recorded is the name; the request is an ordinary success.
+    - name: root-cyrillic
+      displayName: The Cyrillic-named GET never fails
+      selector: {loadtest.request.name: "Проверка /ok"}
       criteria:
         - {name: none-failed, bad: {error.type: "*"}, aggregation: rate, op: eq, threshold: 0, unit: "%"}
 

@@ -5,6 +5,33 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+
+- `gatling/binary`: decodes the binary `simulation.log` Gatling writes from 3.13.0 — the format
+  every current run produces — and yields the same wire records and the same canonical results the
+  text codec does, so a report written against `model` cannot tell which log it was reading. It
+  accepts **3.13.1 through 3.15.1**, the range its golden corpus covers.
+  - `3.13.0` itself is refused, although this codec could read its logs. That version cannot read
+    back the assertion records it writes, so no run of it generates a report, so no run of it can
+    carry the second account of its own numbers a corpus entry needs. The range follows the corpus,
+    which is what the constitution asks and what this case exists to demonstrate: the format's own
+    source diff says nothing changed between 3.13.0 and 3.15.1, and it is right, and 3.13.0 is still
+    not recordable.
+  - The stream must begin at the first byte of the file. The format replaces a repeated string with
+    a back-reference into a table the reader rebuilds as it goes, and that table cannot be
+    reconstructed from the middle.
+- `gatling.SyntaxError.Offset` and `gatling.SyntaxError.Format`: the byte offset for a binary log,
+  beside `Line` for a text one, and the format that says which of the two to read. Both fields are
+  additive, and `Format`'s zero value renders as a line, so an error built before they existed reads
+  exactly as it did. `Format` is not redundant: a binary log can fail at byte 0 and a text log fails
+  before it has a line, so both positions are legitimately zero and neither can discriminate alone.
+
+### Changed
+
+- `gatling/simlog` reads a binary `simulation.log` instead of refusing it with a
+  `*gatling.UnsupportedFormatError`, and `Supported` reports the binary format as readable over
+  3.13.1 through 3.15.1. Both change together because both read the same table.
+
 ## [0.0.4] - 2026-09-06
 
 Telling which Gatling wrote a log, before anything tries to read it.

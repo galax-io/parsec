@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/galax-io/parsec/gatling"
+	"github.com/galax-io/parsec/gatling/binary"
 	"github.com/galax-io/parsec/gatling/simlog"
 	"github.com/galax-io/parsec/gatling/text"
 	"github.com/galax-io/parsec/model"
@@ -34,8 +35,11 @@ func corpusLogs(t *testing.T) []string {
 	return logs
 }
 
-func binarySample() string {
-	return repoPath("testdata", "samples", "gatling", "binary", "3.15.1-head.bin")
+// binaryLog is a complete recorded binary run. The 64-byte sample this package
+// used to open lived only to prove that a binary log is identified as binary;
+// now that a codec reads one, a recording says the same thing and more.
+func binaryLog() string {
+	return repoPath("testdata", "corpus", "gatling", "3.15.1", "simulation.log")
 }
 
 func open(t *testing.T, path string) *os.File {
@@ -101,6 +105,49 @@ func items(t *testing.T, rd interface {
 	}
 }
 
+// codecFor opens a corpus log through the codec that actually wrote it, so a
+// dispatch comparison holds for every entry rather than only the text ones.
+// The format is asked of the file, not assumed from the version directory.
+func codecFor(t *testing.T, log string) (simlog.RecordReader, error) {
+	t.Helper()
+
+	if formatOf(t, log) == gatling.FormatBinary {
+		return binary.NewReader(open(t, log))
+	}
+
+	return text.NewReader(open(t, log))
+}
+
+func runCodecFor(t *testing.T, log string) (simlog.RunReader, error) {
+	t.Helper()
+
+	if formatOf(t, log) == gatling.FormatBinary {
+		return binary.NewRunReader(open(t, log))
+	}
+
+	return text.NewRunReader(open(t, log))
+}
+
+func formatOf(t *testing.T, log string) gatling.Format {
+	t.Helper()
+
+	f := open(t, log)
+
+	buf := make([]byte, gatling.DetectSize)
+
+	n, err := f.Read(buf)
+	if n == 0 && err != nil {
+		t.Fatalf("reading %s: %v", log, err)
+	}
+
+	got, err := gatling.Detect(buf[:n])
+	if err != nil {
+		t.Fatalf("detecting %s: %v", log, err)
+	}
+
+	return got
+}
+
 // Dispatch adds identification and forwarding, and nothing else. A log read
 // through this package must decode to exactly what its own codec decodes it to,
 // or the convenience has changed the meaning of the data.
@@ -111,9 +158,9 @@ func TestDispatchMatchesTheCodecRecords(t *testing.T) {
 		t.Run(filepath.Base(filepath.Dir(log)), func(t *testing.T) {
 			t.Parallel()
 
-			direct, err := text.NewReader(open(t, log))
+			direct, err := codecFor(t, log)
 			if err != nil {
-				t.Fatalf("text.NewReader: %v", err)
+				t.Fatalf("the codec for %s: %v", log, err)
 			}
 
 			dispatched, err := simlog.NewReader(open(t, log))
@@ -136,9 +183,9 @@ func TestDispatchMatchesTheCodecItems(t *testing.T) {
 		t.Run(filepath.Base(filepath.Dir(log)), func(t *testing.T) {
 			t.Parallel()
 
-			direct, err := text.NewRunReader(open(t, log))
+			direct, err := runCodecFor(t, log)
 			if err != nil {
-				t.Fatalf("text.NewRunReader: %v", err)
+				t.Fatalf("the codec for %s: %v", log, err)
 			}
 
 			dispatched, err := simlog.NewRunReader(open(t, log))

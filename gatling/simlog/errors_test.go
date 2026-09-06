@@ -4,12 +4,15 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"testing/iotest"
 	"time"
 
 	"github.com/galax-io/parsec/gatling"
+	"github.com/galax-io/parsec/gatling/binary"
 	"github.com/galax-io/parsec/gatling/simlog"
 	"github.com/galax-io/parsec/gatling/text"
 )
@@ -25,15 +28,17 @@ var errStream = errors.New("the stream broke")
 
 // The whole milestone is here. A binary log handed to the text codec fails on
 // its first line with a message about a missing separator, which sends a user
-// looking for corruption that is not there. Handed to this package it is told
-// what the file actually is.
-func TestBinaryIsRefusedByFormatNotBySyntax(t *testing.T) {
+// looking for corruption that is not there. Handed to this package it is read.
+//
+// The text half is kept: it records what a consumer gets without this package,
+// and it is what makes the other half mean something.
+func TestBinaryIsReadWhereTheTextCodecOnlyFails(t *testing.T) {
 	t.Parallel()
 
 	t.Run("through the text codec, a syntax error", func(t *testing.T) {
 		t.Parallel()
 
-		_, err := text.NewReader(open(t, binarySample()))
+		_, err := text.NewReader(open(t, binaryLog()))
 
 		var syntaxErr *gatling.SyntaxError
 		if !errors.As(err, &syntaxErr) {
@@ -42,37 +47,83 @@ func TestBinaryIsRefusedByFormatNotBySyntax(t *testing.T) {
 		}
 	})
 
-	t.Run("through simlog, the real cause", func(t *testing.T) {
+	t.Run("through simlog, records", func(t *testing.T) {
 		t.Parallel()
 
-		rd, err := simlog.NewReader(open(t, binarySample()))
-		if rd != nil {
-			t.Fatal("a refused read must hand back no reader")
+		rd, err := simlog.NewReader(open(t, binaryLog()))
+		if err != nil {
+			t.Fatalf("simlog.NewReader on a binary log = %v; a codec reads one now", err)
 		}
 
-		var unsupported *gatling.UnsupportedFormatError
-		if !errors.As(err, &unsupported) {
-			t.Fatalf("simlog.NewReader on a binary log = %v; want a *gatling.UnsupportedFormatError", err)
+		if rd == nil {
+			t.Fatal("a successful read must hand back a reader")
 		}
 
-		if unsupported.Format != gatling.FormatBinary {
-			t.Fatalf("Format = %v; want %v", unsupported.Format, gatling.FormatBinary)
+		if got := rd.Header().Version.String(); got != "3.15.1" {
+			t.Fatalf("the header names version %s; the recording is 3.15.1", got)
 		}
 
-		if got := unsupported.Error(); !strings.Contains(got, "binary") || !strings.Contains(got, "no codec") {
-			t.Fatalf("Error() = %q; it must name the format and say no codec reads it yet", got)
+		rec, err := rd.Next()
+		if err != nil {
+			t.Fatalf("Next: %v", err)
 		}
 
-		// Not a damaged log, and not an unknown one. A caller that cannot tell
-		// these apart cannot tell a user what to do about it.
-		if errors.As(err, new(*gatling.SyntaxError)) {
-			t.Fatal("an unreadable format must not read as a damaged log")
-		}
-
-		if errors.As(err, new(*gatling.FormatError)) {
-			t.Fatal("a known format must not read as an unknown one")
+		if rec.Kind == gatling.KindUnknown {
+			t.Fatal("the first record decoded to no kind at all")
 		}
 	})
+}
+
+// A binary log opened through the detecting entry point must be the same log
+// opened through the codec: same records, field for field. A dispatch that
+// quietly passed different options, or wrapped the stream, would show up here
+// and nowhere else.
+func TestDispatchIsTheCodecItself(t *testing.T) {
+	t.Parallel()
+
+	direct, err := binary.NewReader(open(t, binaryLog()))
+	if err != nil {
+		t.Fatalf("binary.NewReader: %v", err)
+	}
+
+	through, err := simlog.NewReader(open(t, binaryLog()))
+	if err != nil {
+		t.Fatalf("simlog.NewReader: %v", err)
+	}
+
+	if direct.Header() != through.Header() {
+		t.Fatalf("headers differ:\n direct  %+v\n through %+v", direct.Header(), through.Header())
+	}
+
+	for n := 1; ; n++ {
+		a, aErr := direct.Next()
+		b, bErr := through.Next()
+
+		if (aErr == nil) != (bErr == nil) {
+			t.Fatalf("record %d: direct %v, through %v", n, aErr, bErr)
+		}
+
+		if aErr != nil {
+			if !errors.Is(aErr, io.EOF) {
+				t.Fatalf("record %d: %v", n, aErr)
+			}
+
+			if n < 100 {
+				t.Fatalf("the stream ended after %d records; the recording holds 132", n-1)
+			}
+
+			return
+		}
+
+		if !slices.Equal(a.Groups, b.Groups) {
+			t.Fatalf("record %d: group paths differ: %q and %q", n, a.Groups, b.Groups)
+		}
+
+		a.Groups, b.Groups = nil, nil
+		if !reflect.DeepEqual(a, b) {
+			t.Fatalf("record %d differs:\n direct  %+v\n through %+v", n, a, b)
+		}
+	}
 }
 
 // Every way a read can be refused, and the type that says which. No test here
@@ -235,16 +286,16 @@ func (stalledReader) Read([]byte) (int, error) { return 0, nil }
 func TestRefusalHandsBackTheBytesItRead(t *testing.T) {
 	t.Parallel()
 
-	// A real binary opening, then enough to tell whether anything was lost.
-	body := "\x00\x00\x00\x00\x06" + "3.15.1" + "and the rest of the binary log"
+	// Neither format: not tab-separated text, and not a run record.
+	body := "PK\x03\x04 this is a zip file, and the rest of whatever it is"
 
 	r := strings.NewReader(body)
 
 	_, err := simlog.NewReader(r)
 
-	var unsupported *gatling.UnsupportedFormatError
-	if !errors.As(err, &unsupported) {
-		t.Fatalf("NewReader = _, %v; want a *gatling.UnsupportedFormatError", err)
+	var format *gatling.FormatError
+	if !errors.As(err, &format) {
+		t.Fatalf("NewReader = _, %v; want a *gatling.FormatError", err)
 	}
 
 	rest, err := io.ReadAll(r)
@@ -252,7 +303,7 @@ func TestRefusalHandsBackTheBytesItRead(t *testing.T) {
 		t.Fatalf("draining the reader: %v", err)
 	}
 
-	if got := string(unsupported.Head) + string(rest); got != body {
+	if got := string(format.Head) + string(rest); got != body {
 		t.Fatalf("the refusal lost bytes: %d of %d recovered", len(got), len(body))
 	}
 }
@@ -277,36 +328,37 @@ func TestWrappedEOFIsAStreamFailure(t *testing.T) {
 	}
 }
 
-// The binary refusal is the outcome this milestone exists for, and it has to
-// hold on both entry points. It was asserted only on NewReader, so deleting the
-// guard from NewRunReader alone left every test green while the constructor the
-// README points consumers at fell through to a syntax error on line 1.
-func TestBinaryIsRefusedByBothConstructors(t *testing.T) {
+// Both entry points must reach the binary codec. The refusal this replaces was
+// once asserted only on NewReader, and removing the guard from NewRunReader
+// alone left every test green while the constructor the README points consumers
+// at fell through to a syntax error on line 1. The same asymmetry is possible
+// now in reverse, so both are still checked.
+func TestBinaryIsReadByBothConstructors(t *testing.T) {
 	t.Parallel()
 
 	t.Run("NewReader", func(t *testing.T) {
 		t.Parallel()
 
-		rd, err := simlog.NewReader(open(t, binarySample()))
-		if rd != nil {
-			t.Fatal("a refused read must hand back no reader")
+		rd, err := simlog.NewReader(open(t, binaryLog()))
+		if err != nil {
+			t.Fatalf("NewReader = _, %v; a codec reads a binary log now", err)
 		}
 
-		if !errors.As(err, new(*gatling.UnsupportedFormatError)) {
-			t.Fatalf("NewReader = _, %v; want a *gatling.UnsupportedFormatError", err)
+		if rd == nil {
+			t.Fatal("a successful read must hand back a reader")
 		}
 	})
 
 	t.Run("NewRunReader", func(t *testing.T) {
 		t.Parallel()
 
-		rd, err := simlog.NewRunReader(open(t, binarySample()))
-		if rd != nil {
-			t.Fatal("a refused read must hand back no reader")
+		rd, err := simlog.NewRunReader(open(t, binaryLog()))
+		if err != nil {
+			t.Fatalf("NewRunReader = _, %v; a codec reads a binary log now", err)
 		}
 
-		if !errors.As(err, new(*gatling.UnsupportedFormatError)) {
-			t.Fatalf("NewRunReader = _, %v; want a *gatling.UnsupportedFormatError", err)
+		if rd == nil {
+			t.Fatal("a successful read must hand back a reader")
 		}
 	})
 }
