@@ -9,6 +9,16 @@ name: verify
 
 on:
   workflow_call:
+    inputs:
+      fuzz:
+        description: >-
+          Run the fuzzing leg. Pull requests only. Fuzzing is nondeterministic, so the
+          same tree can pass one run and fail the next on a finding that depends on the
+          seed; a release must not be gated on that, and the constitution's release rules
+          leave no cheap way out of a tag blocked by chance. ci.yml turns it on for a pull
+          request, release.yml leaves it off by taking the default.
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -117,6 +127,82 @@ jobs:
     # A real Gatling, every supported version, against the probe simulation; the
     # decoder is held to each run's own report. See gatling-canary.yml.
     uses: ./.github/workflows/gatling-canary.yml
+
+  # Every Fuzz target in the module, discovered rather than listed: a hard-coded
+  # list silently stops covering a target added later, and FR-013 asks for every
+  # one of them.
+  fuzz-targets:
+    if: inputs.fuzz
+    needs: quick
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.list.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - name: every Fuzz target in the module
+        id: list
+        run: |
+          set -euo pipefail
+          pairs=""
+          for pkg in $(go list ./...); do
+            for target in $(go test -list '^Fuzz' "$pkg" | grep '^Fuzz' || true); do
+              pairs="$pairs$pkg $target\n"
+            done
+          done
+          matrix=$(printf "$pairs" | jq -Rsc '
+            split("\n") | map(select(length > 0) | split(" ") | {package: .[0], target: .[1]})')
+          echo "$matrix" | jq .
+          # Say so rather than passing quietly: a discovery step that found nothing
+          # reads exactly like one that found everything and was satisfied.
+          if [ "$(echo "$matrix" | jq 'length')" -eq 0 ]; then
+            echo "no Fuzz target found in the module"
+            exit 1
+          fi
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+
+  # One job per target, not one job running three.
+  #
+  # A single fuzzer saturates every core it is given — 862% CPU measured on a ten-core
+  # machine — so three sharing a four-core runner would each get a third of the budget
+  # the flag appears to grant.
+  #
+  # The budget is 90 s, from the report in #60 that FuzzDecode finds the math.MinInt32
+  # crasher in about that. Measured here with a warm cache it took under 3 s, but that
+  # is not the CI shape: a cold GOCACHE gives FuzzDecode 14 baseline inputs where a warm
+  # one gave 147, and no generated corpus is committed. 90 s is the figure for the cold
+  # case, and it is confirmed on the runner rather than inferred from a laptop.
+  fuzz:
+    if: inputs.fuzz
+    needs: fuzz-targets
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        case: ${{ fromJSON(needs.fuzz-targets.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - name: fuzz ${{ matrix.case.target }}
+        # -run '^$' is required: without it the ordinary tests run first and spend
+        # the budget before a single new input is generated.
+        run: |
+          set -euo pipefail
+          go test -run '^$' -fuzz '^${{ matrix.case.target }}$' -fuzztime 90s '${{ matrix.case.package }}'
+      # A crasher is written to testdata/fuzz/<target>/ in the package directory and
+      # the run fails. It is uploaded and never committed: the job is granted no write
+      # permission, and the generated corpus lives in $GOCACHE and never reaches the tree.
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: crasher-${{ matrix.case.target }}
+          path: '**/testdata/fuzz/**'
+          if-no-files-found: warn
+          retention-days: 30
 
   # The corpus probe states what it must produce once, in an OpenNFR document, and
   # the Gatling assertions are rendered from it. This gate holds that document to

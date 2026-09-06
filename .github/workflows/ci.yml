@@ -76,6 +76,13 @@ jobs:
     # The only `if:` on the gate set. The jobs inside verify.yml cannot see
     # needs.changes and must not try.
     uses: ./.github/workflows/verify.yml
+    with:
+      # Fuzzing runs on a pull request and nowhere else. verify.yml is the gate set
+      # for the release path too, and a nondeterministic gate there could block a
+      # tag on a finding that depends on the seed — which the release rules leave no
+      # cheap way out of. A push to main does not fuzz either: the pull request that
+      # produced it did.
+      fuzz: ${{ github.event_name == 'pull_request' }}
 
   # The single required status check. One entry carries the whole gate set, so
   # adding a gate is an edit to verify.yml alone.

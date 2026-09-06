@@ -1,0 +1,175 @@
+# Data Model: The corpus and the canary
+
+**Feature**: 007-corpus-and-canary | **Date**: 2026-09-06 | **Spec**: [spec.md](spec.md)
+
+This feature adds **no type to `model/`** and changes no decoded record. Everything below is
+verification structure — what a run said about itself, and how a check reaches it. Principle I's
+rule that this module computes no statistic is unaffected: every figure here is *read from Gatling's
+own report* or *folded inside a test*, never exported.
+
+---
+
+## 1. Report tree (new, `internal/corpus`)
+
+The one shape every version's account of itself reduces to (research R1).
+
+### `Node`
+
+| Field | Type | Meaning | Source |
+|---|---|---|---|
+| `ID` | `string` | Row identity within one report. `ROOT`, or Gatling's own row id. | `stats.json` key path, or the `<tr id="…">` attribute |
+| `Parent` | `string` | `ID` of the enclosing node; empty for the root. | JSON nesting, or `data-parent` |
+| `Name` | `string` | Display name: a request name, a group name, or `All Requests`. | `stats.name`, or the `ellipsed-name` span |
+| `Kind` | `NodeKind` | `KindRoot`, `KindGroup`, `KindRequest`. | JSON `type`, or the `id` prefix (`group_`, `req_`) |
+| `Requests` | `Triple` | total / ok / ko. | `numberOfRequests`, or cells `col-2`, `col-3`, `col-4` |
+| `RatePerSec` | `Number` | Mean requests per second, as the report printed it. | `meanNumberOfRequestsPerSecond`, or cell `col-6` |
+
+### `Triple`
+
+`{ Total, OK, KO int64 }` — the split Gatling states every count in. Counts of discrete events, so
+they are compared **exactly**; there is no tolerance (FR-009).
+
+### `Number`
+
+A figure the report *printed* as a decimal. Compared at the precision it was printed with, which is
+what "exact" means for a printed double — the rule `gatling/text/helpers_test.go:sameAtPrecision`
+already applies to the text corpus, carried over unchanged.
+
+### `Report`
+
+| Field | Type | Meaning |
+|---|---|---|
+| `Nodes` | `[]Node` | Every row, root first. |
+| `Source` | `string` | Which artefact it came from — named in every failure message. |
+
+**Invariants** (enforced at construction; a violation fails the test — FR-011):
+
+- exactly one node has an empty `Parent`, and its `Kind` is `KindRoot`;
+- every non-root `Parent` names a node in the same `Report`;
+- the graph is acyclic and every node is reachable from the root;
+- `Nodes` is non-empty beyond the root. A reader that found only a root found nothing usable —
+  which is precisely 3.13.1's `index.html`, whose body is filled in by JavaScript.
+
+### Readers
+
+| Reader | Input | Applies to |
+|---|---|---|
+| `FromStatsJSON` | `stats.json` / `js/stats.json` | 3.11.5, 3.12.0, 3.13.1 |
+| `FromReportHTML` | `index.html` | 3.14.0 and newer |
+| `FromConsole` | `console.txt` | every binary version — **root only**, no per-request rows |
+
+`Accounts(dir)` returns every reader that finds something, keyed by source. A directory yielding
+none fails the test: a recording that carries no account of its own numbers proves nothing —
+the rule `gatling/binary/tolerance_test.go` already states.
+
+### Absences, declared not inferred
+
+`FromConsole` yields a root and nothing else, because the Global Information block carries nothing
+else. That is Gatling's absence, and it is reported by name (FR-010) rather than silently reducing
+what a version is checked against.
+
+Neither the report nor the console carries a count of **virtual users** or of **error records**.
+Those stay pinned against the recorded record stream, as
+`TestCountsGatlingDoesNotReportArePinnedHere` already does.
+
+---
+
+## 2. Decoded tally (existing, extended)
+
+`gatling/text/helpers_test.go:tally` already folds the decoded stream into the shape a report is
+compared against: per-`statsKey` triples for requests and groups, plus the run span. `gatling/binary`
+folds only a global triple today.
+
+**Change**: `gatling/binary` folds the same per-key tally. **No new concept** — the same
+`statsKey{path, name}` identity, the same `add(isOK bool)`, the same `durationSec()`.
+
+### Matching a decoded key to a report node
+
+The report gives a tree; the tally gives a path. A node's path is its ancestors' `Name`s, root
+excluded, and the comparison is on that path — never on `ID`, which is Gatling's internal hash and
+differs between runs of the same simulation.
+
+**Two names, one group** (research R5): the probe's group `inner, with comma` is recorded as
+`inner  with comma` by a text log and `inner, with comma` by a binary one. Within one format the
+report and the log agree, so per-version comparison needs no normalisation. **Cross-format**
+comparison does, and the assertion states the reason.
+
+---
+
+## 3. Corpus entry (existing, formalised)
+
+What a complete entry is, so the recording job can assemble one and a check can refuse a partial.
+
+| Member | Required | Note |
+|---|---|---|
+| `simulation.log` | always | The artefact, byte for byte as written |
+| `records.golden` | always | Decoded stream; generated by `go test -update` |
+| `RECORDING.md` | always | Written by the recorder — never generated (FR-023) |
+| `stats.json`, `global_stats.json` | when the version wrote them | ≤ 3.13.x |
+| `index.html` | when the version wrote it | 3.13.0 and newer |
+| `console.txt` | when the version wrote no JSON | Exists only if redirected at run time |
+
+**Rule**: an entry MUST carry at least one artefact from which `Accounts` yields a root. An entry
+whose tool genuinely produced none records that fact in `RECORDING.md`; there is no such entry today
+and 3.13.0 is the reason there is no 3.13.0 entry at all.
+
+---
+
+## 4. Canary run (existing, extended)
+
+`gatling/text/canary_test.go:canaryRun` — a `{version, dir}` pair parsed from `PARSEC_CANARY_RUNS`.
+
+**Change**: the same shape in `gatling/binary`, reading its runs through the R1 tree rather than
+through `js/stats.json` directly, because a fresh 3.14+ run has no such file.
+
+**State a canary run can be in**:
+
+| State | Trigger | Outcome |
+|---|---|---|
+| in range | version within the codec's `SupportedVersions()` | decoded, compared, counted for range coverage |
+| above range | version newer than the codec's max | decoded **with a warning**, summarised as a candidate for widening, **excluded** from the equality comparison (a warning is a statement about identity, not content) |
+| below range | version older than the codec's min | refused with an error naming version and range; the refusal is the expected outcome |
+
+---
+
+## 5. Fuzz target (existing, newly exercised)
+
+| Field | Value |
+|---|---|
+| Identity | package import path + target name |
+| Discovery | `go test -list '^Fuzz' ./...` — never a hard-coded list (FR-013) |
+| Budget | per target, per trigger: pull request vs schedule (FR-017) |
+| Crasher | `testdata/fuzz/<Target>/<name>` in the package directory — uploaded, never committed (FR-015, FR-016) |
+
+Three targets exist today: `gatling.FuzzDetect`, `gatling/binary.FuzzDecode`,
+`gatling/text.FuzzReader`.
+
+---
+
+## 6. Peak-memory budget (existing, corrected)
+
+| Quantity | Today | After |
+|---|---:|---:|
+| `MaxStringLen` (exported) | 8 MiB | **1 MiB** — approved 2026-09-06 |
+| `maxAssertionBytes` (unexported) | 8 MiB | 8 MiB — unchanged, measured safe at both ceilings |
+| Budget in `Reader`'s documentation | 32 MiB | 32 MiB |
+| Budget the check asserts | 32 MiB | 32 MiB |
+| Worst measured peak, one field of each encoding | 52.3 MiB ✗ | 6.8 MiB ✓ |
+| Peak with `maxAssertionBytes` filled at the ceiling | 16.3 MiB ✓ | 9.3 MiB ✓ |
+
+The two budget rows must be the same number (FR-026), which is the invariant the feature restores.
+Measurements and the reasoning behind 1 MiB are in [research.md](research.md) R8.
+
+### Synthetic log, extended
+
+`gatling/binary/synth_test.go` today emits three short ASCII names. It gains a run carrying one field
+at the ceiling in each of the three encodings the format can store one in:
+
+| Encoding | Wire form | Result cost |
+|---|---|---|
+| Latin-1, ASCII | one byte per char, all < 0x80 | 1× — a single copy |
+| Latin-1, above ASCII | one byte per char, ≥ 0x80 | 2× — every byte becomes two UTF-8 bytes |
+| UTF-16 | two bytes per code unit | 1×–1.5× by the UTF-8 width of the code points |
+
+These are the three paths through `gatling/binary/strings.go`, which is why they are the three the
+assertion must cover (FR-025).

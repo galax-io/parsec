@@ -45,7 +45,28 @@ func canaryRuns(t *testing.T) []canaryRun {
 			t.Fatalf("PARSEC_CANARY_RUNS: %v", err)
 		}
 
+		// Only the runs this codec reads. From v0.0.7 the canary list carries
+		// every supported version of both formats in one value, because the
+		// cross-format comparison needs one of each; each codec takes its own
+		// and leaves the rest to the other. The log is asked rather than the
+		// version, so a release that changed format without saying so is
+		// noticed here instead of being decoded by the wrong codec.
+		log := filepath.Join(dir, "simulation.log")
+
+		format, err := detectFormat(log)
+		if err != nil {
+			t.Fatalf("Gatling %s left no readable log at %s: %v", v, log, err)
+		}
+
+		if format != gatling.FormatText {
+			continue
+		}
+
 		runs = append(runs, canaryRun{version: v, dir: dir})
+	}
+
+	if len(runs) == 0 {
+		t.Skipf("PARSEC_CANARY_RUNS names no run whose simulation.log is a text one")
 	}
 
 	return runs
