@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/galax-io/parsec/gatling/binary"
+	"github.com/galax-io/parsec/model"
 )
 
 const mib = 1 << 20
@@ -130,5 +131,81 @@ func TestMemoryFollowsNamesNotRecords(t *testing.T) {
 	if peak2 > 2*peak1 {
 		t.Fatalf("ten times the records cost %.1f MiB against %.1f MiB; the table is growing with the run",
 			float64(peak2)/mib, float64(peak1)/mib)
+	}
+}
+
+// foldSized reads a synthetic log through the model-facing reader the way a
+// consumer's pass does: a position taken for every sample and group, one Bounds
+// extended for every item. Positions are dropped as they are taken — a consumer
+// keeps one per distinct place, and the synthetic log has four.
+func foldSized(t *testing.T, size int64) (items int64, peak uint64) {
+	t.Helper()
+
+	runtime.GC()
+
+	src := &sampler{r: newSynthLog(size), every: size / samples}
+
+	rd, err := binary.NewRunReader(src)
+	if err != nil {
+		t.Fatalf("NewRunReader: %v", err)
+	}
+
+	var (
+		bounds model.Bounds
+		last   model.Position
+	)
+
+	for {
+		it, err := rd.Next()
+		if errors.Is(err, io.EOF) {
+			if _, ok := bounds.End(); !ok || last == (model.Position{}) {
+				t.Fatal("the fold bounded nothing or took no position; the log is not the shape this test assumes")
+			}
+
+			return items, src.peak
+		}
+
+		if err != nil {
+			t.Fatalf("Next after %d items: %v", items, err)
+		}
+
+		bounds.Extend(&it)
+
+		switch it.Kind {
+		case model.ItemSample:
+			last = it.Sample.Position()
+		case model.ItemGroup:
+			last = it.Group.Position()
+		case model.ItemUser, model.ItemError, model.ItemAssertion, model.ItemUnknown:
+		}
+
+		items++
+	}
+}
+
+// The primitives retain nothing: folding a log through them peaks where decoding
+// it does, and a tenfold longer log does not move the figure.
+//
+//nolint:paralleltest // measures peak heap and must run alone
+func TestFoldPeakMemory(t *testing.T) {
+	const small = 256 * mib
+
+	n1, peak1 := foldSized(t, small)
+	t.Logf("%d MiB: %d items, peak heap %.1f MiB", small/mib, n1, float64(peak1)/mib)
+
+	if peak1 >= 32*mib {
+		t.Fatalf("peak heap %.1f MiB for a %d MiB log, want under 32 MiB", float64(peak1)/mib, small/mib)
+	}
+
+	if testing.Short() {
+		t.Skip("the ten-times-larger run is skipped under -short")
+	}
+
+	n2, peak2 := foldSized(t, 10*small)
+	t.Logf("%d MiB: %d items, peak heap %.1f MiB", 10*small/mib, n2, float64(peak2)/mib)
+
+	if peak2 >= 32*mib || peak2 > 2*peak1 {
+		t.Fatalf("peak heap grew from %.1f MiB to %.1f MiB when the log grew ten times",
+			float64(peak1)/mib, float64(peak2)/mib)
 	}
 }

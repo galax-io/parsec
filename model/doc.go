@@ -36,6 +36,19 @@
 // the zero Time — nothing recorded is before 1970, and the zero Time is the year
 // 1. Ask [time.Time.IsZero] before treating one as a measurement.
 //
+// # The primitives a consumer folds
+//
+// A consumer that wants a number folds the stream once, and this package hands
+// it the definitions the fold rests on rather than the arithmetic. [Position] is
+// where a sample or a group traversal was recorded — its groups and its name as
+// one comparable value — so two consumers bucket a run by the same key without
+// agreeing on a spelling. [Bounds] is where the run begins and where it ends, as
+// the tool's own report bounds it, extended one item at a time; every rate
+// divides by that span, and a virtual-user event can set either end of it.
+// [Outcome] is what a failure is, and the stream of [Item] values is what is
+// walked. What a consumer computes from these — counts, means, percentiles,
+// ranges, series — is its own, and the package example shows the loop.
+//
 // # What this package does not do
 //
 // It computes nothing. There is no count, mean, percentile, range or series

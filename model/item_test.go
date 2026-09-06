@@ -149,6 +149,22 @@ func TestEnumStringsCoverEveryConstant(t *testing.T) {
 			}
 		}
 	})
+
+	t.Run("PositionKind", func(t *testing.T) {
+		t.Parallel()
+
+		want := map[model.PositionKind]string{
+			model.PositionUnknown: "unknown",
+			model.PositionSample:  "sample",
+			model.PositionGroup:   "group",
+			model.PositionKind(9): "unknown",
+		}
+		for k, s := range want {
+			if got := k.String(); got != s {
+				t.Errorf("PositionKind(%d).String() = %q, want %q", int(k), got, s)
+			}
+		}
+	})
 }
 
 func TestWarningStringNamesTheVersion(t *testing.T) {
