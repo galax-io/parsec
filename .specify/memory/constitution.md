@@ -1,88 +1,62 @@
 <!--
 Sync Impact Report
 ==================
-Version change: 2.0.0 → 2.1.0
-Bump rationale: MINOR. A section is added and nothing is removed or redefined. "Engineering
-Guidance (Skills)" joins Quality Gates & Tooling; every existing principle, gate and rule is
-untouched, and nothing already compliant becomes non-compliant. The versioning policy calls an
-added section MINOR.
+Version change: 2.1.0 → 2.2.0
+Bump rationale: MINOR. A gate is added to the Quality Gates table — the shell tests, which
+existed for two scripts and were run by nothing — and the Milestones rule now names the mechanism
+that actually enforces the tag gate. No principle is removed or redefined, and nothing already
+compliant becomes non-compliant.
 
 Modified principles: none.
-Added sections: Quality Gates & Tooling → **Engineering Guidance (Skills)**.
-Removed sections: none. Renamed principles: none.
+Modified sections:
+- Quality Gates & Tooling — one row added: every shell gate suite runs in `quick`.
+  `scripts/check-linkage_test.sh` and `scripts/check-coverage_test.sh` were committed and never
+  executed by any workflow, so the gates that guard every release were themselves unguarded.
+- Development Workflow & Release Process → Milestones — the tag gate now names all three places
+  that run it, and which of them is the authority.
 
-Drafted, then immediately refreshed, and folded rather than re-versioned: the skill plugins were
-updated while this amendment was still uncommitted — `samber/cc-skills-golang` 1.4.0 → 2.0.1 and
-`galaxio/galaxio-gatling` 2.0.0 → 2.4.0 — so the section ships classified against what is installed
-rather than against what was installed an hour earlier. No 2.2.0 is issued for that: version numbers
-here describe amendments that have landed, and 2.1.0 had not. The refresh added four skills to the
-classification (`golang-gopls`, `golang-refactoring`, `golang-pkg-go-dev`, and the always-active
-orchestrator `golang-how-to`), named the three new Gatling skills, and made the Review clause
-concrete, because the very first update proved the drift it warns about: `galaxio-gatling` 2.4.0
-moved `version-lookup.md` into a new `gatling-versions` skill, which left a reference in
-`specs/004-gatling-format-detection/research.md` pointing at a file that no longer exists.
+Added sections: none. Removed sections: none. Renamed principles: none.
 
-Why now: coding agents in this repository carry a third-party Go skill set, and it had been
-applied by taste. Reviewing it against the drafted API of spec 004 changed that API three times —
-a functional option renamed to the `With` convention, two exported identifiers dropped that no
-caller needed, and a written justification forced for returning an interface from a constructor —
-and it also surfaced three skills whose advice would have broken a MUST. Both halves are worth
-fixing in one place rather than re-deciding per feature.
+Why now: parsec's copy of the shared `linkage-guard.sh` had drifted to an old revision, and two
+attempts to sharpen it here each introduced a defect the one before it did not have. A max-effort
+review found eleven shapes that walked through the second attempt — a wrapper such as xargs or
+sudo, a `bash -c` body, a subshell, a heredoc anywhere in the command — and, worse, that a failure
+of `awk` produced no output and allowed everything silently.
 
-What the new section does *not* do, deliberately: it does not make a skill a build gate. A skill is
-versioned outside this repository, can drift between releases, and may be absent for a contributor.
-The gate table above already enforces the outcomes — gofmt, golangci-lint, the stdlib-only `deps`
-job, the coverage floors. The skills are how a change is got right the first time; the gates are
-what catch it when it is not. A rule CI cannot check and a contributor may be unable to follow would
-have been a rule in name only.
+The fix was not to write a third parser. `galax-io/gatling-kafka-plugin` had already solved the
+same problem, with a suite of cases, after hitting the identical incident — its header records a
+`gh pr create` whose heredoc body documented the hook and was blocked by it. That version is ported
+here whole, together with its tests, with one rule carried back the other way: a release-branch push
+is not a release, which is parsec#46 and belongs upstream too.
 
-Three bounds are stated once and apply to every skill: this document wins where they disagree; a
-skill never justifies a dependency, a layout change, a weakened gate or a lowered coverage floor;
-and unavailability blocks nothing, because Principles I–VI say the same things in less detail.
+What the ported guard cannot do is see a push it was not asked to run. It is a PreToolUse hook, so a
+maintainer tagging from a terminal or an IDE never reaches it. `.githooks/pre-push` closes that: git
+hands it the refs themselves, so there is nothing to parse and nothing to guess, and it fires for
+every client. The two are layers, not alternatives.
 
-On `golang-project-layout`, which is the one classification that moved during drafting: banning it
-outright was wrong. Principle I already fixes the tool packages by name and the module's import
-paths are published, so the layout questions that skill opens with are answered here and are not
-open to revision — `pkg/`, `cmd/`, the architecture question and the dependency-injection question
-are all out. What is genuinely open, and grows as `jmeter/`, `k6/`, `locust/` and `phout/` arrive,
-is when a helper belongs in `internal/` and where a package boundary should fall once several
-adapters share a problem. It is therefore listed with a carve-out rather than forbidden. The
-distinction the section keeps throughout is between advice that breaks a MUST and advice for which
-no occasion has yet arisen: the second is not a prohibition, and two such skills are named with the
-milestone that would promote them.
+The second half of the amendment is the reason the first was possible to get wrong twice. Both
+sibling gate scripts shipped a test and neither was wired into CI, so nothing caught a regression in
+the machinery that guards releases. The new row runs all four suites.
 
 Templates:
-- ✅ .specify/templates/plan-template.md — Technical Context gains an **Engineering guidance** field,
-  so every plan names the skills its change requires and any it must not follow. This is the
-  propagation that makes the section operative rather than decorative.
-- ✅ AGENTS.md — Boundaries gains one Always item and one Never item, agreeing with the section.
-- ✅ .specify/templates/spec-template.md — no change; a spec is technology-agnostic by design and
-  naming an engineering skill in one would be a layering error.
-- ✅ .specify/templates/tasks-template.md — no change; the plan's Technical Context is where the
-  skills are named, and a task list inherits it.
-- ✅ .specify/templates/checklist-template.md — no constitution references; no change.
-- ✅ .github/workflows/ — unchanged, and deliberately: see the "not a build gate" paragraph above.
-- ✅ .golangci.yml — unchanged. `errname`, `errorlint`, `wsl_v5` and `godot` already enforce much of
-  what the required-reading skills describe, which is why the section is about reading rather than
-  about tooling.
-- ✅ README.md, doc.go — no user-visible change; the section is contributor guidance.
+- ✅ .specify/templates/plan-template.md — no gate list; no change.
+- ✅ .specify/templates/spec-template.md, tasks-template.md, checklist-template.md — no reference to
+  the hook or the gate table; no change.
+- ✅ AGENTS.md — the enforcement comment now names `.githooks/pre-push`, the one-time
+  `core.hooksPath` setup, and the shell-test command; Commands gains both lines.
+- ✅ .github/workflows/verify.yml — the `quick` job runs the three shell tests.
+- ✅ .claude/settings.json — unchanged; it still registers the guard, which stays.
+- ✅ README.md, doc.go — no reference; no change.
 
 Follow-up TODOs:
-- The classification is re-read at every `release/X.Y.0` cut together with the Principles I–VI
-  compliance review, and on every skill-plugin update. It is pinned to
-  `samber/cc-skills-golang` 2.0.1 and `galaxio/galaxio-gatling` 2.4.0.
-- `golang-gopls` and `golang-pkg-go-dev` are classified but currently inert: `gopls` is not on the
-  machine and the `godig` plugin is not installed. Both are listed anyway, because the question each
-  answers — every call site before a rename, a proposed module's licence and CVEs — is asked by
-  Principles V and IV whether or not the tool is there to answer it.
 - Carried forward, still unresolved: `.claude/skills/speckit-tasks/SKILL.md` says test tasks are
-  OPTIONAL, which Principle III contradicts. The file is spec-kit managed and reinstalled on
-  upgrade, so it is left alone and recorded here rather than patched — dropping the note would make
-  the drift invisible, which is why it survives this amendment too.
+  OPTIONAL, which Principle III contradicts. Spec-kit managed and reinstalled on upgrade, so it is
+  recorded here rather than patched.
 - Carried forward: `.copier-answers.yml` still records the pre-v2.0.0 Structure and Architecture
-  text, including a `stats/` package and the `go-tdigest` pre-approval. The file forbids manual
-  edits and is rewritten by `copier update`, so the fix is to answer differently at the next update;
-  until then a template update would silently revert `AGENTS.md`.
+  text. The file forbids manual edits and is rewritten by `copier update`.
+- The skills classification is pinned to `samber/cc-skills-golang` 2.0.1 and
+  `galaxio/galaxio-gatling` 2.4.0, and is re-read at every `release/X.Y.0` cut and on every
+  skill-plugin update.
 - Ratification date is the scaffold date (2026-09-02); no earlier constitution existed.
 -->
 # parsec Constitution
@@ -248,6 +222,7 @@ Every PR MUST be green on all CI jobs before merge:
 | Vulnerabilities | `govulncheck` (pinned) over the module | vuln |
 | Coverage | per-package against the floors below, enforced | coverage |
 | Requirements document | the corpus probe's OpenNFR document against the published schema | nfr |
+| Shell gates | every `*_test.sh` under `scripts/`, `.claude/hooks/` and `.githooks/` | quick |
 
 Local equivalents: `gofmt -w .` before every commit; `go vet ./... && go test ./...` to
 verify; `go build ./... && go test ./...` is the definition of a green commit;
@@ -376,8 +351,10 @@ contradict.
 - **Milestones.** Every PR MUST carry the active milestone (the lowest-numbered open
   milestone matching the current spec) before merge; no milestone, no merge. Every issue
   a PR fixes MUST be closed when the PR lands on `main`. `scripts/check-linkage.sh --pr N`
-  is the merge gate and `--for-tag vX.Y.Z` the tag gate; the `linkage-guard` hook runs
-  the latter on every tag push.
+  is the merge gate and `--for-tag vX.Y.Z` the tag gate. Three places run the latter:
+  `.claude/hooks/linkage-guard.sh` before the command runs, `.githooks/pre-push` on a push
+  from any client, and `release.yml` server-side, where nothing can bypass it. The first two
+  are fast local failures; the last is the authority.
 - **Commits.** Semantic messages (`feat(scope): … (#NNN)`); one tracked issue per commit;
   every commit green on its own; format before commit; intent, not path: squash churn
   before review.
@@ -421,4 +398,4 @@ contradict.
   re-reads Principles I–VI against the milestone's merged PRs and files an issue for
   each gap in the next milestone.
 
-**Version**: 2.1.0 | **Ratified**: 2026-09-02 | **Last Amended**: 2026-09-05
+**Version**: 2.2.0 | **Ratified**: 2026-09-02 | **Last Amended**: 2026-09-06
