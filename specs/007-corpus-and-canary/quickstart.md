@@ -50,13 +50,22 @@ mv testdata/corpus/gatling/3.15.1/records.golden.bak testdata/corpus/gatling/3.1
 # (b) the report comparison — alter a figure in the run's own report
 sed -i.bak 's|<td class="value total col-2">66</td>|<td class="value total col-2">65</td>|' \
   testdata/corpus/gatling/3.15.1/index.html
-go test -count=1 -run 'Report' ./gatling/binary/   # expect FAIL naming the row
+go test -tags=integration -count=1 -run 'Report' ./gatling/binary/   # expect FAIL naming the row
 mv testdata/corpus/gatling/3.15.1/index.html.bak testdata/corpus/gatling/3.15.1/index.html
 ```
 
-Note the missing `-tags=integration` in (b): `gatling/binary`'s tolerance and report tests are
-**untagged** and run in the ordinary `test` job, while `gatling/text`'s equivalents are behind
-`integration`. The tag is harmless in (b) but not required.
+**`-tags=integration` is required in both, and its absence is silent.** Without it the corpus-wide
+tests are not compiled into the binary at all, so `go test -run 'Report' ./gatling/binary/` reports
+`ok` against a corpus you have just deliberately corrupted. Verified by doing exactly that. A
+green result from a check that did not run is the failure mode this whole feature exists to remove,
+so it is worth seeing once: drop the tag on purpose and watch it pass.
+
+With the tag, the failure names the version, the row and both figures:
+
+```
+--- FAIL: TestDecodedPerRequestFiguresMatchTheRunReport/3.15.1
+    index.html: request "GET /ok" under "outer" decoded 66 (66 ok, 0 ko); the report says 65 (66 ok, 0 ko)
+```
 
 That is spec FR-012 and SC-003.
 
