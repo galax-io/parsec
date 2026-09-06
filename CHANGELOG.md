@@ -21,6 +21,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
+- Every `Fuzz*` target in the module now runs under `-fuzz` on every pull request, one CI job per
+  target, discovered from `go test -list '^Fuzz'` rather than from a list that would silently stop
+  covering a target added later. A crasher fails the job and is uploaded; nothing generated is
+  committed. A longer scheduled run sits beside it. Three targets state the constitution's no-panic
+  invariant, and no workflow had ever passed `-fuzz`, so CI only ever replayed their seed corpus —
+  the one check that reliably finds this class of defect was the one nothing ran. The leg is gated
+  behind a `verify.yml` input so it covers pull requests and not the release path: fuzzing is
+  nondeterministic, and a tag must not be blocked by a finding that depends on the seed. (#60)
 - The 32 MiB peak-heap budget is now **stated** in `gatling/binary.Reader`'s documentation, where
   it previously existed only inside the tests, and `TestPeakMemoryAtTheStringCeiling` and
   `TestPeakMemoryAtTheAssertionCeiling` hold the codec to it for the two shapes that cost most per

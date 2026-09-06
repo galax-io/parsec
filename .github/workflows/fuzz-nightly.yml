@@ -1,0 +1,81 @@
+name: fuzz-nightly
+
+# The long run. The pull-request leg in verify.yml is bounded so it can gate a
+# merge; this one is bounded only by what a nightly can afford, and is where a
+# defect that needs more than ninety seconds of mutation is expected to surface.
+#
+# Nightly alone was rejected for the pull-request case and is right here: #60's
+# own argument is that the math.MinInt32 defect would otherwise have merged and
+# been found the next morning. Both legs exist because they answer different
+# questions — "may this merge" and "is anything still hiding".
+
+on:
+  schedule:
+    # After the weekly canary, so two long jobs do not contend for runners.
+    - cron: '43 4 * * *'
+  workflow_dispatch:
+    inputs:
+      fuzztime:
+        description: How long to fuzz each target, as a Go duration
+        type: string
+        default: 10m
+
+permissions:
+  contents: read
+
+jobs:
+  targets:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.list.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - name: every Fuzz target in the module
+        id: list
+        run: |
+          set -euo pipefail
+          pairs=""
+          for pkg in $(go list ./...); do
+            for target in $(go test -list '^Fuzz' "$pkg" | grep '^Fuzz' || true); do
+              pairs="$pairs$pkg $target\n"
+            done
+          done
+          matrix=$(printf "$pairs" | jq -Rsc '
+            split("\n") | map(select(length > 0) | split(" ") | {package: .[0], target: .[1]})')
+          echo "$matrix" | jq .
+          if [ "$(echo "$matrix" | jq 'length')" -eq 0 ]; then
+            echo "no Fuzz target found in the module"
+            exit 1
+          fi
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+
+  fuzz:
+    needs: targets
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        case: ${{ fromJSON(needs.targets.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - name: fuzz ${{ matrix.case.target }} for ${{ inputs.fuzztime || '10m' }}
+        run: |
+          set -euo pipefail
+          go test -run '^$' -fuzz '^${{ matrix.case.target }}$' \
+            -fuzztime '${{ inputs.fuzztime || '10m' }}' '${{ matrix.case.package }}'
+      # The crasher is the artefact to open an issue with: it is the whole
+      # reproduction, and it cannot be recovered from a job that has been
+      # garbage-collected.
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: crasher-${{ matrix.case.target }}
+          path: '**/testdata/fuzz/**'
+          if-no-files-found: warn
+          retention-days: 90
