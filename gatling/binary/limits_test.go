@@ -4,8 +4,11 @@ import (
 	"bytes"
 	"errors"
 	"io"
+	"math"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/galax-io/parsec/gatling"
@@ -195,5 +198,168 @@ func TestADanglingGroupReferenceEndsTheRead(t *testing.T) {
 
 	if !bytes.Contains([]byte(se.Found), []byte("cache entry")) {
 		t.Errorf("the error says found %q; it must name the reference that could not be resolved", se.Found)
+	}
+}
+
+// A count read from the run record has its own ceiling, named for what it
+// bounds. Two thousand assertions is an unusual suite and not a corrupt one: a
+// limit written for group nesting must not be what refuses it.
+func TestALargeAssertionSuiteDecodes(t *testing.T) {
+	t.Parallel()
+
+	payloads := make([]string, 2000)
+	for i := range payloads {
+		payloads[i] = "a"
+	}
+
+	log := (&builder{}).runRecord("3.15.1", []string{"scenario"}, payloads).bytes()
+
+	rd, err := binary.NewReader(bytes.NewReader(log))
+	if err != nil {
+		t.Fatalf("NewReader refused a run with %d assertions: %v", len(payloads), err)
+	}
+
+	if got := len(rd.Assertions()); got != len(payloads) {
+		t.Errorf("Assertions() returned %d payloads, want %d", got, len(payloads))
+	}
+}
+
+// The scenario count is a third quantity with a third ceiling; a run declaring
+// more scenarios than the nesting limit is still a valid run.
+func TestAScenarioListAboveTheGroupDepthDecodes(t *testing.T) {
+	t.Parallel()
+
+	scenarios := make([]string, 1025)
+	for i := range scenarios {
+		scenarios[i] = "s" + strconv.Itoa(i)
+	}
+
+	log := (&builder{}).runRecord("3.15.1", scenarios, nil).
+		u8(2).i32(1024).u8(1).i32(10).
+		bytes()
+
+	rd, err := binary.NewReader(bytes.NewReader(log))
+	if err != nil {
+		t.Fatalf("NewReader refused a run with %d scenarios: %v", len(scenarios), err)
+	}
+
+	rec, err := rd.Next()
+	if err != nil {
+		t.Fatalf("Next: %v", err)
+	}
+
+	if rec.Scenario != "s1024" {
+		t.Errorf("the user record names scenario %q, want %q", rec.Scenario, "s1024")
+	}
+}
+
+// A count that could only be corruption is refused at its own offset before it
+// sizes anything. The three counts are checked one by one: a ceiling that
+// stopped one of them and not another would be the defect this test exists to
+// catch. Nothing measures the allocation separately — a count of two billion
+// string headers would have taken thirty-two gigabytes, and the test would not
+// have survived it.
+func TestACorruptCountIsRefusedBeforeAllocating(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		build func() (log []byte, at int64)
+	}{
+		{
+			name: "the scenario count",
+			build: func() ([]byte, int64) {
+				w := &builder{}
+				w.u8(0).str("3.15.1").str("io.example.Sim").i64(runStart).str("")
+				at := len(w.bytes())
+
+				return w.i32(math.MaxInt32).bytes(), int64(at)
+			},
+		},
+		{
+			name: "the assertion count",
+			build: func() ([]byte, int64) {
+				w := &builder{}
+				w.u8(0).str("3.15.1").str("io.example.Sim").i64(runStart).str("").i32(0)
+				at := len(w.bytes())
+
+				return w.i32(math.MaxInt32).bytes(), int64(at)
+			},
+		},
+		{
+			name: "a group depth",
+			build: func() ([]byte, int64) {
+				w := (&builder{}).runRecord("3.15.1", []string{"scenario"}, nil).u8(1)
+				at := len(w.bytes())
+
+				return w.i32(math.MaxInt32).bytes(), int64(at)
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			log, at := tt.build()
+
+			err := readAll(t, log)
+
+			var se *gatling.SyntaxError
+			if !errors.As(err, &se) {
+				t.Fatalf("a count of %d was not refused: %v", math.MaxInt32, err)
+			}
+
+			if se.Offset != at {
+				t.Errorf("the error names byte %d; the count is at byte %d", se.Offset, at)
+			}
+		})
+	}
+}
+
+// The assertion count bounds the slice headers; what the reader keeps is the
+// payloads, held for the life of the read and copied again by Assertions. A
+// count alone would let a run record hold hundreds of megabytes against the
+// budget this package documents, so what they come to in total is checked as
+// they arrive.
+func TestAssertionPayloadsPastTheByteCeilingAreRefused(t *testing.T) {
+	t.Parallel()
+
+	// Two payloads, each inside MaxStringLen, together past the ceiling.
+	const half = 4608 * 1024
+
+	payload := strings.Repeat("a", half)
+	log := (&builder{}).runRecord("3.15.1", []string{"scenario"}, []string{payload, payload}).bytes()
+
+	_, err := binary.NewReader(bytes.NewReader(log))
+
+	var se *gatling.SyntaxError
+	if !errors.As(err, &se) {
+		t.Fatalf("NewReader = _, %v; want a *gatling.SyntaxError once the payloads pass the ceiling", err)
+	}
+
+	if !strings.Contains(se.Found, "past the ceiling") {
+		t.Errorf("the error says found %q; it must name what the payloads came to", se.Found)
+	}
+}
+
+// A suite whose payloads stay inside the ceiling still decodes whole.
+func TestAssertionPayloadsInsideTheByteCeilingDecode(t *testing.T) {
+	t.Parallel()
+
+	payloads := make([]string, 2000)
+	for i := range payloads {
+		payloads[i] = strings.Repeat("a", 64)
+	}
+
+	log := (&builder{}).runRecord("3.15.1", []string{"scenario"}, payloads).bytes()
+
+	rd, err := binary.NewReader(bytes.NewReader(log))
+	if err != nil {
+		t.Fatalf("NewReader refused %d payloads of 64 bytes: %v", len(payloads), err)
+	}
+
+	if got := len(rd.Assertions()); got != len(payloads) {
+		t.Errorf("Assertions() returned %d payloads, want %d", got, len(payloads))
 	}
 }

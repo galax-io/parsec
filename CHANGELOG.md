@@ -30,6 +30,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- `gatling/binary` refused a valid run declaring more than 1,024 assertions or scenarios as
+  malformed, because the group-nesting ceiling was bounding two counts it was never meant to. Each
+  count now has its own ceiling, named for what it bounds; a run with two thousand assertions
+  decodes, and a corrupt count is still stopped before it sizes anything. (#57)
 - `gatling/text` read the negative half of a timestamp field without bounding it, so a value far too
   wide for an int64 passed as an absent time while the identical positive magnitude was refused, and
   `-0` read as an absence rather than as the epoch instant it spells. A line whose fields had shifted
@@ -39,6 +43,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Above the supported range, the reader scans back for the field that reads as an error record's
   timestamp. It probed with a predicate that refused negatives while the parser accepted them, so it
   walked past a real timestamp and refused the read on the field behind it. (#56)
+- `gatling/binary` bounded the assertion payloads by count alone, but a payload is retained for the
+  life of the read, so 65,536 of them read under `MaxStringLen` could hold hundreds of megabytes
+  against the budget the package documents. What they come to in total is now checked as they
+  arrive, and an untrusted count no longer sizes its slice before the elements behind it read. (#57)
 
 ## [0.0.5] - 2026-09-06
 
