@@ -18,6 +18,21 @@ import (
 // string table is capped, so a log whose every failure message differs cannot
 // make that table follow the record count.
 //
+// # The budget
+//
+// Peak heap stays under 32 MiB for any log this codec accepts, and that figure
+// is what the package's own tests assert. It holds for a multi-gigabyte log — a
+// 2.5 GB log of 174 million records decodes with a peak under 4 MiB — and it
+// holds for the shape that costs most per record: a field at [MaxStringLen] in
+// each of the three encodings the format can store a string in, which measures
+// at roughly five and a half times the ceiling because the garbage from one
+// field is not collected before the next is built.
+//
+// The two halves of that sentence are why [MaxStringLen] is what it is. A
+// ceiling that let one field cost more than the budget would make the budget
+// false for a log no larger than a few megabytes, which is the failure this
+// documentation exists to rule out.
+//
 // The first byte that cannot be decoded ends the read with a
 // *gatling.SyntaxError naming its offset, and every later Next returns that same
 // error. Records delivered before that point are not a result: no total may be
