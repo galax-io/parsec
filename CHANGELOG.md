@@ -5,6 +5,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.0.5] - 2026-09-06
+
+Reading the binary `simulation.log` — the format every current Gatling writes.
+
 ### Added
 
 - `gatling/binary`: decodes the binary `simulation.log` Gatling writes from 3.13.0 — the format
@@ -31,6 +35,41 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - `gatling/simlog` reads a binary `simulation.log` instead of refusing it with a
   `*gatling.UnsupportedFormatError`, and `Supported` reports the binary format as readable over
   3.13.1 through 3.15.1. Both change together because both read the same table.
+- `gatling/text` now sets `SyntaxError.Format` on every error it raises. The field is what says
+  which of `Line` and `Offset` to read, and until now only the binary codec filled it in, so a
+  consumer switching on it fell through to the unknown case for every text error.
+- `gatling.Record.Line` is documented as the text format's. A binary log has no lines and leaves it
+  0; the position of a failure in one is a byte offset, which `SyntaxError.Offset` carries.
+  `gatling.UnsupportedFormatError` can no longer be returned, because this module now has a codec
+  for both formats Gatling writes; it is kept for a third format rather than removed.
+
+### Fixed
+
+These are defects in `gatling/binary` found by review before it shipped, listed because several are
+promises the package documents and a reader of this file should be able to rely on them.
+
+- A cache index of `math.MinInt32` panicked the decoder: negated inside an `int32` it stays negative
+  and slipped past a bounds check into an index. Four bytes of a corrupt log took the caller's
+  process down, through `gatling/simlog` as well.
+- A group path was handed out with its spare capacity, so a caller appending to `Record.Groups` wrote
+  into the reader's own array and saw the next record's groups appear in its slice. It is also
+  always empty and non-nil now, rather than nil for the first record without groups and empty for
+  the rest.
+- An error merely *wrapping* `io.EOF` was read as the clean end of the log, so a truncated
+  decompressor or a closed transport reported a partial run as complete.
+- Every source failure was reported as `found end of input`, telling a caller their log was truncated
+  when the transport or the disk had failed, and discarding the cause. The cause is wrapped now, and
+  a truncation names the first byte that was not there.
+- The run start was unvalidated, so a corrupt one made every timestamp in the log wrap to a plausible
+  instant in the distant past. It is bounded once, when it is read.
+- An unpaired UTF-16 surrogate became U+FFFD. A name that decodes to a different name regroups a
+  report without saying so; it is refused with an offset.
+- An offset that cannot be resolved is reported absent rather than ending the read.
+- `binary.RunReader.Run` handed out the reader's own slices where `gatling/text` clones them, so two
+  consumers of one reader could corrupt each other.
+- The string table had no ceiling, although failure messages go through it and Gatling builds those
+  from text that embeds addresses and ports — so a run that failed differently every time grew a
+  table that followed the record count.
 
 ## [0.0.4] - 2026-09-06
 
