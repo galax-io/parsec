@@ -48,14 +48,7 @@ func TestOneCorruptedByteEitherDecodesDifferentlyOrFailsNamingIt(t *testing.T) {
 		out, err := decodeCanonical(mutated)
 		switch {
 		case err != nil:
-			var se *gatling.SyntaxError
-			if !errors.As(err, &se) && !errors.As(err, new(*gatling.VersionError)) {
-				t.Fatalf("byte %d flipped: failed with %T: %v", i, err, err)
-			}
-
-			if se != nil && (se.Offset < 0 || se.Offset > int64(len(mutated))) {
-				t.Fatalf("byte %d flipped: error names byte %d, outside the file", i, se.Offset)
-			}
+			assertNamesAPositionInTheFile(t, i, err, len(mutated))
 
 			failed++
 		case out != original:
@@ -119,5 +112,33 @@ func decodeCanonical(raw []byte) (string, error) {
 		}
 
 		writeRecord(&b, n, rec)
+	}
+}
+
+// assertNamesAPositionInTheFile requires a corruption to fail in one of the ways
+// the contract names, at a position inside the file it was given.
+//
+// A flipped length prefix that claims more bytes than the file holds is what a
+// file cut mid-value looks like, and nothing in the format separates the two, so
+// a truncation is one of the endings a corruption may produce here.
+func assertNamesAPositionInTheFile(t *testing.T, at int, err error, size int) {
+	t.Helper()
+
+	var (
+		se *gatling.SyntaxError
+		te *gatling.TruncationError
+	)
+
+	if !errors.As(err, &se) && !errors.As(err, &te) && !errors.As(err, new(*gatling.VersionError)) {
+		t.Fatalf("byte %d flipped: failed with %T: %v", at, err, err)
+	}
+
+	if se != nil && (se.Offset < 0 || se.Offset > int64(size)) {
+		t.Fatalf("byte %d flipped: error names byte %d, outside the file", at, se.Offset)
+	}
+
+	if te != nil && (te.Offset < 0 || te.Offset+te.Dropped > int64(size)) {
+		t.Fatalf("byte %d flipped: truncation names byte %d with %d dropped, outside the file",
+			at, te.Offset, te.Dropped)
 	}
 }

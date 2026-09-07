@@ -5,6 +5,76 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Changed
+
+- A log **cut short** now ends a read with a new `*gatling.TruncationError` instead of the
+  `*gatling.SyntaxError` it raised before, and the records delivered before the cut are the ones the
+  run recorded rather than something a caller was told to discard. Gatling writes `simulation.log`
+  through a buffer flushed in blocks, so a run stopped by a signal, an OOM kill, a CI timeout or a
+  full disk always ends inside a record: that shape is the ordinary ending of an aborted test, and
+  answering it with the same fatal error as bytes that are not a Gatling log threw the whole run
+  away exactly when its data mattered most.
+
+  The error carries where the incomplete record began — a byte offset for the binary format, a line
+  number for the text one — and how many trailing bytes could not be decoded; for a binary log the
+  stream stopped at `Offset+Dropped`. It reaches the canonical model path unchanged, so a consumer
+  of `RunReader` learns it without dropping to the wire records. `Expected` says what the record
+  still needed, which is not what sits at the position the error names — the position is pinned to
+  the record's start while the value being read moves through it — and the message states the two
+  apart for that reason.
+
+  **A consumer that has not been updated needs no change.** It breaks its loop on `io.EOF` and
+  treats everything else as a failed read, which is exactly what it does today — the new type is
+  deliberately neither `io.EOF` nor a wrapper around one, so a killed run cannot be mistaken for a
+  complete one. A consumer that wants the partial run reaches for the type with `errors.As`. What
+  may be derived from a run whose log was cut short stays the consumer's decision; this module
+  states the fact and computes nothing from it. (#7)
+
+- A damaged log is still refused, and is now told apart from a cut one: an undefined record kind, a
+  length prefix past the allocation cap and an unparseable field each still end the read with a
+  `*gatling.SyntaxError` naming the position. Two cases cannot be distinguished and are documented
+  rather than guessed at — a binary log cut exactly on a record boundary is a shorter valid log and
+  ends cleanly, and a corrupted length prefix claiming more bytes than the file holds is
+  indistinguishable from a file cut mid-value. (#7)
+
+### Fixed
+
+- A source that stopped making progress — a `Read` returning `(0, nil)` forever, which the
+  `io.Reader` contract permits and says must not be taken for an end — left the binary decoder
+  spinning inside a record with no error and nothing to cancel. `io.ReadFull` loops on an empty read
+  and `bufio`'s own guard lives in `fill()`, which its `Read` does not use, so neither caught it.
+  The codec now reads through its own loop and ends such a read with `io.ErrNoProgress`, as
+  `gatling/simlog`'s documented contract says it does. (#7)
+
+- `io.ErrUnexpectedEOF` arriving *from the source* was reported as a Gatling log cut short.
+  `compress/gzip`, `flate` and `zlib` all return that sentinel by identity when their compressed
+  input was cut, so a broken decompressor was described as a killed run — with `Offset` and
+  `Dropped` in decompressed coordinates that match no byte of the file on disk. Only the codec's own
+  read loop can now establish that the log ran out. (#7)
+
+- A source failure whose cause ends in `io.EOF` still satisfied `errors.Is(err, io.EOF)`, because
+  the failure wrapped its cause with `%w`. Every loop that breaks on the clean end of a log — this
+  module's own tests among them — read a broken transport as a complete run. The cause's text is
+  kept and its chain is not, in both codecs. (#7)
+
+- The text codec never got the identity rule the binary one did: `scanner.next`, `preambleError`
+  and `Reader.Next` all matched the end of input with `errors.Is`, so a source failing with an error
+  that wraps `io.EOF` was reported as a clean end, as a log cut short, or as a missing run header —
+  three different ways of blaming the file for a transport fault. All three now compare by
+  identity. (#7)
+
+- `text.Reader` did not latch `io.EOF`, so a source that returned it and then more bytes — a file
+  still being appended to — delivered records after the end the reader had already declared, while
+  `binary.Reader` on the same source returned `io.EOF` forever. Both codecs sit behind
+  `simlog.RecordReader` and now agree with the contract each of them states: every ending is
+  terminal. (#7)
+
+- A failure of the *source* that merely wrapped `io.EOF` — a truncated decompressor, a closed
+  transport — was reported by the binary codec as a truncated log, sending a caller to re-record a
+  run that was never damaged. It decided with `errors.Is` where its three siblings compare with
+  identity and each carry the reason for doing so. It now compares with identity too, and a source
+  failure is reported as itself with its cause wrapped. (#7)
+
 ## [0.0.7] - 2026-09-07
 
 The corpus and the canary: what makes both Gatling codecs safe to freeze.

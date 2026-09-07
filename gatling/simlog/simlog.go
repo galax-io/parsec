@@ -27,9 +27,12 @@ type RecordReader interface {
 	Warnings() []gatling.Warning
 	// Next returns the next record, or io.EOF at the end of the log.
 	//
-	// Any other error ends the read: there is no next record after it, the same
-	// error is returned on every later call, and the records already delivered
-	// are not a result — no total may be derived from them.
+	// Any other error ends the read: there is no next record after it, and the
+	// same error is returned on every later call. A *gatling.TruncationError
+	// says the log was cut short — the bytes ran out inside a record, which is
+	// how a killed run ends — and the records already delivered are what it
+	// recorded. Anything else says the read failed, and no total may be derived
+	// from what was delivered.
 	//
 	// The returned record's Groups slice is only valid until the next call.
 	// Copy it to keep it; retaining it aliases a slice the codec refills in
@@ -47,7 +50,9 @@ type RunReader interface {
 	Run() model.Run
 	// Next returns the next item of the run, or io.EOF at the end.
 	//
-	// Any other error ends the read, and the items already delivered are not a
+	// Any other error ends the read. A *gatling.TruncationError says the log was
+	// cut short and that the items already delivered are the ones the run
+	// recorded; anything else says the read failed and that they are not a
 	// result. The returned item's Groups slice is only valid until the next
 	// call — copy it to keep it, for the reason [RecordReader.Next] gives.
 	Next() (model.Item, error)
@@ -124,6 +129,14 @@ var codecs = [...]codec{
 // 3.12.0, and the binary one from 3.13.1. [Supported] reports each range without
 // a decode, read from the same table this dispatches on, so a format cannot be
 // readable in one and not the other.
+//
+// A stream too short to identify — which is what a sidecar attaching in a run's
+// first milliseconds sees — is refused with a *gatling.FormatError whose Short
+// field is set, and not with the *gatling.TruncationError the codec
+// constructors return for those same bytes. What is missing here is the format,
+// and until that is known there is no codec whose grammar a cut could be
+// described against. The two mean the same thing operationally — come back with
+// more bytes — so a follower that classifies endings must look for both.
 //
 // It returns a *gatling.FormatError when r is not a Gatling simulation.log. The
 // version gate belongs to the codec and is applied once: a version below the

@@ -25,6 +25,9 @@ func drain(r *text.Reader) ([]gatling.Record, error) {
 	}
 }
 
+// A log cut short is not in this table. It is not a syntax error: the lines
+// before the cut are true, and TestTruncatedLastLine in truncation_test.go holds
+// the ending it produces instead.
 func TestSyntaxErrors(t *testing.T) {
 	t.Parallel()
 
@@ -38,8 +41,6 @@ func TestSyntaxErrors(t *testing.T) {
 		{fixture: "user-three-fields", wantLine: 3, wantFound: "3 fields"},
 		{fixture: "request-eight-fields", wantLine: 3, wantFound: "8 fields"},
 		{fixture: "error-newline-in-message", wantLine: 3, wantFound: "2 fields"},
-		{fixture: "truncated-last-line", wantLine: 6, wantFound: "end of input", wantRecords: 3},
-		{fixture: "unterminated-last-line", wantLine: 6, wantFound: "end of input", wantRecords: 3},
 		{fixture: "bad-timestamp", wantLine: 3, wantFound: "soon"},
 		{fixture: "bad-status", wantLine: 3, wantFound: `"ok"`},
 		{fixture: "bad-event", wantLine: 3, wantFound: "BEGIN"},
@@ -60,6 +61,12 @@ func TestSyntaxErrors(t *testing.T) {
 			var se *gatling.SyntaxError
 			if !errors.As(err, &se) {
 				t.Fatalf("got %v, want *gatling.SyntaxError", err)
+			}
+
+			// A damaged log is not a cut one: a caller must be able to tell
+			// "this file is not decodable" from "the run was killed".
+			if errors.As(err, new(*gatling.TruncationError)) {
+				t.Fatalf("a malformed log is reported as one cut short: %v", err)
 			}
 
 			if se.Line != tt.wantLine || !strings.Contains(se.Found, tt.wantFound) || se.Expected == "" {

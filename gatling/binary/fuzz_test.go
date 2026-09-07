@@ -38,6 +38,18 @@ func FuzzDecode(f *testing.F) {
 		if len(raw) > 1024 {
 			f.Add(raw[:1024])
 		}
+
+		// A cut inside the final record, and one inside the run record. These
+		// are the two shapes a killed run actually leaves — the first mid-log,
+		// the second when a sidecar attaches in the run's first milliseconds —
+		// and each is the input class *gatling.TruncationError exists for.
+		if len(raw) > 3 {
+			f.Add(raw[:len(raw)-3])
+		}
+
+		if len(raw) > 9 {
+			f.Add(raw[:9])
+		}
 	}
 
 	// The cases no recording contains.
@@ -84,7 +96,11 @@ func assertUsable(t *testing.T, err error) {
 	switch {
 	case errors.As(err, new(*gatling.SyntaxError)),
 		errors.As(err, new(*gatling.VersionError)),
-		errors.As(err, new(*gatling.UnverifiedError)):
+		errors.As(err, new(*gatling.UnverifiedError)),
+		// A shortened input is a log cut short, which is a stated ending with
+		// its own type: the caller keeps the records that arrived. Most of what
+		// a fuzzer produces from a valid recording is exactly this.
+		errors.As(err, new(*gatling.TruncationError)):
 		return
 	}
 
