@@ -5,6 +5,23 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.0.8] - 2026-09-07
+
+An incomplete record: what a run killed mid-flight leaves behind, and what a follower may rely on.
+
+Gatling writes `simulation.log` through a buffer flushed in blocks, so a test stopped by a signal,
+an OOM kill, a CI timeout or a full disk always ends inside a record. Both codecs answered that with
+the same fatal error they give bytes that are not a Gatling log at all, and the documentation told
+the caller to discard what had already been delivered — so the whole run was lost exactly when its
+data mattered most, and the operator was left reading console scrollback.
+
+Separating that ending from a damaged file made a second thing visible: a rule this module stated in
+four places and held in two. A source that broke is not a log that ended, and four ways of confusing
+the two are closed here, one of which left the binary decoder spinning with no error and nothing to
+cancel. The other half of the milestone needed no code at all — a log still being written already
+decoded to exactly what the finished file decodes to — so it ships as the promise a follower reads
+and the test that keeps it.
+
 ### Changed
 
 - A log **cut short** now ends a read with a new `*gatling.TruncationError` instead of the
