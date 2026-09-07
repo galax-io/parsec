@@ -71,7 +71,11 @@ type Reader struct {
 // when the record cannot be read, when the version is below the supported range,
 // and when the version is not a plain release. A version above the range
 // succeeds and records a warning — or, under [gatling.WithStrict], fails with a
-// *gatling.UnverifiedError instead.
+// *gatling.UnverifiedError instead.//
+// The source may still be being written. A Read that blocks is a wait, not an
+// end, and a record split across reads is delivered once, when its last byte
+// arrives; the [github.com/galax-io/parsec/gatling/simlog] package documentation
+// states the contract in full, and it holds for this constructor too.
 func NewReader(r io.Reader, opts ...gatling.Option) (*Reader, error) {
 	rd := &Reader{rd: *newReader(r)}
 

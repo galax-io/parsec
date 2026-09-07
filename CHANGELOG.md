@@ -37,6 +37,21 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   ends cleanly, and a corrupted length prefix claiming more bytes than the file holds is
   indistinguishable from a file cut mid-value. (#7)
 
+### Added
+
+- The **blocking-source contract** is now stated in the `gatling/simlog` package documentation and
+  pointed at from every constructor: a source that is still being written is supported, a `Read`
+  that blocks is a wait rather than an end, a record split across reads is delivered exactly once,
+  memory held while waiting stays bounded, and the end of input is the caller's statement — nothing
+  here polls, reopens or stats a file to guess whether the writer is still alive. What a follower
+  must do in return is stated beside it.
+
+  All five recordings decode identically through such a source today, on both codecs, and did so
+  before this release: no read loop changed. What was missing was the promise and the test. A
+  follower — the comet sidecar is the one this was written for — can now build on a guarantee
+  rather than on behaviour that happened to hold, and a later change to a buffer fails the test
+  instead of removing it in silence. (#10)
+
 ### Fixed
 
 - A source that stopped making progress — a `Read` returning `(0, nil)` forever, which the
