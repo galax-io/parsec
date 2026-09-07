@@ -73,7 +73,14 @@ func (s *scanner) next() ([]byte, bool, error) {
 
 		return nil, false, s.tooLong()
 
-	case errors.Is(err, io.EOF):
+	// Compared with == and not errors.Is, as reader.atEnd, reader.sourceFailed
+	// in gatling/binary, simlog.identify and simlog.readHead all are. An error
+	// that merely *wraps* io.EOF is the source reporting a failure of its own —
+	// a truncated decompressor, a closed transport — and bufio hands it through
+	// unchanged. Reading that as the end of the log would report a broken stream
+	// as a complete run, or, worse, as a log cut short: a positive claim that the
+	// records delivered are what the run recorded.
+	case err == io.EOF:
 		if len(data) == 0 {
 			return nil, false, io.EOF
 		}

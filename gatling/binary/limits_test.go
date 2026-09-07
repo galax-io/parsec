@@ -74,14 +74,14 @@ func TestTruncationFailsNamingTheOffsetOrLandsOnABoundary(t *testing.T) {
 			continue
 		}
 
-		var se *gatling.SyntaxError
-		if !errors.As(err, &se) {
-			t.Fatalf("a log cut at byte %d failed with %T: %v", cut, err, err)
+		var te *gatling.TruncationError
+		if !errors.As(err, &te) {
+			t.Fatalf("a log cut at byte %d ended with %T: %v; want a log cut short", cut, err, err)
 		}
 
-		if se.Offset < 0 || se.Offset > int64(cut) {
-			t.Fatalf("a log cut at byte %d failed naming byte %d, which is not in the file",
-				cut, se.Offset)
+		if te.Offset < 0 || te.Offset+te.Dropped > int64(cut) {
+			t.Fatalf("a log cut at byte %d reports a record at %d with %d bytes dropped, which is not in the file",
+				cut, te.Offset, te.Dropped)
 		}
 
 		refused++
@@ -120,6 +120,11 @@ func readAll(t *testing.T, raw []byte) error {
 // An assertion payload whose declared length runs past the end of the file is
 // refused rather than skipped: a payload this module cannot carry whole is one a
 // consumer must not be handed a truncated version of.
+//
+// The refusal is a log cut short, not a damaged one, and cannot be anything
+// else: a declared length larger than what remains is what a file cut mid-payload
+// looks like, and no reader can tell that from a length prefix that was corrupted.
+// Either way the payload is not delivered, which is what this test is for.
 func TestAnAssertionPayloadPastTheEndIsRefused(t *testing.T) {
 	t.Parallel()
 
@@ -127,8 +132,8 @@ func TestAnAssertionPayloadPastTheEndIsRefused(t *testing.T) {
 	w.u8(0).str("3.15.1").str("io.example.Sim").i64(runStart).str("").i32(0).i32(1).i32(1 << 20)
 
 	_, err := binary.NewReader(bytes.NewReader(w.bytes()))
-	if !errors.As(err, new(*gatling.SyntaxError)) {
-		t.Fatalf("NewReader = _, %v; want a *gatling.SyntaxError", err)
+	if !errors.As(err, new(*gatling.TruncationError)) {
+		t.Fatalf("NewReader = _, %v; want a *gatling.TruncationError", err)
 	}
 }
 

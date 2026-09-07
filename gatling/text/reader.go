@@ -17,10 +17,17 @@ import (
 // Records then arrive one at a time in file order. Peak memory does not grow
 // with the log.
 //
-// The first line that cannot be decoded ends the read with a *gatling.SyntaxError
-// naming its line number, and every later Next returns that same error. Records
-// delivered before that point are not a result: no total may be derived from
-// them.
+// A read ends in one of three ways, and each ending is terminal — every later
+// Next returns the same value.
+//
+//   - io.EOF is a clean end: the log ended at a line boundary and every record
+//     it held was delivered.
+//   - A *gatling.TruncationError is a log cut short: the final line was never
+//     terminated, which is how a run killed mid-flight ends. Every record before
+//     the cut was delivered and is exactly what an intact log would have given.
+//   - Any other error is a failed read — a *gatling.SyntaxError naming the line
+//     that could not be decoded, or a failure of the source. Nothing may be
+//     derived from what was delivered.
 type Reader struct {
 	sc       *scanner
 	p        *parser
@@ -68,7 +75,7 @@ func NewReader(r io.Reader, opts ...gatling.Option) (*Reader, error) {
 		}
 
 		if !isTerminated {
-			return nil, unterminated(rd.sc.lineNo)
+			return nil, unterminated(rd.sc.lineNo, len(line))
 		}
 
 		kind := kindOf(line)
@@ -112,7 +119,11 @@ func NewReader(r io.Reader, opts ...gatling.Option) (*Reader, error) {
 // preambleError turns the end of input before a header into a syntax error and
 // gives any other read failure its line.
 func (r *Reader) preambleError(err error) error {
-	if errors.Is(err, io.EOF) {
+	// Identity, for the reason scanner.next gives: a source failing with an
+	// error that wraps io.EOF has not reached the end of anything, and blaming
+	// the file for a transport fault sends a caller to inspect a log that is
+	// fine.
+	if err == io.EOF { //nolint:errorlint // deliberate: identity, not wrapping; see above
 		return &gatling.SyntaxError{Format: gatling.FormatText, Line: r.sc.lineNo, Expected: "a run header", Found: "end of input"}
 	}
 
@@ -127,11 +138,33 @@ func readError(lineNo int, err error) error {
 		return err
 	}
 
+	// A cause that itself ends in io.EOF cannot be wrapped: errors.Is would then
+	// match io.EOF on this failure, and a caller whose loop breaks on the clean
+	// end of a log would read a broken source as a complete run. The text is
+	// kept; the chain is not. gatling/binary's sourceFailed does the same.
+	if errors.Is(err, io.EOF) {
+		return fmt.Errorf("gatling: reading line %d: %s", lineNo, err.Error())
+	}
+
 	return fmt.Errorf("gatling: reading line %d: %w", lineNo, err)
 }
 
-func unterminated(lineNo int) error {
-	return &gatling.SyntaxError{Format: gatling.FormatText, Line: lineNo, Expected: "a line terminator", Found: "end of input"}
+// unterminated reports a line the writer never finished. That is not a damaged
+// log: Gatling writes through a buffer flushed in blocks, so a run stopped by a
+// signal, an OOM kill or a full disk ends exactly here, and the lines before it
+// are as true as any other. dropped is the tail that was never terminated.
+//
+// A prefix that ends on a line boundary is a different thing and is not this
+// error. In the record stream it is a shorter valid log; in the preamble it is a
+// log with no run header, which preambleError reports, because a cut on a
+// boundary leaves no evidence of itself either way.
+func unterminated(lineNo, dropped int) error {
+	return &gatling.TruncationError{
+		Format:   gatling.FormatText,
+		Line:     lineNo,
+		Expected: "the rest of the line",
+		Dropped:  int64(dropped),
+	}
 }
 
 // finishPreamble decodes the header, applies the gate and settles the field
@@ -192,7 +225,10 @@ func (r *Reader) Warnings() []gatling.Warning { return slices.Clone(r.warnings) 
 
 // Next returns the next record. It returns io.EOF at the end of the log. Any
 // other error ends the read — there is no next record after it, and the same
-// error is returned on every later call.
+// error is returned on every later call. A *gatling.TruncationError says the log
+// was cut short and that the records already delivered are what it recorded;
+// anything else says the read failed. See [Reader] for the three endings in
+// full.
 //
 // The returned record's Groups slice is valid until the next call to Next;
 // copy it to keep it.
@@ -203,7 +239,17 @@ func (r *Reader) Next() (gatling.Record, error) {
 
 	line, isTerminated, err := r.sc.next()
 	if err != nil {
-		if errors.Is(err, io.EOF) {
+		// Latched, like every other ending. bufio's readErr clears its own
+		// stored error, so a source that returns io.EOF and then more bytes — a
+		// file still being appended to, read without a blocking wrapper — would
+		// otherwise deliver records after the end this call declared, and the
+		// two codecs behind simlog.RecordReader would disagree about a contract
+		// both of them state.
+		//
+		// Identity, for the reason scanner.next gives.
+		if err == io.EOF { //nolint:errorlint // deliberate: identity, not wrapping; see scanner.next
+			r.err = err
+
 			return gatling.Record{}, err
 		}
 
@@ -213,7 +259,7 @@ func (r *Reader) Next() (gatling.Record, error) {
 	}
 
 	if !isTerminated {
-		r.err = unterminated(r.sc.lineNo)
+		r.err = unterminated(r.sc.lineNo, len(line))
 
 		return gatling.Record{}, r.err
 	}

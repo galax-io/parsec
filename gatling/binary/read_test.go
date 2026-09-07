@@ -3,6 +3,7 @@ package binary
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"io"
 	"strings"
 	"testing"
@@ -14,6 +15,27 @@ import (
 // the test when it is anything else. A decoder that returns a bare error, or an
 // error without a position, is not usable: a caller cannot say where the log
 // went wrong.
+// truncationError insists the failure is a log cut short rather than a damaged
+// one, and hands back what it says about the cut.
+func truncationError(t *testing.T, err error) *gatling.TruncationError {
+	t.Helper()
+
+	if err == nil {
+		t.Fatal("want a *gatling.TruncationError, got no error at all")
+	}
+
+	var te *gatling.TruncationError
+	if !errors.As(err, &te) {
+		t.Fatalf("want a *gatling.TruncationError, got %T: %v", err, err)
+	}
+
+	if te.Format != gatling.FormatBinary {
+		t.Errorf("truncation names format %v; a binary decoder must say so", te.Format)
+	}
+
+	return te
+}
+
 func syntaxError(t *testing.T, err error) *gatling.SyntaxError {
 	t.Helper()
 
@@ -80,13 +102,7 @@ func TestPrimitivesReadWhatTheWriterWrote(t *testing.T) {
 func TestPrimitivesRefuseMalformedInput(t *testing.T) {
 	t.Parallel()
 
-	tests := []struct {
-		name       string
-		in         []byte
-		read       func(*reader) error
-		wantOffset int64
-		wantFound  string
-	}{
+	tests := []primitiveCase{
 		{
 			name: "a bool that is neither 0 nor 1",
 			in:   []byte{0x02},
@@ -110,6 +126,7 @@ func TestPrimitivesRefuseMalformedInput(t *testing.T) {
 			// where a reader would open the file to see the end of it.
 			wantOffset: 3,
 			wantFound:  "end of input",
+			wantCut:    true,
 		},
 		{
 			name:       "an int64 cut short",
@@ -117,6 +134,7 @@ func TestPrimitivesRefuseMalformedInput(t *testing.T) {
 			read:       func(r *reader) error { _, err := r.i64("the run start"); return err },
 			wantOffset: 7,
 			wantFound:  "end of input",
+			wantCut:    true,
 		},
 		{
 			name: "a negative length",
@@ -142,6 +160,7 @@ func TestPrimitivesRefuseMalformedInput(t *testing.T) {
 			// four thousand it claimed did arrive.
 			wantOffset: 6,
 			wantFound:  "end of input",
+			wantCut:    true,
 		},
 		{
 			name:       "a string cut short of its coder byte",
@@ -149,6 +168,7 @@ func TestPrimitivesRefuseMalformedInput(t *testing.T) {
 			read:       func(r *reader) error { _, err := r.str("a name"); return err },
 			wantOffset: 6,
 			wantFound:  "end of input",
+			wantCut:    true,
 		},
 		{
 			name:       "an encoding marker that is neither coder",
@@ -170,20 +190,62 @@ func TestPrimitivesRefuseMalformedInput(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			se := syntaxError(t, tt.read(newReader(bytes.NewReader(tt.in))))
-
-			if se.Offset != tt.wantOffset {
-				t.Errorf("error names byte %d; want %d", se.Offset, tt.wantOffset)
-			}
-
-			if !strings.Contains(se.Found, tt.wantFound) {
-				t.Errorf("error says found %q; want it to mention %q", se.Found, tt.wantFound)
-			}
-
-			if se.Line != 0 {
-				t.Errorf("error names line %d; a binary log has no lines", se.Line)
-			}
+			tt.assert(t, tt.read(newReader(bytes.NewReader(tt.in))))
 		})
+	}
+}
+
+// primitiveCase is one malformed or cut input and what reading it must produce.
+type primitiveCase struct {
+	name       string
+	in         []byte
+	read       func(*reader) error
+	wantOffset int64
+	wantFound  string
+	// wantCut marks the cases where bytes of the value did arrive before the
+	// stream ended: those are a log cut short, not a damaged one. A stream that
+	// ends with nothing of the value read has no partial record to report and
+	// stays a syntax error.
+	wantCut bool
+}
+
+func (tt primitiveCase) assert(t *testing.T, err error) {
+	t.Helper()
+
+	if tt.wantCut {
+		te := truncationError(t, err)
+
+		// The truncation is described from the value's start, so the byte the
+		// stream stopped on — the one this table names — is Offset+Dropped.
+		if got := te.Offset + te.Dropped; got != tt.wantOffset {
+			t.Errorf("the stream stopped at %d by the truncation's account; want %d", got, tt.wantOffset)
+		}
+
+		if te.Line != 0 {
+			t.Errorf("truncation names line %d; a binary log has no lines", te.Line)
+		}
+
+		return
+	}
+
+	se := syntaxError(t, err)
+
+	// A damaged value is not a cut one: a caller must be able to tell "this file
+	// is not decodable" from "the run was killed".
+	if errors.As(err, new(*gatling.TruncationError)) {
+		t.Errorf("a malformed value is reported as a log cut short: %v", err)
+	}
+
+	if se.Offset != tt.wantOffset {
+		t.Errorf("error names byte %d; want %d", se.Offset, tt.wantOffset)
+	}
+
+	if !strings.Contains(se.Found, tt.wantFound) {
+		t.Errorf("error says found %q; want it to mention %q", se.Found, tt.wantFound)
+	}
+
+	if se.Line != 0 {
+		t.Errorf("error names line %d; a binary log has no lines", se.Line)
 	}
 }
 
@@ -380,3 +442,136 @@ func TestAReaderThatNeverProgressesIsAnError(t *testing.T) {
 type stalledReader struct{}
 
 func (stalledReader) Read([]byte) (int, error) { return 0, nil }
+
+// errDecompressor is a source reporting a failure of its own that happens to
+// wrap io.EOF, the way a truncated decompressor or a closed transport does.
+var errDecompressor = fmt.Errorf("decompressor gave up: %w", io.EOF)
+
+// failAfter hands over data and then fails, which is what a broken source does
+// and what a short file never does.
+type failAfter struct {
+	data []byte
+	err  error
+}
+
+func (f *failAfter) Read(p []byte) (int, error) {
+	if len(f.data) == 0 {
+		return 0, f.err
+	}
+
+	n := copy(p, f.data)
+	f.data = f.data[n:]
+
+	return n, nil
+}
+
+// A source that fails is not a log that ended. Reporting one as the other sends
+// a caller to re-record a run that was never damaged — the reason sourceFailed
+// wraps its cause at all — so the two must not be merged by an errors.Is that
+// matches a source error merely wrapping io.EOF.
+func TestASourceFailureWrappingEOFIsNotATruncation(t *testing.T) {
+	t.Parallel()
+
+	r := newReader(&failAfter{data: []byte{0x00, 0x00}, err: errDecompressor})
+
+	_, err := r.i32("a count")
+	if err == nil {
+		t.Fatal("a source that failed mid-value returned no error")
+	}
+
+	if errors.As(err, new(*gatling.TruncationError)) {
+		t.Fatalf("a source failure is reported as a log cut short: %v", err)
+	}
+
+	// The whole point: a caller whose loop breaks on the clean end of a log must
+	// not break here. Wrapping the cause with %w would put io.EOF back in the
+	// chain and make this failure indistinguishable from the end of the file.
+	if errors.Is(err, io.EOF) {
+		t.Fatalf("a source failure matches io.EOF, so an EOF-first loop reads it as a complete run: %v", err)
+	}
+
+	if !strings.Contains(err.Error(), "decompressor gave up") {
+		t.Fatalf("the source's own failure is not named in the error: %v", err)
+	}
+}
+
+// The same at the top of a record, where the reader looks for the end of the
+// log. This path already compares with identity; the test keeps it that way.
+func TestASourceFailureWrappingEOFIsNotTheEndOfTheLog(t *testing.T) {
+	t.Parallel()
+
+	r := newReader(&failAfter{err: errDecompressor})
+
+	end, err := r.atEnd()
+	if end {
+		t.Fatal("a source that failed is reported as the clean end of the log")
+	}
+
+	if errors.Is(err, io.EOF) {
+		t.Fatalf("a source failure matches io.EOF, so an EOF-first loop reads it as a complete run: %v", err)
+	}
+
+	if !strings.Contains(err.Error(), "decompressor gave up") {
+		t.Fatalf("the source's own failure is not named in the error: %v", err)
+	}
+}
+
+// stalled hands over what it has and then makes no progress, which the io.Reader
+// contract explicitly permits and explicitly says must not be read as an end.
+type stalled struct {
+	data []byte
+}
+
+func (s *stalled) Read(p []byte) (int, error) {
+	if len(s.data) == 0 {
+		return 0, nil
+	}
+
+	n := copy(p, s.data)
+	s.data = s.data[n:]
+
+	return n, nil
+}
+
+// A source that stops making progress inside a value ends the read instead of
+// spinning. io.ReadFull loops on an empty read forever and bufio's own guard
+// lives in fill(), which its Read does not use, so nothing below readFull would
+// have caught this: the decoder ran on with no error and nothing to cancel.
+func TestASourceThatStopsProgressingInsideAValueEndsTheRead(t *testing.T) {
+	t.Parallel()
+
+	r := newReader(&stalled{data: []byte{0x00, 0x00}})
+
+	_, err := r.i32("a count")
+	if !errors.Is(err, io.ErrNoProgress) {
+		t.Fatalf("i32 over a stalled source = %v; want io.ErrNoProgress", err)
+	}
+
+	if errors.As(err, new(*gatling.TruncationError)) {
+		t.Fatalf("a stalled source is reported as a log cut short: %v", err)
+	}
+}
+
+// io.ErrUnexpectedEOF is not this package's to interpret. compress/gzip, flate
+// and zlib all return that sentinel by identity when their compressed input was
+// cut, so treating it as the end of the Gatling log would report a broken
+// decompressor as a killed run — with offsets in decompressed coordinates that
+// match no byte of the file on disk.
+func TestASourceReturningUnexpectedEOFIsNotATruncation(t *testing.T) {
+	t.Parallel()
+
+	r := newReader(&failAfter{data: []byte{0x00, 0x00}, err: io.ErrUnexpectedEOF})
+
+	_, err := r.i32("a count")
+	if errors.As(err, new(*gatling.TruncationError)) {
+		t.Fatalf("a source's own io.ErrUnexpectedEOF is reported as a log cut short: %v", err)
+	}
+
+	if errors.Is(err, io.EOF) {
+		t.Fatalf("a source failure matches io.EOF: %v", err)
+	}
+
+	if !errors.Is(err, io.ErrUnexpectedEOF) {
+		t.Fatalf("the source's own failure is not reachable through the error: %v", err)
+	}
+}

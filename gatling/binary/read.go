@@ -43,13 +43,22 @@ const readBufferSize = 64 << 10
 
 // reader reads the format's primitives from a stream and tracks where it is.
 //
-// Every method reports a failure as a *gatling.SyntaxError carrying the offset
-// at which the failing value started, so an error names the byte a reader can
-// open the file at rather than the byte the decoder happened to stop on.
+// A malformed value fails with a *gatling.SyntaxError carrying the offset at
+// which that value started. A stream that simply ran out inside a record fails
+// with a *gatling.TruncationError instead, described from the record's start —
+// see truncated. A failure of the source is neither, and keeps its own cause.
 type reader struct {
 	src *bufio.Reader
 	// off is the number of bytes consumed, and so the offset of the next one.
 	off int64
+	// recordAt is the offset the record being decoded began at, set by the
+	// record loop before each record. A truncation is described from here: it is
+	// where a reader would open the file to see what was lost, and the distance
+	// from here to where the stream stopped is what was dropped.
+	//
+	// It stays 0 until the loop sets it, which is right for the one record read
+	// before the loop exists: the run record, which begins at byte 0.
+	recordAt int64
 	// scratch holds the bytes of the value being read. It is reused between
 	// values and grows only to what a value needs, never past MaxStringLen.
 	scratch []byte
@@ -57,6 +66,56 @@ type reader struct {
 
 func newReader(r io.Reader) *reader {
 	return &reader{src: bufio.NewReaderSize(r, readBufferSize)}
+}
+
+// maxEmptyReads is how many times a stalled source is given the benefit of the
+// doubt before the read ends. It is bufio's own figure, and simlog.readHead's,
+// for the same reason: a Read returning (0, nil) is legal and must not be taken
+// for the end of the stream, but a source that only ever does that has wedged
+// the caller with nothing to cancel.
+const maxEmptyReads = 100
+
+// errCutShort is what readFull returns when the stream ended part-way through a
+// value. It exists so that this package's own conversion of an end of stream can
+// be told from io.ErrUnexpectedEOF, which compress/gzip, flate and zlib all
+// return by identity when their *compressed* input was cut: those are failures
+// of the source, and reporting one as a Gatling log cut short would name offsets
+// in decompressed coordinates that match no byte of the file on disk.
+var errCutShort = errors.New("the stream ended inside a value")
+
+// readFull fills buf, and differs from io.ReadFull in the two ways this package
+// needs. An end of stream becomes errCutShort rather than io.EOF or
+// io.ErrUnexpectedEOF, so only this loop can claim the log ran out; and a source
+// that keeps returning (0, nil) ends the read with io.ErrNoProgress rather than
+// spinning. io.ReadFull loops on an empty read forever, and bufio's own guard
+// lives in fill(), which its Read does not use — so nothing below this line
+// would have caught it.
+func readFull(r io.Reader, buf []byte) (int, error) {
+	n, empty := 0, 0
+
+	for n < len(buf) {
+		read, err := r.Read(buf[n:])
+		n += read
+
+		switch {
+		// Identity: only the stream itself ending, never a source wrapping io.EOF.
+		case err == io.EOF:
+			return n, errCutShort
+
+		case err != nil:
+			return n, err
+
+		case read > 0:
+			empty = 0
+
+		default:
+			if empty++; empty >= maxEmptyReads {
+				return n, io.ErrNoProgress
+			}
+		}
+	}
+
+	return n, nil
 }
 
 // syntax builds the error for a value that started at the given offset.
@@ -69,23 +128,60 @@ func (r *reader) syntax(at int64, expected, found string) error {
 	}
 }
 
-// truncated describes a read that ran off the end of the stream. io.EOF at the
-// very start of a value is still a truncation to every caller but the one
-// looking for the end of the log, which checks for it before asking for a value.
+// truncated describes a read that ran off the end of the stream: the log was cut
+// short inside a record, which is how every killed run ends, and not damaged.
+// at is where the stream stopped.
+//
+// It is described from the record's start rather than from where the stream
+// stopped, because that is the byte a reader would open the file at to see what
+// was lost; the stop offset is Offset+Dropped and is not thrown away.
+//
+// A stream that stops without a byte of the record arriving is not a cut record.
+// Inside the record loop it cannot happen — atEnd looks for the end of the log
+// before a record is asked for — so this is the empty stream handed straight to
+// NewReader, which has no partial record to report and stays a syntax error.
+// expected is what the record still needed, not what sits at the offset the
+// error names: the offset is pinned to the record's start while the value being
+// read moves through it. gatling.TruncationError.Error says it that way round.
 func (r *reader) truncated(at int64, expected string) error {
-	return r.syntax(at, expected, "end of input")
+	dropped := at - r.recordAt
+	if dropped <= 0 {
+		return r.syntax(at, expected, "end of input")
+	}
+
+	return &gatling.TruncationError{
+		Format:   gatling.FormatBinary,
+		Offset:   r.recordAt,
+		Expected: expected,
+		Dropped:  dropped,
+	}
 }
 
-// sourceFailed reports a stream that broke rather than ended. The cause is
-// wrapped, because a caller told its log is truncated will re-record a run that
-// was never corrupt: a reset connection and a short file are different problems
-// and only one of them is about the file.
+// sourceFailed reports a stream that broke rather than ended. The cause is kept,
+// because a caller told its log is truncated will re-record a run that was never
+// corrupt: a reset connection and a short file are different problems and only
+// one of them is about the file.
 //
-// io.EOF and io.ErrUnexpectedEOF are the two the format's own grammar explains,
-// and they alone become a truncation.
+// Two endings alone become a truncation, and both are this package's own: io.EOF
+// straight from bufio at the top of a value, and errCutShort, which readFull
+// raises when the stream ran out inside one. Compared with == and not errors.Is.
+// An error that merely *wraps* io.EOF is the source reporting a failure of its
+// own, and bufio hands it through unchanged; io.ErrUnexpectedEOF is worse still,
+// because a truncated gzip, flate or zlib stream returns that sentinel by
+// identity. Neither says anything about the Gatling log.
+// reader.atEnd, scanner.next, simlog.identify and simlog.readHead hold the same
+// rule.
 func (r *reader) sourceFailed(at int64, expected string, err error) error {
-	if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+	if err == io.EOF || errors.Is(err, errCutShort) { //nolint:errorlint // deliberate: identity, not wrapping; see above
 		return r.truncated(at, expected)
+	}
+
+	// A cause that itself ends in io.EOF cannot be wrapped. errors.Is would then
+	// match io.EOF on this failure, and every caller whose loop breaks on the
+	// clean end of a log — including this module's own — would read a broken
+	// transport as a complete run. The text is kept; the chain is not.
+	if errors.Is(err, io.EOF) {
+		return fmt.Errorf("gatling: byte %d: reading %s: %s", at, expected, err.Error())
 	}
 
 	return fmt.Errorf("gatling: byte %d: reading %s: %w", at, expected, err)
@@ -151,9 +247,9 @@ func (r *reader) i64(expected string) (int64, error) {
 // fixed reads exactly n bytes, where n is either fixed by the format or a
 // length sized has already capped. The bytes are valid until the next read.
 //
-// A truncation names the offset the missing bytes should have started at, which
-// is where a reader would open the file to see the end of it — not the offset of
-// the enclosing value, which may be far behind.
+// The offset it hands sourceFailed is where the stream actually stopped. A
+// truncation is not reported from there: it names the record's start, and keeps
+// this position as the far end of what was dropped (see truncated).
 func (r *reader) fixed(n int, expected string) ([]byte, error) {
 	at := r.off
 
@@ -161,9 +257,9 @@ func (r *reader) fixed(n int, expected string) ([]byte, error) {
 
 	buf := r.scratch[:n]
 
-	// ReadFull's count is what says where the stream actually stopped, which is
-	// the byte a reader would open the file at — not where the value began.
-	read, err := io.ReadFull(r.src, buf)
+	// readFull's count is what says where the stream actually stopped, which is
+	// Offset+Dropped on the truncation this produces.
+	read, err := readFull(r.src, buf)
 	if err != nil {
 		return nil, r.sourceFailed(at+int64(read), expected, err)
 	}
@@ -176,7 +272,7 @@ func (r *reader) fixed(n int, expected string) ([]byte, error) {
 // sized reads a length-prefixed run of bytes: a string's characters, or an
 // assertion payload. The bytes are valid until the next read. at is the offset
 // of the length prefix, because that is where a complaint about the length
-// belongs; a truncation names its own position instead.
+// belongs; a truncation names the record's start instead.
 //
 // The length comes from the file and is therefore untrusted. It is checked
 // against MaxStringLen before anything is allocated, so a corrupt prefix fails
@@ -224,7 +320,12 @@ func (r *reader) atEnd() (bool, error) {
 		//
 		// bufio also reports a reader that keeps returning (0, nil) as
 		// io.ErrNoProgress rather than spinning, and it surfaces here.
-		return false, err
+		//
+		// Handed to sourceFailed rather than returned raw, so that a cause
+		// ending in io.EOF is stripped of its chain here too: returning it
+		// unchanged would leave errors.Is(err, io.EOF) true and put the caller
+		// back where this switch started.
+		return false, r.sourceFailed(r.off, "the next record", err)
 	}
 }
 

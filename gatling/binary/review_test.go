@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"strings"
 	"testing"
 
 	"github.com/galax-io/parsec/gatling"
@@ -125,12 +126,12 @@ func TestWrappedEOFIsNotACleanEnd(t *testing.T) {
 	}
 
 	_, err = rd.Next()
-	if errors.Is(err, io.EOF) && !errors.Is(err, broken) {
-		t.Fatal("a wrapped io.EOF was read as the clean end of the log")
+	if errors.Is(err, io.EOF) {
+		t.Fatalf("a wrapped io.EOF was read as the clean end of the log: %v", err)
 	}
 
-	if !errors.Is(err, broken) {
-		t.Fatalf("Next = %v; want the source's own failure", err)
+	if !strings.Contains(err.Error(), broken.Error()) {
+		t.Fatalf("Next = %v; want the source's own failure named in it", err)
 	}
 }
 

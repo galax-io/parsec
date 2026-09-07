@@ -3,6 +3,7 @@ package gatling_test
 import (
 	"errors"
 	"fmt"
+	"io"
 	"strings"
 	"testing"
 
@@ -85,4 +86,72 @@ func TestWarning(t *testing.T) {
 	w := gatling.Warning{Version: v(3, 13, 0), Min: v(3, 11, 5), Max: v(3, 12, 0)}
 	mustContain(t, w.String(), "3.13.0", "3.11.5", "3.12.0")
 	mustContain(t, strings.ToLower(w.String()), "no recording")
+}
+
+func TestTruncationError(t *testing.T) {
+	t.Parallel()
+
+	t.Run("a text log names the line", func(t *testing.T) {
+		t.Parallel()
+
+		err := &gatling.TruncationError{
+			Format: gatling.FormatText, Line: 42, Dropped: 33, Expected: "the rest of the line",
+		}
+		mustContain(t, err.Error(), "cut short", "33", "the rest of the line")
+
+		if !strings.HasPrefix(err.Error(), "gatling: line 42:") {
+			t.Fatalf("a text truncation does not open with its line: %v", err)
+		}
+	})
+
+	t.Run("a binary log names the offset", func(t *testing.T) {
+		t.Parallel()
+
+		err := &gatling.TruncationError{
+			Format: gatling.FormatBinary, Offset: 1234, Dropped: 57, Expected: "a request record's name",
+		}
+		mustContain(t, err.Error(), "cut short", "57", "a request record's name")
+
+		if !strings.HasPrefix(err.Error(), "gatling: byte 1234:") {
+			t.Fatalf("a binary truncation does not open with its offset: %v", err)
+		}
+
+		if strings.Contains(err.Error(), "line") {
+			t.Fatalf("a binary truncation reports a line number: %v", err)
+		}
+	})
+
+	// The whole point of a separate type. A consumer written before this type
+	// existed breaks its loop on io.EOF and treats everything else as a failed
+	// read; if a truncation were io.EOF, or wrapped one, that consumer would
+	// silently report a run killed mid-flight as a complete one.
+	t.Run("is not the end of the log", func(t *testing.T) {
+		t.Parallel()
+
+		err := error(&gatling.TruncationError{Format: gatling.FormatBinary, Offset: 8, Dropped: 4})
+
+		if errors.Is(err, io.EOF) {
+			t.Fatal("a truncation is io.EOF, so a caller written before v0.0.8 reads a cut log as complete")
+		}
+
+		if errors.Is(err, io.ErrUnexpectedEOF) {
+			t.Fatal("a truncation is io.ErrUnexpectedEOF, which is how a failing source reports itself")
+		}
+
+		var syntaxErr *gatling.SyntaxError
+		if errors.As(err, &syntaxErr) {
+			t.Fatal("a truncation unwraps to a SyntaxError, so a cut log still reads as a damaged one")
+		}
+	})
+
+	t.Run("errors.As", func(t *testing.T) {
+		t.Parallel()
+
+		err := &gatling.TruncationError{Format: gatling.FormatText, Line: 7, Dropped: 12}
+
+		var target *gatling.TruncationError
+		if wrapped := fmt.Errorf("read: %w", err); !errors.As(wrapped, &target) || target.Dropped != 12 {
+			t.Fatalf("errors.As does not recover the TruncationError from %v", wrapped)
+		}
+	})
 }

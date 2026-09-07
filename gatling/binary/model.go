@@ -87,9 +87,11 @@ func (x *RunReader) Run() model.Run {
 
 // Next returns the next item of the run, or [io.EOF] at the end.
 //
-// Any other error ends the read, and the items already delivered are not a
-// result. The returned item's Groups slice is only valid until the next call —
-// copy it to keep it, for the reason [Reader.Next] gives.
+// Any other error ends the read. A *gatling.TruncationError says the log was cut
+// short and that the items already delivered are the ones the run recorded;
+// anything else says the read failed and that they are not a result. The
+// returned item's Groups slice is only valid until the next call — copy it to
+// keep it, for the reason [Reader.Next] gives.
 func (x *RunReader) Next() (model.Item, error) {
 	for {
 		rec, err := x.rd.Next()
