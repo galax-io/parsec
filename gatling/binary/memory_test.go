@@ -21,7 +21,27 @@ const mib = 1 << 20
 // the comparison the test exists to make.
 const samples = 64
 
-// sampler records the highest heap seen while the input flows through it.
+// budget is the peak heap this package documents for a decode of any size.
+const budget = 32 * mib
+
+// drift is how far the live heap may move between a run and one ten times
+// longer. SC-004 says the figure does not change; for a sampled measurement
+// this is what "does not change" has to mean, and it is set well above the
+// spread the sampler actually shows.
+//
+// Sampling after a collection leaves almost no spread to allow for. Eighteen
+// pairs were measured for this change — three idle and fifteen under sixteen
+// spinning goroutines at GOMAXPROCS=2 — and every pair came back equal: 0.5
+// against 0.5 MiB idle here, 0.3 against 0.3 loaded, and 2.5 and 2.3 in
+// gatling/text. The unswept figure this replaced moved 3.8 to 23.0 MiB under
+// that same load, which is why it could not be compared against itself.
+//
+// A leak that grew with the log would show as a multiple of the figure, not as
+// a fraction of a MiB, so a megabyte is loose enough never to fire on noise and
+// tight enough that nothing real hides under it.
+const drift = 1 * mib
+
+// sampler records the highest live heap seen while the input flows through it.
 type sampler struct {
 	r     io.Reader
 	every int64
@@ -35,14 +55,32 @@ func (s *sampler) Read(p []byte) (int, error) {
 
 	if s.since >= s.every {
 		s.since = 0
-
-		var m runtime.MemStats
-
-		runtime.ReadMemStats(&m)
-		s.peak = max(s.peak, m.HeapAlloc)
+		s.peak = max(s.peak, liveHeap())
 	}
 
 	return n, err
+}
+
+// liveHeap collects, then reports what is still held.
+//
+// The collection is the measurement. HeapAlloc on its own counts what has been
+// allocated and not yet swept, so it reads the collector's backlog as if it
+// were retention: against a fixed live set it moves 2.0x when the machine is
+// idle and 8.4x under contention, while the same set sampled after a
+// collection moves 1.03x and 1.05x. A ten-times-longer run gives the collector
+// ten times as many chances to fall behind, which is why the unswept figure
+// grows with the log while the live heap does not — the growth a bare peak
+// comparison then reports as a leak.
+//
+// It costs about 280us against the 29us of the read alone, taken `samples`
+// times a run: under 20ms, against a decode measured in seconds.
+func liveHeap() uint64 {
+	var m runtime.MemStats
+
+	runtime.GC()
+	runtime.ReadMemStats(&m)
+
+	return m.HeapAlloc
 }
 
 func decodeSized(t *testing.T, size int64) (records int64, peak uint64) {
@@ -50,7 +88,7 @@ func decodeSized(t *testing.T, size int64) (records int64, peak uint64) {
 
 	runtime.GC()
 
-	src := &sampler{r: newSynthLog(size), every: size / samples}
+	src := &sampler{r: newSynthLog(size), every: max(size/samples, 1)}
 
 	rd, err := binary.NewReader(src)
 	if err != nil {
@@ -60,7 +98,7 @@ func decodeSized(t *testing.T, size int64) (records int64, peak uint64) {
 	for {
 		_, err := rd.Next()
 		if errors.Is(err, io.EOF) {
-			return records, src.peak
+			return records, max(src.peak, liveHeap())
 		}
 
 		if err != nil {
@@ -72,11 +110,9 @@ func decodeSized(t *testing.T, size int64) (records int64, peak uint64) {
 }
 
 // The reader's memory must not grow with the log. A 256 MiB log and one ten
-// times larger both stay under 32 MiB of heap, and the larger may peak at most
-// twice as high as the smaller. Growth proportional to the input would show as
-// ten times; the factor of two absorbs collector timing, which moves HeapAlloc
-// by a few MiB between runs while the live heap stays a fixed read buffer, a
-// reused group path and a table of four distinct strings.
+// times larger both stay inside the budget, and the live heap of the larger is
+// the live heap of the smaller, within drift. Growth proportional to the input
+// would show as ten times the figure and fails both bounds outright.
 //
 // This is the format's own wrinkle: the string table is held for the whole read,
 // so "bounded" has to mean bounded by the *simulation* and not by the *run*. The
@@ -90,8 +126,8 @@ func TestPeakMemory(t *testing.T) {
 	n1, peak1 := decodeSized(t, small)
 	t.Logf("%d MiB: %d records, peak heap %.1f MiB", small/mib, n1, float64(peak1)/mib)
 
-	if peak1 >= 32*mib {
-		t.Fatalf("peak heap %.1f MiB for a %d MiB log, want under 32 MiB", float64(peak1)/mib, small/mib)
+	if peak1 >= budget {
+		t.Fatalf("peak heap %.1f MiB for a %d MiB log, want under %d MiB", float64(peak1)/mib, small/mib, budget/mib)
 	}
 
 	if testing.Short() {
@@ -101,7 +137,7 @@ func TestPeakMemory(t *testing.T) {
 	n2, peak2 := decodeSized(t, 10*small)
 	t.Logf("%d MiB: %d records, peak heap %.1f MiB", 10*small/mib, n2, float64(peak2)/mib)
 
-	if peak2 >= 32*mib || peak2 > 2*peak1 {
+	if peak2 >= budget || peak2 > peak1+drift {
 		t.Fatalf("peak heap grew from %.1f MiB to %.1f MiB when the log grew ten times",
 			float64(peak1)/mib, float64(peak2)/mib)
 	}
@@ -116,8 +152,15 @@ func TestPeakMemory(t *testing.T) {
 // records, which is the shape a soak run has. Ten times the records must cost
 // the same table.
 //
+// The name ends in PeakMemory for the reason given on TestStringCeilingPeakMemory:
+// CI selects this class with an anchored `-run 'PeakMemory$'` and runs it without
+// the race detector or coverage, both of which move the figure being asserted.
+// Under the older name this test missed that pattern and was measured instrumented,
+// where a raced run takes thirteen times as long and so gives the collector
+// thirteen times as many chances to be caught mid-sweep.
+//
 //nolint:paralleltest // measures peak heap and must run alone
-func TestMemoryFollowsNamesNotRecords(t *testing.T) {
+func TestNamesNotRecordsPeakMemory(t *testing.T) {
 	n1, peak1 := decodeSized(t, 16*mib)
 	n2, peak2 := decodeSized(t, 160*mib)
 
@@ -128,7 +171,15 @@ func TestMemoryFollowsNamesNotRecords(t *testing.T) {
 	t.Logf("%d records: %.1f MiB; %d records: %.1f MiB — the same four names throughout",
 		n1, float64(peak1)/mib, n2, float64(peak2)/mib)
 
-	if peak2 > 2*peak1 {
+	// Two separate readings. This one is the budget the package documents, and
+	// it applies to both figures; the one below is about the table's shape. A
+	// breach of either deserves its own message rather than the other's.
+	if peak1 >= budget || peak2 >= budget {
+		t.Fatalf("peak heap %.1f MiB and %.1f MiB for %d and %d records, want under the %d MiB this package documents",
+			float64(peak1)/mib, float64(peak2)/mib, n1, n2, budget/mib)
+	}
+
+	if peak2 > peak1+drift {
 		t.Fatalf("ten times the records cost %.1f MiB against %.1f MiB; the table is growing with the run",
 			float64(peak2)/mib, float64(peak1)/mib)
 	}
@@ -143,7 +194,7 @@ func foldSized(t *testing.T, size int64) (items int64, peak uint64) {
 
 	runtime.GC()
 
-	src := &sampler{r: newSynthLog(size), every: size / samples}
+	src := &sampler{r: newSynthLog(size), every: max(size/samples, 1)}
 
 	rd, err := binary.NewRunReader(src)
 	if err != nil {
@@ -162,7 +213,7 @@ func foldSized(t *testing.T, size int64) (items int64, peak uint64) {
 				t.Fatal("the fold bounded nothing or took no position; the log is not the shape this test assumes")
 			}
 
-			return items, src.peak
+			return items, max(src.peak, liveHeap())
 		}
 
 		if err != nil {
@@ -193,8 +244,8 @@ func TestFoldPeakMemory(t *testing.T) {
 	n1, peak1 := foldSized(t, small)
 	t.Logf("%d MiB: %d items, peak heap %.1f MiB", small/mib, n1, float64(peak1)/mib)
 
-	if peak1 >= 32*mib {
-		t.Fatalf("peak heap %.1f MiB for a %d MiB log, want under 32 MiB", float64(peak1)/mib, small/mib)
+	if peak1 >= budget {
+		t.Fatalf("peak heap %.1f MiB for a %d MiB log, want under %d MiB", float64(peak1)/mib, small/mib, budget/mib)
 	}
 
 	if testing.Short() {
@@ -204,7 +255,7 @@ func TestFoldPeakMemory(t *testing.T) {
 	n2, peak2 := foldSized(t, 10*small)
 	t.Logf("%d MiB: %d items, peak heap %.1f MiB", 10*small/mib, n2, float64(peak2)/mib)
 
-	if peak2 >= 32*mib || peak2 > 2*peak1 {
+	if peak2 >= budget || peak2 > peak1+drift {
 		t.Fatalf("peak heap grew from %.1f MiB to %.1f MiB when the log grew ten times",
 			float64(peak1)/mib, float64(peak2)/mib)
 	}
@@ -240,11 +291,7 @@ func peakOf(t *testing.T, src io.Reader, every int64) (records int, peak uint64)
 		records++
 	}
 
-	var m runtime.MemStats
-
-	runtime.ReadMemStats(&m)
-
-	return records, max(s.peak, m.HeapAlloc)
+	return records, max(s.peak, liveHeap())
 }
 
 // The budget Reader documents must hold for the field the ceiling is written
@@ -276,10 +323,10 @@ func TestStringCeilingPeakMemory(t *testing.T) {
 		t.Fatalf("decoded %d records, want one per encoding (%d)", records, len(ceilingFields))
 	}
 
-	if peak >= 32*mib {
+	if peak >= budget {
 		t.Fatalf("peak heap %.1f MiB decoding one field at the %d MiB ceiling in each encoding, "+
-			"want under the 32 MiB this package documents",
-			float64(peak)/mib, binary.MaxStringLen/mib)
+			"want under the %d MiB this package documents",
+			float64(peak)/mib, binary.MaxStringLen/mib, budget/mib)
 	}
 }
 
@@ -300,8 +347,8 @@ func TestAssertionCeilingPeakMemory(t *testing.T) {
 	t.Logf("%d assertion payloads of %d MiB, %d MiB retained: peak heap %.1f MiB",
 		payloads, binary.MaxStringLen/mib, payloads*binary.MaxStringLen/mib, float64(peak)/mib)
 
-	if peak >= 32*mib {
+	if peak >= budget {
 		t.Fatalf("peak heap %.1f MiB reading a run record's assertion payloads, "+
-			"want under the 32 MiB this package documents", float64(peak)/mib)
+			"want under the %d MiB this package documents", float64(peak)/mib, budget/mib)
 	}
 }

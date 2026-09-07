@@ -178,12 +178,14 @@ with no format-specific branch.
 **Proves**: SC-005, FR-026, FR-013.
 
 ```bash
-go test -tags=integration -race -run 'TestPeakMemory|TestMemoryFollowsNamesNotRecords' ./gatling/binary/
+go test -tags=integration -run 'PeakMemory$' ./gatling/binary/
 go test -tags=integration -run '^$' -bench 'BenchmarkDecode' -benchmem ./gatling/binary/ ./gatling/text/
 ```
 
 Expected: a 1 GB log reads with peak memory under 32 MiB, and that figure does not move when the log
-is made ten times longer **with the same set of distinct names**. Allocations per record approach
+is made ten times longer **with the same set of distinct names**. Both assertions are named to match
+the anchored `PeakMemory$` selector and are run without `-race` and without coverage: each samples
+the heap after a forced collection, and either instrumentation moves that figure. Allocations per record approach
 zero once every name is cached. Compare against `gatling/text` on the same simulation with
 `benchstat` and put the numbers in the PR — the binary path should be the faster of the two, and if
 it is not, something is copying that should not be.
