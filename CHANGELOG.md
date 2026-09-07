@@ -5,6 +5,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.0.7] - 2026-09-07
+
+The corpus and the canary: what makes both Gatling codecs safe to freeze.
+
+Support for five versions was asserted more than demonstrated. A binary recording was held to three
+numbers — a run's total, ok and ko — so a decoder that renamed every request or moved one between
+groups passed; the canary ran two text versions, so nothing exercised the binary codec against a
+Gatling that had just finished; and no workflow ever passed `-fuzz`, so the check that enforces the
+no-panic invariant only ever replayed its seed corpus.
+
 ### Changed
 
 - `gatling/binary.MaxStringLen` is **1 MiB**, down from 8 MiB. A string or assertion payload
