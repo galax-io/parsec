@@ -41,7 +41,16 @@ read; it is never only logged.
 
 **Invariants**
 
-1. `Dropped > 0`. A cut with nothing dropped is a clean end, and is reported as one.
+1. `Dropped > 0`. A cut with nothing dropped is not a cut record, and is not reported as one. What
+   it is instead depends on where it lands, and neither case is knowable from the artefact:
+   - In the record stream, a binary log is a shorter valid log and a text log ends on a line
+     boundary; both end cleanly with `io.EOF`.
+   - In the preamble, a text log that ends on a line boundary without a run header is a log with no
+     header, reported as a `*SyntaxError` — there is no partial line to wait for. An empty stream
+     handed to `binary.NewReader` is the same case.
+
+   This is the same indistinguishability the binary format's missing end marker creates, one layer
+   up: a cut that lands on a boundary leaves no evidence of itself.
 2. Exactly one of `Line` and `Offset` is set, chosen by `Format`, matching `SyntaxError`'s existing
    convention so the two read alike.
 3. The position names where the **incomplete record began**, not where the stream stopped. That is
@@ -59,7 +68,7 @@ read; it is never only logged.
    NewReader ──► Next ┼──────────────► *TruncationError           (cut short, records kept)
         │             └──────────────► *SyntaxError / source err  (failed)
         │
-        └── cut inside the preamble ─► *TruncationError, no Reader (cut short, nothing kept)
+        └── cut inside a preamble line ► *TruncationError, no Reader (cut short, nothing kept)
 ```
 
 ## What each reader shape carries
@@ -71,6 +80,16 @@ read; it is never only logged.
 
 `model.Run` is unchanged. A cut is a property of the read, not of the run the log describes, and
 `Run()` is answerable before the first record is decoded — long before a cut can be known.
+
+## What cannot be told apart
+
+Two shapes are reported as something other than a cut, and no reader can do better. Both are
+documented rather than guessed at:
+
+| Shape | Reported as | Why nothing better is possible |
+|---|---|---|
+| A binary log cut exactly on a record boundary | a clean end | The format has no end marker, so the file *is* a shorter valid log. Only something that can see the writer knows otherwise. |
+| A corrupted length prefix claiming more bytes than the file holds | a cut short | It is byte-for-byte what a file cut mid-value looks like. Either way the value is not delivered, which is what matters to the caller. |
 
 ## What does not change
 

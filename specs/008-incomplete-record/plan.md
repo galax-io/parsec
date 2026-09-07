@@ -54,6 +54,36 @@ for any log either codec accepts, and no throughput or allocation regression aga
 `gatling/simlog/bench_test.go`. The design adds one `int64` assignment per record on the binary path
 and nothing on the text path (research [R10](research.md)).
 
+**Baseline recorded 2026-09-07 (T001)**, darwin/arm64, `-benchtime=200ms`, the codec benchmarks run
+with `-tags=integration` because that is where they live:
+
+| Benchmark | Throughput | Allocations |
+|---|---|---|
+| `binary.BenchmarkDecode/synthetic-64MiB` | 238.51 MB/s | 66320 B/op, 19 allocs/op |
+| `binary.BenchmarkDecode/corpus` | 275.20 MB/s | 67888 B/op, 45 allocs/op |
+| `binary.BenchmarkDecodeToModel/synthetic-64MiB` | 144.75 MB/s | 66496 B/op, 21 allocs/op |
+| `text.BenchmarkReader/synthetic-64MiB` | 469.91 MB/s | 1062800 B/op, 30 allocs/op |
+| `text.BenchmarkRunReader/synthetic-64MiB` | 340.75 MB/s | 1062992 B/op, 33 allocs/op |
+| `simlog.BenchmarkOpen/dispatched` | 65.69 MB/s | 1063433 B/op, 46 allocs/op |
+
+**After the change (T029)**, same machine and flags, with the corpus benchmarks repeated at
+`-benchtime=2s -count=3` because a 200 ms run of the 64 MiB cases executes once and cannot separate
+a regression from noise:
+
+| Benchmark | Before | After | Allocations |
+|---|---|---|---|
+| `binary.BenchmarkDecode/corpus` | 275.20 MB/s | 268.6 / 270.8 / 272.0 MB/s | 45 allocs/op, 67888 → 67920 B/op |
+| `binary.BenchmarkDecodeToModel/corpus` | 194.11 MB/s | 189.3 / 187.5 / 189.4 MB/s | 48 allocs/op, unchanged |
+| `text.BenchmarkReader/corpus` | 222.38 MB/s | 220.4 / 219.6 / 218.9 MB/s | 41 allocs/op, 1063288 B/op — identical |
+| `binary.BenchmarkDecode/synthetic-64MiB` | 238.51 MB/s | 229.48 MB/s | 19 allocs/op, unchanged |
+| `text.BenchmarkReader/synthetic-64MiB` | 469.91 MB/s | 454.67 MB/s | 30 allocs/op, unchanged |
+
+No regression to justify. Allocation counts are identical everywhere; the one byte-count difference
+is **+32 B once per binary reader**, which is the `recordAt` field moving the `reader` struct into
+the next size class — it is per read, not per record. The throughput figures move by 1–3% in both
+directions, and the text codec, whose read loop this change does not touch at all, moves by the same
+magnitude: that is the machine, not the change.
+
 **Constraints**: streaming with bounded memory, including while a follower waits between appends;
 chunked, delivered-over-time and whole-file reads all agree; the version gate is untouched; errors
 carry the position of the failure; no panic on any input, at any cut offset.
@@ -143,10 +173,15 @@ gatling/
 │   ├── reader.go                 # unterminated() builds the new error with the dropped
 │   │                             #   count the scanner already returns; docs restated
 │   ├── model.go                  # RunReader doc: the partial run is no longer "refused"
-│   ├── truncation_test.go        # new — the same sweep for the text format
+│   ├── truncation_test.go        # new — the same sweep over the fixtures, and the
+│   │                             #   source-failure and clean-end regressions
+│   ├── truncation_corpus_test.go # new — the sweep over the recordings, integration tag
+│   ├── scan.go doc.go            # the identity rule, and the package overview
 │   └── mutation_test.go          # + seeds for FuzzReader (R8)
 └── simlog/
     ├── simlog.go                 # package and interface docs state contract 2
+    ├── example_test.go           # the rendered example keeps a cut-short run
+    ├── truncation_test.go        # new — a cut log through this entry point
     └── follow_test.go            # new — the blocking-source test (the R6 probe)
 CHANGELOG.md                      # Changed: the ending of a cut-short read
 ```
