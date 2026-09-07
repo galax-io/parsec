@@ -130,6 +130,9 @@ var codecs = [...]codec{
 // a decode, read from the same table this dispatches on, so a format cannot be
 // readable in one and not the other.
 //
+// The source may still be being written: see the package documentation for what
+// a follower may rely on and what it must do in return.
+//
 // A stream too short to identify — which is what a sidecar attaching in a run's
 // first milliseconds sees — is refused with a *gatling.FormatError whose Short
 // field is set, and not with the *gatling.TruncationError the codec

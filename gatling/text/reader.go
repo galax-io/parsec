@@ -55,6 +55,11 @@ const maxAssertionBytes = 8 << 20
 // the range succeeds and records a warning — or, under [gatling.WithStrict],
 // fails with a *gatling.UnverifiedError instead.
 //
+// The source may still be being written. A Read that blocks is a wait, not an
+// end, and a record split across reads is delivered once, when its last byte
+// arrives; the [github.com/galax-io/parsec/gatling/simlog] package documentation
+// states the contract in full, and it holds for this constructor too.
+//
 // It allocates its line buffer up front, once, and refuses any line past
 // MaxLineLen, so no line can grow past the ceiling. Beyond that buffer, a
 // bounded table of the names the log repeats and a bounded preamble, the
