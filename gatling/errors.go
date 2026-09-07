@@ -51,6 +51,78 @@ func (e *SyntaxError) Error() string {
 	return fmt.Sprintf("gatling: line %d: expected %s, found %s", e.Line, e.Expected, e.Found)
 }
 
+// TruncationError ends a read whose bytes ran out inside a record: the log was
+// cut short rather than damaged. Every record decoded before that point has
+// already been delivered, and each is exactly what a whole-file read of the same
+// prefix yields.
+//
+// It is what a run killed mid-flight leaves behind. Gatling writes the log
+// through a buffer flushed in blocks, so a test stopped by a signal, an OOM kill,
+// a CI timeout or a full disk ends inside a record: the shape is the ordinary
+// ending of an aborted run, and usually not evidence of a corrupt file.
+//
+// Usually, because two shapes are indistinguishable in the artefact and this
+// type cannot separate them. A length prefix corrupted to claim more bytes than
+// the file holds is byte for byte what a file cut mid-value looks like, so a
+// damaged log can arrive here — with a Dropped as large as the file — rather
+// than as a *SyntaxError, which is what a defect the grammar *can* see still
+// yields. And a binary log cut exactly on a record boundary is a shorter valid
+// log, so it ends cleanly with no truncation at all. A caller that must not act
+// on a damaged run needs a check this module cannot give it, such as the run's
+// own report or a writer it can see.
+//
+// It is deliberately neither io.EOF nor a wrapper around one, and it unwraps to
+// nothing. A caller written before this type existed breaks its loop on io.EOF
+// and treats every other error as a failed read, so it goes on doing exactly
+// what it does today and cannot mistake a killed run for a complete one. A
+// caller that wants the partial run reaches for this type with errors.As.
+//
+// Whether a run whose log was cut short may be used at all is the caller's to
+// decide. This module states the fact and derives nothing from it.
+//
+// A binary log cut exactly on a record boundary carries no evidence of the cut:
+// the format has no end marker, so such a file is a shorter valid log and ends
+// the read with io.EOF like any complete one. Only something that can see the
+// writer can tell those two apart.
+type TruncationError struct {
+	// Line is the 1-based number of the line the incomplete record began on, for
+	// a text log. It is 0 for a binary log, where Offset carries the position.
+	Line int
+	// Offset is the 0-based byte offset the incomplete record began at, for a
+	// binary log. It is 0 for a text log.
+	//
+	// It names where the incomplete record began, not where the stream stopped.
+	// That is the position a reader would open the file at to see what was lost;
+	// the stream stopped at Offset+Dropped.
+	Offset int64
+	// Format is the log format the reader was reading. It says which of Line and
+	// Offset to read, for the reason SyntaxError.Format gives.
+	Format Format
+	// Expected says what the reader still needed when the bytes ran out. It is
+	// not what sits at the position this error names: Line and Offset are pinned
+	// to the start of the incomplete record, while the value being read moves
+	// through it, so the two are rarely the same place. Error words it that way
+	// round.
+	Expected string
+	// Dropped is how many trailing bytes could not be decoded. It is always
+	// positive: bytes that run out at a record boundary are the clean end of a
+	// log and are reported as io.EOF, not as a truncation.
+	Dropped int64
+}
+
+// Error names where the incomplete record began, how many bytes were left
+// undecoded, and what was still to come. The position and the expectation are
+// stated apart, because Expected is rarely at the position named.
+func (e *TruncationError) Error() string {
+	if e.Format == FormatBinary {
+		return fmt.Sprintf("gatling: byte %d: the log is cut short: %d trailing bytes could not be decoded, and %s was still to come",
+			e.Offset, e.Dropped, e.Expected)
+	}
+
+	return fmt.Sprintf("gatling: line %d: the log is cut short: %d trailing bytes could not be decoded, and %s was still to come",
+		e.Line, e.Dropped, e.Expected)
+}
+
 // VersionError ends a read before any record is delivered: the log names a
 // version below the supported range, or names no release version at all.
 type VersionError struct {

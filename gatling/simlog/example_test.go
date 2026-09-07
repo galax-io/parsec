@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/galax-io/parsec/gatling"
 	"github.com/galax-io/parsec/gatling/simlog"
 	"github.com/galax-io/parsec/model"
 )
@@ -36,10 +37,14 @@ func ExampleNewRunReader() {
 	for {
 		item, err := rd.Next()
 		if err != nil {
-			// Only io.EOF is the end of the log. Any other error means the read
-			// failed, and the records already delivered are not a result — no
-			// total may be derived from them.
-			if !errors.Is(err, io.EOF) {
+			// io.EOF is the clean end of the log. A *gatling.TruncationError
+			// says the log was cut short — a run killed mid-flight — and the
+			// items already delivered are the ones it recorded; whether to use
+			// a run that did not finish is the caller's decision, and this
+			// example keeps what it has. Any other error means the read failed,
+			// and nothing delivered may be totalled.
+			var cutShort *gatling.TruncationError
+			if !errors.Is(err, io.EOF) && !errors.As(err, &cutShort) {
 				panic(err)
 			}
 

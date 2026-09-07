@@ -100,10 +100,13 @@ func (x *RunReader) Run() model.Run {
 
 // Next returns the next item of the run, or io.EOF at the end.
 //
-// A log that cannot be read in full yields a *gatling.SyntaxError naming the
-// line and what was expected there, and no item after it: a partial read cannot
-// produce counts that match the tool's own report, so it is refused rather than
-// reported. Every later call returns that same error.
+// A log that cannot be decoded yields a *gatling.SyntaxError naming the line and
+// what was expected there, and no item after it: a damaged log cannot produce
+// counts that match the tool's own report, so it is refused rather than
+// reported. A log that was merely cut short is a different thing and yields a
+// *gatling.TruncationError: the items before the cut are the ones the run
+// recorded, and what may be derived from a run that was killed is the caller's
+// to decide. Every later call returns that same error.
 //
 // The returned item's Groups slice is valid until the next call; copy it to
 // keep it.

@@ -48,18 +48,23 @@ func readGuarded(t *testing.T, what string, data []byte) {
 	}
 }
 
-// assertTyped insists that whatever ends a read is one of the two errors the
-// contract names, never something unexpected escaping from inside.
+// assertTyped insists that whatever ends a read is one of the errors the
+// contract names, never something unexpected escaping from inside. A mutation
+// that shortens a log — truncate, delete, and a flipped byte that removes a
+// terminator — ends it as a cut short rather than a malformed one, which is a
+// stated ending too.
 func assertTyped(t *testing.T, what string, err error) {
 	t.Helper()
 
 	var (
 		se *gatling.SyntaxError
 		ve *gatling.VersionError
+		te *gatling.TruncationError
 	)
 
-	if !errors.As(err, &se) && !errors.As(err, &ve) {
-		t.Fatalf("%s: read ended with %T (%v), want *gatling.SyntaxError or *gatling.VersionError", what, err, err)
+	if !errors.As(err, &se) && !errors.As(err, &ve) && !errors.As(err, &te) {
+		t.Fatalf("%s: read ended with %T (%v), want *gatling.SyntaxError, *gatling.VersionError or *gatling.TruncationError",
+			what, err, err)
 	}
 }
 
@@ -168,6 +173,19 @@ func FuzzReader(f *testing.F) {
 		}
 
 		f.Add(data)
+
+		// Cut short as well as whole. A run killed mid-flight leaves an
+		// unterminated final line, which is the input class
+		// *gatling.TruncationError exists for; seeding it aims the fuzzer at
+		// that state from the first run rather than leaving it to be found by
+		// mutation.
+		if len(data) > 3 {
+			f.Add(data[:len(data)-3])
+		}
+
+		if half := len(data) / 2; half > 0 {
+			f.Add(data[:half])
+		}
 	}
 
 	f.Fuzz(func(t *testing.T, data []byte) {

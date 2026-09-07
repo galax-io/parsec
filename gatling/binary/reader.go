@@ -33,10 +33,21 @@ import (
 // false for a log no larger than a few megabytes, which is the failure this
 // documentation exists to rule out.
 //
-// The first byte that cannot be decoded ends the read with a
-// *gatling.SyntaxError naming its offset, and every later Next returns that same
-// error. Records delivered before that point are not a result: no total may be
-// derived from them.
+// A read ends in one of three ways, and each ending is terminal — every later
+// Next returns the same value.
+//
+//   - io.EOF is a clean end: the log ended at a record boundary and every record
+//     it held was delivered.
+//   - A *gatling.TruncationError is a log cut short: the bytes ran out inside a
+//     record, which is how a run killed mid-flight ends. Every record before the
+//     cut was delivered and is exactly what an intact log would have given.
+//   - Any other error is a failed read — a *gatling.SyntaxError naming the byte
+//     that could not be decoded, or a failure of the source. Nothing may be
+//     derived from what was delivered.
+//
+// The format carries no end marker, so a log cut exactly on a record boundary is
+// a shorter valid log and ends cleanly. Only something that can see the writer
+// can tell that from a complete one.
 //
 // The stream must begin at the first byte of the file. See the package
 // documentation for why the format allows nothing else.
@@ -60,7 +71,11 @@ type Reader struct {
 // when the record cannot be read, when the version is below the supported range,
 // and when the version is not a plain release. A version above the range
 // succeeds and records a warning — or, under [gatling.WithStrict], fails with a
-// *gatling.UnverifiedError instead.
+// *gatling.UnverifiedError instead.//
+// The source may still be being written. A Read that blocks is a wait, not an
+// end, and a record split across reads is delivered once, when its last byte
+// arrives; the [github.com/galax-io/parsec/gatling/simlog] package documentation
+// states the contract in full, and it holds for this constructor too.
 func NewReader(r io.Reader, opts ...gatling.Option) (*Reader, error) {
 	rd := &Reader{rd: *newReader(r)}
 
@@ -102,9 +117,11 @@ func (r *Reader) Warnings() []gatling.Warning { return slices.Clone(r.warnings) 
 
 // Next returns the next record, or [io.EOF] at the end of the log.
 //
-// Any other error ends the read: there is no next record after it, the same
-// error is returned on every later call, and the records already delivered are
-// not a result.
+// Any other error ends the read: there is no next record after it, and the same
+// error is returned on every later call. A *gatling.TruncationError says the log
+// was cut short and that the records already delivered are what it recorded;
+// anything else says the read failed and that they are not a result. See
+// [Reader] for the three endings in full.
 //
 // The returned record's Groups slice is backed by memory the reader reuses. It
 // is valid until the next call; copy it to keep it.
@@ -125,6 +142,10 @@ func (r *Reader) Next() (gatling.Record, error) {
 
 		return gatling.Record{}, io.EOF
 	}
+
+	// Where this record begins, so a read that runs out inside it can say where
+	// to open the file and how much was lost.
+	r.rd.recordAt = r.rd.off
 
 	rec, err := r.record()
 	if err != nil {
