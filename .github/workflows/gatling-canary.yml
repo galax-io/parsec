@@ -56,7 +56,7 @@ jobs:
       # it hashes the build files, and those are identical across the matrix because
       # the version arrives as -Dgatling.version. Both legs would key alike, only one
       # could save, and the other would re-resolve its Gatling on every run.
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: |
             ~/.cache/coursier
