@@ -20,7 +20,21 @@ const mib = 1 << 20
 // which is the comparison the test exists to make.
 const samples = 64
 
-// sampler records the highest heap seen while the input flows through it.
+// budget is the peak heap this package documents for a decode of any size.
+const budget = 32 * mib
+
+// drift is how far the live heap may move between a run and one ten times
+// longer. SC-004 says the figure does not change; for a sampled measurement
+// this is what "does not change" has to mean.
+//
+// Sampling after a collection leaves almost no spread to allow for: every pair
+// measured for this change came back equal, 2.5 against 2.5 MiB idle and 2.3
+// against 2.3 under sixteen spinning goroutines at GOMAXPROCS=2. The unswept
+// figure this replaced is what a GitHub runner failed on, 7.4 against 15.9,
+// for a live heap that had not moved at all.
+const drift = 1 * mib
+
+// sampler records the highest live heap seen while the input flows through it.
 type sampler struct {
 	r     io.Reader
 	every int64
@@ -34,14 +48,32 @@ func (s *sampler) Read(p []byte) (int, error) {
 
 	if s.since >= s.every {
 		s.since = 0
-
-		var m runtime.MemStats
-
-		runtime.ReadMemStats(&m)
-		s.peak = max(s.peak, m.HeapAlloc)
+		s.peak = max(s.peak, liveHeap())
 	}
 
 	return n, err
+}
+
+// liveHeap collects, then reports what is still held.
+//
+// The collection is the measurement. HeapAlloc on its own counts what has been
+// allocated and not yet swept, so it reads the collector's backlog as if it
+// were retention: against a fixed live set it moves 2.0x when the machine is
+// idle and 8.4x under contention, while the same set sampled after a
+// collection moves 1.03x and 1.05x. A ten-times-longer run gives the collector
+// ten times as many chances to fall behind, which is why the unswept figure
+// grows with the log while the live heap does not — the growth a bare peak
+// comparison then reports as a leak.
+//
+// It costs about 280us against the 29us of the read alone, taken `samples`
+// times a run: under 20ms, against a decode measured in seconds.
+func liveHeap() uint64 {
+	var m runtime.MemStats
+
+	runtime.GC()
+	runtime.ReadMemStats(&m)
+
+	return m.HeapAlloc
 }
 
 func decodeSized(t *testing.T, size int64) (records int64, peak uint64) {
@@ -49,7 +81,7 @@ func decodeSized(t *testing.T, size int64) (records int64, peak uint64) {
 
 	runtime.GC()
 
-	src := &sampler{r: newSynthLog(size), every: size / samples}
+	src := &sampler{r: newSynthLog(size), every: max(size/samples, 1)}
 
 	rd, err := text.NewReader(src)
 	if err != nil {
@@ -59,7 +91,7 @@ func decodeSized(t *testing.T, size int64) (records int64, peak uint64) {
 	for {
 		_, err := rd.Next()
 		if errors.Is(err, io.EOF) {
-			return records, src.peak
+			return records, max(src.peak, liveHeap())
 		}
 
 		if err != nil {
@@ -71,19 +103,15 @@ func decodeSized(t *testing.T, size int64) (records int64, peak uint64) {
 }
 
 // TestPeakMemory proves the reader's memory does not grow with the log: a
-// 256 MiB log and one ten times larger must both stay under 32 MiB of heap,
-// and the larger one may peak at most twice as high as the smaller plus a fixed
-// collector allowance (SC-004). Growth proportional to the input would show as
-// ten times — 74 MiB against the smaller run's figure — which neither the factor
-// nor the allowance can absorb, and which the 32 MiB bound refuses outright.
+// 256 MiB log and one ten times larger must both stay inside the budget, and
+// the live heap of the larger is the live heap of the smaller, within drift
+// (SC-004). Growth proportional to the input would show as ten times the
+// figure and fails both bounds.
 //
-// The allowance is additive because the noise is. HeapAlloc counts garbage the
-// collector has not reached yet, and a ten-times-longer run gives it ten times
-// as many chances to fall behind, so a loaded machine samples several MiB more
-// of it while the live heap stays one line buffer and a bounded name table. A
-// factor alone measures that lag as if it were retention: this machine reads
-// 5.3 and 5.4 MiB, and a GitHub runner read 7.4 and 15.9 — under the budget by
-// a factor of two, and a fifth of proportional growth, but 7% over a bare 2x.
+// What is held is one line buffer and a bounded name table, however long the
+// log runs, and sampling after a collection is what makes the two figures
+// comparable: this is the assertion a GitHub runner failed at 7.4 against
+// 15.9 MiB, on unswept garbage, for a live heap that had not moved.
 //
 //nolint:paralleltest // measures peak heap and must run alone
 func TestPeakMemory(t *testing.T) {
@@ -92,8 +120,8 @@ func TestPeakMemory(t *testing.T) {
 	n1, peak1 := decodeSized(t, small)
 	t.Logf("%d MiB: %d records, peak heap %.1f MiB", small/mib, n1, float64(peak1)/mib)
 
-	if peak1 >= 32*mib {
-		t.Fatalf("peak heap %.1f MiB for a %d MiB log, want under 32 MiB", float64(peak1)/mib, small/mib)
+	if peak1 >= budget {
+		t.Fatalf("peak heap %.1f MiB for a %d MiB log, want under %d MiB", float64(peak1)/mib, small/mib, budget/mib)
 	}
 
 	if testing.Short() {
@@ -103,13 +131,7 @@ func TestPeakMemory(t *testing.T) {
 	n2, peak2 := decodeSized(t, 10*small)
 	t.Logf("%d MiB: %d records, peak heap %.1f MiB", 10*small/mib, n2, float64(peak2)/mib)
 
-	// collectorAllowance is the garbage a busier machine has in flight when the
-	// sample is taken, sized to the spread the CI runner showed. It is well
-	// inside the 32 MiB bound, so the relative check still does work the
-	// absolute one does not.
-	const collectorAllowance = 12 * mib
-
-	if peak2 >= 32*mib || peak2 > 2*peak1+collectorAllowance {
+	if peak2 >= budget || peak2 > peak1+drift {
 		t.Fatalf("peak heap grew from %.1f MiB to %.1f MiB when the log grew ten times", float64(peak1)/mib, float64(peak2)/mib)
 	}
 }
