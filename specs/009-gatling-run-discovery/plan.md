@@ -74,6 +74,21 @@ read, at most one `stat` per entry, one bounded read of `lastRun.txt` (64 KiB ca
 allocations proportional to the entry count and independent of anything inside a run. No existing
 benchmark is touched; no decoder code path changes, so none can regress.
 
+**Measured 2026-09-08 (T036)**, darwin/arm64, `-benchtime=200ms`:
+
+| Benchmark | ns/op | B/op | allocs/op |
+|---|---|---|---|
+| `BenchmarkFindRun/runs=10` | 64 214 | 14 232 | 102 |
+| `BenchmarkFindRun/runs=100` | 524 134 | 118 362 | 825 |
+| `BenchmarkFindRun/runs=1000` | 4 932 562 | 1 166 752 | 8 028 |
+| `BenchmarkFindRunLastRun` (1000 runs, pointer read) | 4 601 819 | 1 152 357 | 8 041 |
+| `BenchmarkFindRunNamedPath` | 2 068 | 640 | 4 |
+
+The bound holds: cost is linear in the entry count — roughly 8 allocations and 1.2 KB per entry at
+every size — and reading `lastRun.txt` adds 13 allocations to a 1000-run root, which is the file
+itself and not per-entry work. A path that already names a run costs two stats and four allocations,
+listing nothing, which is the floor the other rows are measured against.
+
 **Constraints**: no `simulation.log` is opened (FR-013) and no version gate runs (FR-014); ordering
 is total and platform-independent (FR-008); nothing outside the results root is followed (FR-007);
 an unreadable directory is a failure and never an absence (FR-012). No panic on any input, including
@@ -82,7 +97,7 @@ a `lastRun.txt` of arbitrary bytes.
 **Scale/Scope**: Gatling 3.11.5 through 3.15.1 — the same range the codecs cover, though discovery
 reads no version. One issue,
 [#11](https://github.com/galax-io/parsec/issues/11), one commit. Four new exported identifiers; one
-new corpus recording (see the open decision below); no existing file's behaviour changed.
+new corpus recording, made (below); no existing file's behaviour changed.
 
 ## Constitution Check
 
@@ -100,9 +115,9 @@ new corpus recording (see the open decision below); no existing file's behaviour
       when it is read. No codec, no `io.Reader` entry point and no chunking is added or altered.
       Memory is bounded — the entry list and a 64 KiB cap on `lastRun.txt` — and no input panics.
 - [x] **III. Golden-Corpus Testing** — no version is added and no codec changes, so no decoder
-      corpus entry is needed. One new recording is proposed for the one artefact this feature parses
-      and the existing corpus cannot supply, with the reason it cannot be produced later; the
-      decision is open and is called out below. Everything else is built in `t.TempDir()` and is a
+      corpus entry is needed. One new recording **was made** for the one artefact this feature parses
+      and the existing corpus could not supply — `testdata/corpus/gatling/lastrun/`, three real Maven
+      runs — and it corrected two things reading the plugin had got wrong (see below). Everything else is built in `t.TempDir()` and is a
       **fixture, not corpus** — real directories rather than mocks, which is what Principle III asks
       when a real path exists. Tests land with the change; coverage floors (90% decoder packages /
       80% module) re-measured and reported in the PR.
@@ -125,15 +140,19 @@ new corpus recording (see the open decision below); no existing file's behaviour
 
 No row fails. Complexity Tracking is empty.
 
-**One decision is open and belongs to the maintainer, not to this plan.** Research
+**The one open decision was taken: the recording was made.** Research
 [R9](research.md#r9--what-the-corpus-already-proves-and-the-one-thing-it-cannot) shows that a real
-`lastRun.txt` can only come from a Maven build, and the corpus simulation project is sbt. The plan
-is written for recording it — a `pom.xml` beside `build.sbt`, one Maven run into one root, committed
-with its console output — and it is isolated to two tasks, the recording and the integration test
-that reads it, so that declining it removes both and changes nothing else. The Principle III row above is ticked on the
-assumption that it happens; if it does not, the row still holds on the bytecode evidence in
-[R1](research.md#r1--lastruntxt-is-written-by-the-maven-plugin-not-by-gatling), and that reasoning
-should be recorded in the PR rather than left implicit.
+`lastRun.txt` can only come from a Maven build, and the corpus simulation project was sbt-only; a
+`pom.xml` beside `build.sbt` closed that, and `testdata/corpus/gatling/lastrun/` is the result.
+
+It repaid the cost immediately, and not in the way it had been justified. The first Maven run
+produced a run directory and **no** `lastRun.txt`, which sent the search back into
+`GatlingMojo.execute()` and found the write gated on `failOnError` being false, against a default of
+true. Reading the writer had settled the file's *format* and could not settle when it exists at all.
+The recording also disproved this feature's own claim that a run directory is named in local time: it
+is UTC, on both build tools. Both corrections are now in R1 and R4, in the spec, in the API doc
+comments and in `RECORDING.md` — and neither would have been caught by any amount of further
+reading.
 
 ## Project Structure
 
@@ -163,8 +182,8 @@ gatling/
 ├── discover_test.go              # new — table-driven over t.TempDir(): the newest run, the
 │                                 #   pointer, the four pointers-to-nothing, a path that is
 │                                 #   already a run, shared mtimes, symlinks, permissions
-├── discover_corpus_test.go       # new — the lastRun.txt recording, integration tag, skips
-│                                 #   with a reason when Maven is absent
+├── discover_corpus_test.go       # new — four tests over the recording, integration tag,
+│                                 #   skipping with a reason when it is absent
 ├── discover_fuzz_test.go         # new — FuzzLastRun: no panic, nothing outside the root
 ├── discover_bench_test.go        # new — BenchmarkFindRun over a synthetic 1000-run root
 ├── discover_example_test.go      # new — FindRun composed with os.Open and simlog
@@ -172,8 +191,11 @@ gatling/
 ├── errors_test.go                # + its message, and that it is not what an unreadable
 │                                 #   directory returns
 └── doc.go                        # package doc widens: finding the run sits before the codecs
-testdata/corpus/gatling/lastrun/  # new recording — a Maven results root with lastRun.txt,
-                                  #   two run directories and the console output (open decision)
+testdata/corpus/gatling/simulation/pom.xml   # new — the same sources under Maven, the only
+                                  #   build tool that writes a lastRun.txt at all
+testdata/corpus/gatling/lastrun/  # new recording — a Maven results root: three run
+                                  #   directories, the lastRun.txt naming the middle one,
+                                  #   all three runs' console output, RECORDING.md
 CHANGELOG.md                      # Added: gatling.FindRun and the three types beside it
 ```
 
