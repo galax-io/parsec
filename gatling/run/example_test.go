@@ -1,4 +1,4 @@
-package gatling_test
+package run_test
 
 import (
 	"fmt"
@@ -6,15 +6,15 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/galax-io/parsec/gatling"
+	"github.com/galax-io/parsec/gatling/run"
 	"github.com/galax-io/parsec/gatling/simlog"
 )
 
 // Read an archived run whose directory is known, without joining "simulation.log"
-// by hand. FindRun stops one line short of opening the log, so the version gate
+// by hand. Find stops one line short of opening the log, so the version gate
 // and the codec still belong to the reader.
-func ExampleFindRun() {
-	loc, err := gatling.FindRun(filepath.Join("..", "testdata", "corpus", "gatling", "3.11.5"))
+func ExampleFind() {
+	loc, err := run.Find(filepath.Join("..", "..", "testdata", "corpus", "gatling", "3.11.5"))
 	if err != nil {
 		panic(err)
 	}
@@ -44,7 +44,7 @@ func ExampleFindRun() {
 // is the ordinary case, since only gatling-maven-plugin writes one and its
 // verify goal deletes it — the most recently modified run wins, and ties break
 // on the directory name, which for a Gatling run id is run-start order.
-func ExampleFindRun_resultsRoot() {
+func ExampleFind_resultsRoot() {
 	root, err := os.MkdirTemp("", "gatling-results")
 	if err != nil {
 		panic(err)
@@ -72,7 +72,7 @@ func ExampleFindRun_resultsRoot() {
 		}
 	}
 
-	loc, err := gatling.FindRun(root)
+	loc, err := run.Find(root)
 	if err != nil {
 		panic(err)
 	}

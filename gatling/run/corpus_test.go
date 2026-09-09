@@ -1,6 +1,6 @@
 //go:build integration
 
-package gatling_test
+package run_test
 
 import (
 	"os"
@@ -9,13 +9,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/galax-io/parsec/gatling"
+	"github.com/galax-io/parsec/gatling/run"
 )
 
 // recordedRoot is the results root recorded from three real Maven runs. See
 // testdata/corpus/gatling/lastrun/RECORDING.md for how it was made and why it
 // took three of them.
-const recordedRoot = "../testdata/corpus/gatling/lastrun/results"
+const recordedRoot = "../../testdata/corpus/gatling/lastrun/results"
 
 // namedByRecording reads the recorded lastRun.txt the way a person would, so the
 // assertions below compare against the file rather than against a constant that
@@ -39,22 +39,22 @@ func namedByRecording(t *testing.T) string {
 // wrote. Everything else about the file is held by unit tests written against
 // gatling-maven-plugin's bytecode; this is the check that the bytecode was read
 // correctly.
-func TestFindRunOverRecordedResultsRoot(t *testing.T) {
+func TestFindOverRecordedResultsRoot(t *testing.T) {
 	t.Parallel()
 
 	named := namedByRecording(t)
 
-	loc, err := gatling.FindRun(recordedRoot)
+	loc, err := run.Find(recordedRoot)
 	if err != nil {
-		t.Fatalf("FindRun(%s): %v", recordedRoot, err)
+		t.Fatalf("Find(%s): %v", recordedRoot, err)
 	}
 
 	if want := filepath.Join(recordedRoot, named); loc.Dir != want {
 		t.Errorf("Dir = %s, want %s", loc.Dir, want)
 	}
 
-	if loc.Found != gatling.FoundByLastRun {
-		t.Errorf("Found = %v, want %v", loc.Found, gatling.FoundByLastRun)
+	if loc.Found != run.FoundByLastRun {
+		t.Errorf("Found = %v, want %v", loc.Found, run.FoundByLastRun)
 	}
 
 	if _, err := os.Stat(loc.Log); err != nil {
@@ -173,16 +173,16 @@ func TestRecordedRootWithoutPointerIsDeterministic(t *testing.T) {
 		}
 	}
 
-	var first gatling.RunLocation
+	var first run.Location
 
 	for i := range 10 {
-		loc, err := gatling.FindRun(root)
+		loc, err := run.Find(root)
 		if err != nil {
-			t.Fatalf("FindRun attempt %d: %v", i, err)
+			t.Fatalf("Find attempt %d: %v", i, err)
 		}
 
-		if loc.Found != gatling.FoundByNewest {
-			t.Fatalf("Found = %v, want %v", loc.Found, gatling.FoundByNewest)
+		if loc.Found != run.FoundByNewest {
+			t.Fatalf("Found = %v, want %v", loc.Found, run.FoundByNewest)
 		}
 
 		if i == 0 {

@@ -1,4 +1,4 @@
-package gatling
+package run
 
 import (
 	"errors"
@@ -16,8 +16,8 @@ import (
 //
 // It is exported rather than applied automatically: resolved against a process
 // working directory it means one thing for a CLI run inside a project and
-// something else entirely for a server, and FindRun cannot tell the two apart.
-// A caller that wants it says so — gatling.FindRun(gatling.DefaultResultsRoot)
+// something else entirely for a server, and Find cannot tell the two apart.
+// A caller that wants it says so — run.Find(run.DefaultResultsRoot)
 // — and one that has its own path is never second-guessed.
 //
 // Gradle writes to "build/reports/gatling", and a run configured by hand writes
@@ -32,7 +32,7 @@ const (
 	// lastRunFile is what gatling-maven-plugin leaves in the results root naming
 	// the run directories its execution created. Nothing else writes one: not
 	// Gatling, not the Gradle plugin, and not even that plugin unless its
-	// failOnError parameter is turned off, which is not its default. See FindRun
+	// failOnError parameter is turned off, which is not its default. See Find
 	// for what is assumed of it.
 	lastRunFile = "lastRun.txt"
 	// maxLastRunSize caps the read of lastRunFile. The real file holds one short
@@ -44,24 +44,24 @@ const (
 	runIDTimeLen = 17
 )
 
-// ErrNoPath is returned by FindRun when it is given an empty path.
+// ErrNoPath is returned by Find when it is given an empty path.
 //
 // It exists because "" is the zero value of every configuration field, every
 // command-line flag left unset and every omitted JSON member. Guessing a results
 // root for it would turn missing input into a successful read of some unrelated
 // run, which is worse than any error: the caller gets a plausible report about a
 // test nobody asked for. Pass DefaultResultsRoot to ask for the usual layout.
-var ErrNoPath = errors.New("gatling: no path given; pass a results root, a run directory, or gatling.DefaultResultsRoot")
+var ErrNoPath = errors.New("gatling: no path given; pass a results root, a run directory, or run.DefaultResultsRoot")
 
-// RunLocation is where a Gatling run's artefacts sit, and how they were found.
+// Location is where a Gatling run's artefacts sit, and how they were found.
 //
 // It is not a result. A run's records are read by opening Log through one of the
 // codecs; this type is discarded the moment that happens, and the canonical
 // result of a run is model.Run.
-type RunLocation struct {
+type Location struct {
 	// Dir is the run directory, cleaned: absolute if the caller's path was,
 	// relative if it was not. Two spellings of one run yield one Dir, so a
-	// RunLocation is safe to compare and to use as a map key.
+	// Location is safe to compare and to use as a map key.
 	Dir string
 	// Log is the simulation.log inside Dir. It is always Dir joined with
 	// "simulation.log": a directory is a run because it holds one, so the two
@@ -83,7 +83,7 @@ type FoundBy uint8
 
 // The three rules that can select a run, behind the unknown sentinel.
 const (
-	// FoundByUnknown is the zero value: no run was selected. FindRun never
+	// FoundByUnknown is the zero value: no run was selected. Find never
 	// returns it with a nil error.
 	FoundByUnknown FoundBy = iota
 	// FoundByPath means the path named the run itself, as a directory or as the
@@ -111,7 +111,7 @@ func (f FoundBy) String() string {
 	return "FoundBy(" + strconv.Itoa(int(f)) + ")"
 }
 
-// FindRun locates a Gatling run. It returns where the run's artefacts sit and
+// Find locates a Gatling run. It returns where the run's artefacts sit and
 // which rule chose them; it opens no simulation.log and applies no version gate,
 // so a run whose log is truncated, damaged or out of the supported range still
 // resolves and fails only when the log is read.
@@ -127,17 +127,17 @@ func (f FoundBy) String() string {
 // path is required. An empty path returns ErrNoPath rather than a guess; pass
 // DefaultResultsRoot for the results root Maven and sbt write to.
 //
-// When no run is found it returns a *RunNotFoundError naming the directory that
+// When no run is found it returns a *NotFoundError naming the directory that
 // was searched. A directory that cannot be read is reported as that failure,
 // wrapping the *fs.PathError, and never as an absence of runs.
-func FindRun(path string) (RunLocation, error) {
+func Find(path string) (Location, error) {
 	if path == "" {
-		return RunLocation{}, ErrNoPath
+		return Location{}, ErrNoPath
 	}
 
 	// Cleaned once, here, so that every path this function reports is canonical
 	// however the caller spelled it: "x/", "./x" and "a/../x" are one run and
-	// must produce one RunLocation.
+	// must produce one Location.
 	root := filepath.Clean(path)
 
 	if loc, ok := asRun(root); ok {
@@ -158,16 +158,16 @@ func FindRun(path string) (RunLocation, error) {
 // A directory *named* simulation.log is still tested for a log inside it: what a
 // run directory is called is Gatling's to choose and an archive's to rewrite, so
 // nothing here may turn on it.
-func asRun(path string) (RunLocation, bool) {
+func asRun(path string) (Location, bool) {
 	if filepath.Base(path) == logName && isRegular(path) {
-		return RunLocation{Dir: filepath.Dir(path), Log: path, Found: FoundByPath}, true
+		return Location{Dir: filepath.Dir(path), Log: path, Found: FoundByPath}, true
 	}
 
 	if log := filepath.Join(path, logName); isRegular(log) {
-		return RunLocation{Dir: path, Log: log, Found: FoundByPath}, true
+		return Location{Dir: path, Log: log, Found: FoundByPath}, true
 	}
 
-	return RunLocation{}, false
+	return Location{}, false
 }
 
 // isRegular reports whether path is a regular file that can be stat-ed.
@@ -190,7 +190,7 @@ func notADirectory(path string) bool {
 }
 
 // findInRoot searches a results root: the run lastRun.txt names, else the newest.
-func findInRoot(root string) (RunLocation, error) {
+func findInRoot(root string) (Location, error) {
 	entries, err := os.ReadDir(root)
 	if err != nil {
 		// Nothing there, or there but not a directory, means the caller's
@@ -200,24 +200,24 @@ func findInRoot(root string) (RunLocation, error) {
 		// a clean "no runs here" sends a caller looking for a run that was never
 		// the problem.
 		if errors.Is(err, fs.ErrNotExist) || notADirectory(root) {
-			return RunLocation{}, &RunNotFoundError{Dir: root}
+			return Location{}, &NotFoundError{Dir: root}
 		}
 
-		return RunLocation{}, fmt.Errorf("gatling: reading results root %s: %w", root, err)
+		return Location{}, fmt.Errorf("gatling: reading results root %s: %w", root, err)
 	}
 
 	runs, err := runsIn(root, entries)
 	if err != nil {
-		return RunLocation{}, err
+		return Location{}, err
 	}
 
 	if len(runs) == 0 {
-		return RunLocation{}, &RunNotFoundError{Dir: root}
+		return Location{}, &NotFoundError{Dir: root}
 	}
 
 	named, err := namedByLastRun(root, runs)
 	if err != nil {
-		return RunLocation{}, err
+		return Location{}, err
 	}
 
 	if len(named) > 0 {
@@ -473,8 +473,8 @@ func runStart(name string) (string, bool) {
 }
 
 // located builds the result for a run directory named relative to root.
-func located(root, name string, found FoundBy) RunLocation {
+func located(root, name string, found FoundBy) Location {
 	dir := filepath.Join(root, name)
 
-	return RunLocation{Dir: dir, Log: filepath.Join(dir, logName), Found: found}
+	return Location{Dir: dir, Log: filepath.Join(dir, logName), Found: found}
 }

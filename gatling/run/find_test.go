@@ -1,4 +1,4 @@
-package gatling_test
+package run_test
 
 import (
 	"errors"
@@ -10,8 +10,20 @@ import (
 	"testing"
 	"time"
 
-	"github.com/galax-io/parsec/gatling"
+	"github.com/galax-io/parsec/gatling/run"
 )
+
+// mustContain fails unless every want appears in msg. The gatling package's tests
+// have their own copy; a test helper is not worth an export.
+func mustContain(t *testing.T, msg string, wants ...string) {
+	t.Helper()
+
+	for _, want := range wants {
+		if !strings.Contains(msg, want) {
+			t.Fatalf("message %q does not contain %q", msg, want)
+		}
+	}
+}
 
 // Three real run ids, from the console output the 3.13.1, 3.14.9 and 3.15.1
 // recordings were captured with. Gatling names a run directory
@@ -102,14 +114,14 @@ func TestFoundByString(t *testing.T) {
 
 	tests := []struct {
 		name string
-		got  gatling.FoundBy
+		got  run.FoundBy
 		want string
 	}{
-		{name: "zero value", got: gatling.FoundByUnknown, want: "unknown"},
-		{name: "named by the caller", got: gatling.FoundByPath, want: "path"},
-		{name: "named by lastRun.txt", got: gatling.FoundByLastRun, want: "lastRun.txt"},
-		{name: "newest in the results root", got: gatling.FoundByNewest, want: "newest"},
-		{name: "out of range", got: gatling.FoundBy(9), want: "FoundBy(9)"},
+		{name: "zero value", got: run.FoundByUnknown, want: "unknown"},
+		{name: "named by the caller", got: run.FoundByPath, want: "path"},
+		{name: "named by lastRun.txt", got: run.FoundByLastRun, want: "lastRun.txt"},
+		{name: "newest in the results root", got: run.FoundByNewest, want: "newest"},
+		{name: "out of range", got: run.FoundBy(9), want: "FoundBy(9)"},
 	}
 
 	for _, tt := range tests {
@@ -123,33 +135,33 @@ func TestFoundByString(t *testing.T) {
 	}
 }
 
-// The zero value must be the sentinel and never a real rule: a RunLocation that
+// The zero value must be the sentinel and never a real rule: a Location that
 // was never filled in has to be distinguishable from one found by a path, or a
 // caller reporting how it chose a run reports the first constant by accident.
 func TestFoundByZeroValueIsUnknown(t *testing.T) {
 	t.Parallel()
 
-	var zero gatling.FoundBy
-	if zero != gatling.FoundByUnknown {
+	var zero run.FoundBy
+	if zero != run.FoundByUnknown {
 		t.Fatalf("zero FoundBy = %v, want FoundByUnknown", zero)
 	}
 
-	var loc gatling.RunLocation
-	if loc.Found != gatling.FoundByUnknown || loc.Dir != "" || loc.Log != "" {
-		t.Fatalf("zero RunLocation = %+v, want every field zero", loc)
+	var loc run.Location
+	if loc.Found != run.FoundByUnknown || loc.Dir != "" || loc.Log != "" {
+		t.Fatalf("zero Location = %+v, want every field zero", loc)
 	}
 }
 
 // T009 — the ordinary case, and the one every Gradle and sbt user gets: there is
 // no lastRun.txt to prefer, so the newest run in the root is the answer.
-func TestFindRunNewest(t *testing.T) {
+func TestFindNewest(t *testing.T) {
 	t.Parallel()
 
 	root := rootWithThreeRuns(t)
 
-	loc, err := gatling.FindRun(root)
+	loc, err := run.Find(root)
 	if err != nil {
-		t.Fatalf("FindRun(%s): %v", root, err)
+		t.Fatalf("Find(%s): %v", root, err)
 	}
 
 	if want := filepath.Join(root, runNames[2]); loc.Dir != want {
@@ -160,8 +172,8 @@ func TestFindRunNewest(t *testing.T) {
 		t.Errorf("Log = %s, want %s", loc.Log, want)
 	}
 
-	if loc.Found != gatling.FoundByNewest {
-		t.Errorf("Found = %v, want %v", loc.Found, gatling.FoundByNewest)
+	if loc.Found != run.FoundByNewest {
+		t.Errorf("Found = %v, want %v", loc.Found, run.FoundByNewest)
 	}
 }
 
@@ -171,7 +183,7 @@ func TestFindRunNewest(t *testing.T) {
 // lastRun.txt. An ordering that is merely "newest" picks arbitrarily here; a
 // total one picks the highest name, which for a Gatling run id is the latest
 // run start.
-func TestFindRunDeterministicUnderSharedModTime(t *testing.T) {
+func TestFindDeterministicUnderSharedModTime(t *testing.T) {
 	t.Parallel()
 
 	root := t.TempDir()
@@ -184,9 +196,9 @@ func TestFindRunDeterministicUnderSharedModTime(t *testing.T) {
 	want := filepath.Join(root, runNames[2])
 
 	for i := range 20 {
-		loc, err := gatling.FindRun(root)
+		loc, err := run.Find(root)
 		if err != nil {
-			t.Fatalf("FindRun attempt %d: %v", i, err)
+			t.Fatalf("Find attempt %d: %v", i, err)
 		}
 
 		if loc.Dir != want {
@@ -200,24 +212,24 @@ func TestFindRunDeterministicUnderSharedModTime(t *testing.T) {
 // CLI standing in a project.
 //
 //nolint:paralleltest // t.Chdir cannot be used from a parallel test.
-func TestFindRunDefaultResultsRoot(t *testing.T) {
+func TestFindDefaultResultsRoot(t *testing.T) {
 	project := t.TempDir()
 	dir := mkRun(t, filepath.Join(project, "target", "gatling"), runNames[0])
 	touchLog(t, dir, time.Date(2026, time.September, 6, 4, 47, 0, 0, time.UTC))
 
 	t.Chdir(project)
 
-	loc, err := gatling.FindRun(gatling.DefaultResultsRoot)
+	loc, err := run.Find(run.DefaultResultsRoot)
 	if err != nil {
-		t.Fatalf("FindRun(DefaultResultsRoot): %v", err)
+		t.Fatalf("Find(DefaultResultsRoot): %v", err)
 	}
 
 	if want := filepath.Join("target", "gatling", runNames[0]); loc.Dir != want {
 		t.Errorf("Dir = %s, want %s", loc.Dir, want)
 	}
 
-	if loc.Found != gatling.FoundByNewest {
-		t.Errorf("Found = %v, want %v", loc.Found, gatling.FoundByNewest)
+	if loc.Found != run.FoundByNewest {
+		t.Errorf("Found = %v, want %v", loc.Found, run.FoundByNewest)
 	}
 }
 
@@ -227,7 +239,7 @@ func TestFindRunDefaultResultsRoot(t *testing.T) {
 // filesystem access, so a server cannot be steered by its own working directory.
 //
 //nolint:paralleltest // t.Chdir cannot be used from a parallel test.
-func TestFindRunEmptyPathIsRefused(t *testing.T) {
+func TestFindEmptyPathIsRefused(t *testing.T) {
 	project := t.TempDir()
 	touchLog(t, mkRun(t, filepath.Join(project, "target", "gatling"), runNames[0]),
 		time.Date(2026, time.September, 6, 4, 47, 0, 0, time.UTC))
@@ -236,19 +248,19 @@ func TestFindRunEmptyPathIsRefused(t *testing.T) {
 	// on there being nothing to find.
 	t.Chdir(project)
 
-	loc, err := gatling.FindRun("")
-	if !errors.Is(err, gatling.ErrNoPath) {
-		t.Fatalf(`FindRun("") error = %v, want ErrNoPath`, err)
+	loc, err := run.Find("")
+	if !errors.Is(err, run.ErrNoPath) {
+		t.Fatalf(`Find("") error = %v, want ErrNoPath`, err)
 	}
 
-	if loc != (gatling.RunLocation{}) {
+	if loc != (run.Location{}) {
 		t.Errorf("location = %+v, want the zero value beside an error", loc)
 	}
 }
 
 // T012 — Gradle's layout is not a second thing to search for. It is passed, and
 // then it is just a results root like any other.
-func TestFindRunGradleLayout(t *testing.T) {
+func TestFindGradleLayout(t *testing.T) {
 	t.Parallel()
 
 	project := t.TempDir()
@@ -260,9 +272,9 @@ func TestFindRunGradleLayout(t *testing.T) {
 	touchLog(t, mkRun(t, filepath.Join(project, "target", "gatling"), runNames[2]),
 		time.Date(2026, time.September, 6, 4, 49, 0, 0, time.UTC))
 
-	loc, err := gatling.FindRun(root)
+	loc, err := run.Find(root)
 	if err != nil {
-		t.Fatalf("FindRun(%s): %v", root, err)
+		t.Fatalf("Find(%s): %v", root, err)
 	}
 
 	if want := filepath.Join(root, runNames[1]); loc.Dir != want {
@@ -273,7 +285,7 @@ func TestFindRunGradleLayout(t *testing.T) {
 // T013 — only a simulation.log makes a directory a run. Gatling stopped
 // producing reports in 3.13.5, so a run without one is ordinary; a report
 // without a log is not a run at all.
-func TestFindRunCandidates(t *testing.T) {
+func TestFindCandidates(t *testing.T) {
 	t.Parallel()
 
 	root := t.TempDir()
@@ -293,16 +305,16 @@ func TestFindRunCandidates(t *testing.T) {
 		t.Fatalf("write: %v", err)
 	}
 
-	run := mkRun(t, root, runNames[0])
-	touchLog(t, run, time.Date(2026, time.September, 6, 4, 47, 0, 0, time.UTC))
+	runDir := mkRun(t, root, runNames[0])
+	touchLog(t, runDir, time.Date(2026, time.September, 6, 4, 47, 0, 0, time.UTC))
 
-	loc, err := gatling.FindRun(root)
+	loc, err := run.Find(root)
 	if err != nil {
-		t.Fatalf("FindRun(%s): %v", root, err)
+		t.Fatalf("Find(%s): %v", root, err)
 	}
 
-	if loc.Dir != run {
-		t.Errorf("Dir = %s, want %s — a directory without a simulation.log is not a run", loc.Dir, run)
+	if loc.Dir != runDir {
+		t.Errorf("Dir = %s, want %s — a directory without a simulation.log is not a run", loc.Dir, runDir)
 	}
 }
 
@@ -319,32 +331,32 @@ func writeLastRun(t *testing.T, root, content string) {
 // T017 — issue #11's acceptance case. The middle run is neither newest nor
 // oldest, so a pass proves the pointer beat the clock rather than agreeing with
 // it by luck.
-func TestFindRunLastRunBeatsModTime(t *testing.T) {
+func TestFindLastRunBeatsModTime(t *testing.T) {
 	t.Parallel()
 
 	root := rootWithThreeRuns(t)
 	writeLastRun(t, root, runNames[1]+"\n")
 
-	withPointer, err := gatling.FindRun(root)
+	withPointer, err := run.Find(root)
 	if err != nil {
-		t.Fatalf("FindRun with lastRun.txt: %v", err)
+		t.Fatalf("Find with lastRun.txt: %v", err)
 	}
 
 	if want := filepath.Join(root, runNames[1]); withPointer.Dir != want {
 		t.Errorf("Dir = %s, want %s", withPointer.Dir, want)
 	}
 
-	if withPointer.Found != gatling.FoundByLastRun {
-		t.Errorf("Found = %v, want %v", withPointer.Found, gatling.FoundByLastRun)
+	if withPointer.Found != run.FoundByLastRun {
+		t.Errorf("Found = %v, want %v", withPointer.Found, run.FoundByLastRun)
 	}
 
 	if err := os.Remove(filepath.Join(root, "lastRun.txt")); err != nil {
 		t.Fatalf("remove lastRun.txt: %v", err)
 	}
 
-	withoutPointer, err := gatling.FindRun(root)
+	withoutPointer, err := run.Find(root)
 	if err != nil {
-		t.Fatalf("FindRun without lastRun.txt: %v", err)
+		t.Fatalf("Find without lastRun.txt: %v", err)
 	}
 
 	if want := filepath.Join(root, runNames[2]); withoutPointer.Dir != want {
@@ -363,7 +375,7 @@ func TestFindRunLastRunBeatsModTime(t *testing.T) {
 // failed. Neither is matched as text — they name no directory, so they fail the
 // same existence check every other non-name fails, and the plugin can reword
 // them freely.
-func TestFindRunLastRunPointingAtNothing(t *testing.T) {
+func TestFindLastRunPointingAtNothing(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -392,17 +404,17 @@ func TestFindRunLastRunPointingAtNothing(t *testing.T) {
 
 			writeLastRun(t, root, tt.content)
 
-			loc, err := gatling.FindRun(root)
+			loc, err := run.Find(root)
 			if err != nil {
-				t.Fatalf("FindRun: %v", err)
+				t.Fatalf("Find: %v", err)
 			}
 
 			if want := filepath.Join(root, runNames[2]); loc.Dir != want {
 				t.Errorf("Dir = %s, want %s", loc.Dir, want)
 			}
 
-			if loc.Found != gatling.FoundByNewest {
-				t.Errorf("Found = %v, want %v", loc.Found, gatling.FoundByNewest)
+			if loc.Found != run.FoundByNewest {
+				t.Errorf("Found = %v, want %v", loc.Found, run.FoundByNewest)
 			}
 		})
 	}
@@ -411,7 +423,7 @@ func TestFindRunLastRunPointingAtNothing(t *testing.T) {
 // T019 — nothing outside the results root is followed. Each case is asserted
 // against a tree where the escape target really is a run, so a passing test
 // means the rule bit rather than that the path happened to miss.
-func TestFindRunLastRunContainment(t *testing.T) {
+func TestFindLastRunContainment(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -446,9 +458,9 @@ func TestFindRunLastRunContainment(t *testing.T) {
 
 			writeLastRun(t, root, tt.line(escape)+"\n")
 
-			loc, err := gatling.FindRun(root)
+			loc, err := run.Find(root)
 			if err != nil {
-				t.Fatalf("FindRun: %v", err)
+				t.Fatalf("Find: %v", err)
 			}
 
 			if want := filepath.Join(root, runNames[2]); loc.Dir != want {
@@ -461,7 +473,7 @@ func TestFindRunLastRunContainment(t *testing.T) {
 // T020 — the file's shape, as gatling-maven-plugin writes it. Lines are
 // File.getName() joined by System.lineSeparator(), so CRLF is what a Windows
 // build produces; the cap is this package's own, not the plugin's.
-func TestFindRunLastRunShape(t *testing.T) {
+func TestFindLastRunShape(t *testing.T) {
 	t.Parallel()
 
 	// runNames[0] is the oldest, so naming it proves the file was read: the
@@ -472,27 +484,27 @@ func TestFindRunLastRunShape(t *testing.T) {
 		name    string
 		content string
 		want    string
-		found   gatling.FoundBy
+		found   run.FoundBy
 	}{
-		{name: "bare name, no trailing newline", content: oldest, want: oldest, found: gatling.FoundByLastRun},
-		{name: "trailing LF", content: oldest + "\n", want: oldest, found: gatling.FoundByLastRun},
-		{name: "CRLF, as a Windows build writes", content: oldest + "\r\n", want: oldest, found: gatling.FoundByLastRun},
-		{name: "surrounding whitespace", content: "  " + oldest + "\t \n", want: oldest, found: gatling.FoundByLastRun},
-		{name: "blank lines around the name", content: "\n\n" + oldest + "\n\n", want: oldest, found: gatling.FoundByLastRun},
+		{name: "bare name, no trailing newline", content: oldest, want: oldest, found: run.FoundByLastRun},
+		{name: "trailing LF", content: oldest + "\n", want: oldest, found: run.FoundByLastRun},
+		{name: "CRLF, as a Windows build writes", content: oldest + "\r\n", want: oldest, found: run.FoundByLastRun},
+		{name: "surrounding whitespace", content: "  " + oldest + "\t \n", want: oldest, found: run.FoundByLastRun},
+		{name: "blank lines around the name", content: "\n\n" + oldest + "\n\n", want: oldest, found: run.FoundByLastRun},
 		{
 			name:    "a name and a trailing error line",
 			content: oldest + "\nExecutionError: boom\n",
-			want:    oldest, found: gatling.FoundByLastRun,
+			want:    oldest, found: run.FoundByLastRun,
 		},
 		{
 			name:    "invalid UTF-8 names nothing",
 			content: "\xff\xfe\x00bad\n",
-			want:    newestRun, found: gatling.FoundByNewest,
+			want:    newestRun, found: run.FoundByNewest,
 		},
 		{
 			name:    "past the cap is treated as absent",
 			content: oldest + "\n" + strings.Repeat("x", 64<<10),
-			want:    newestRun, found: gatling.FoundByNewest,
+			want:    newestRun, found: run.FoundByNewest,
 		},
 	}
 
@@ -503,9 +515,9 @@ func TestFindRunLastRunShape(t *testing.T) {
 			root := rootWithThreeRuns(t)
 			writeLastRun(t, root, tt.content)
 
-			loc, err := gatling.FindRun(root)
+			loc, err := run.Find(root)
 			if err != nil {
-				t.Fatalf("FindRun: %v", err)
+				t.Fatalf("Find: %v", err)
 			}
 
 			if want := filepath.Join(root, tt.want); loc.Dir != want {
@@ -524,7 +536,7 @@ func TestFindRunLastRunShape(t *testing.T) {
 // wins, which is what "the last run" means; it is not the newest in the root,
 // and it is not simply the last line, because the last line is the error message
 // when the run failed.
-func TestFindRunLastRunMultipleNames(t *testing.T) {
+func TestFindLastRunMultipleNames(t *testing.T) {
 	t.Parallel()
 
 	root := rootWithThreeRuns(t)
@@ -536,72 +548,72 @@ func TestFindRunLastRunMultipleNames(t *testing.T) {
 
 	writeLastRun(t, root, runNames[0]+"\n"+runNames[1]+"\nExecutionError: boom\n")
 
-	loc, err := gatling.FindRun(root)
+	loc, err := run.Find(root)
 	if err != nil {
-		t.Fatalf("FindRun: %v", err)
+		t.Fatalf("Find: %v", err)
 	}
 
 	if want := filepath.Join(root, runNames[1]); loc.Dir != want {
 		t.Errorf("Dir = %s, want %s", loc.Dir, want)
 	}
 
-	if loc.Found != gatling.FoundByLastRun {
-		t.Errorf("Found = %v, want %v", loc.Found, gatling.FoundByLastRun)
+	if loc.Found != run.FoundByLastRun {
+		t.Errorf("Found = %v, want %v", loc.Found, run.FoundByLastRun)
 	}
 }
 
 // T026 — what every caller does today keeps working, and the log itself is
 // accepted as well as its directory: a script that has the one path and a CI job
 // that has the other reach the same run through the same call.
-func TestFindRunNamedPath(t *testing.T) {
+func TestFindNamedPath(t *testing.T) {
 	t.Parallel()
 
 	root := rootWithThreeRuns(t)
-	run := filepath.Join(root, runNames[0])
+	runDir := filepath.Join(root, runNames[0])
 
-	byDir, err := gatling.FindRun(run)
+	byDir, err := run.Find(runDir)
 	if err != nil {
-		t.Fatalf("FindRun(dir): %v", err)
+		t.Fatalf("Find(dir): %v", err)
 	}
 
-	byLog, err := gatling.FindRun(filepath.Join(run, "simulation.log"))
+	byLog, err := run.Find(filepath.Join(runDir, "simulation.log"))
 	if err != nil {
-		t.Fatalf("FindRun(log): %v", err)
+		t.Fatalf("Find(log): %v", err)
 	}
 
 	if byDir != byLog {
-		t.Errorf("FindRun(dir) = %+v, FindRun(log) = %+v; want identical", byDir, byLog)
+		t.Errorf("Find(dir) = %+v, Find(log) = %+v; want identical", byDir, byLog)
 	}
 
-	if byDir.Dir != run || byDir.Found != gatling.FoundByPath {
-		t.Errorf("got %+v, want Dir %s found by path", byDir, run)
+	if byDir.Dir != runDir || byDir.Found != run.FoundByPath {
+		t.Errorf("got %+v, want Dir %s found by path", byDir, runDir)
 	}
 }
 
 // T027 — a caller that named a place is never quietly answered about a different
 // one. runNames[0] is the oldest, so a scan would have returned its sibling.
-func TestFindRunNamedPathIsNeverSearchedPast(t *testing.T) {
+func TestFindNamedPathIsNeverSearchedPast(t *testing.T) {
 	t.Parallel()
 
 	root := rootWithThreeRuns(t)
-	run := filepath.Join(root, runNames[0])
+	runDir := filepath.Join(root, runNames[0])
 
 	// A pointer naming a different run, to prove neither rule outranks a path.
 	writeLastRun(t, root, runNames[2]+"\n")
 
-	loc, err := gatling.FindRun(run)
+	loc, err := run.Find(runDir)
 	if err != nil {
-		t.Fatalf("FindRun: %v", err)
+		t.Fatalf("Find: %v", err)
 	}
 
-	if loc.Dir != run {
-		t.Errorf("Dir = %s, want %s — a named run was displaced", loc.Dir, run)
+	if loc.Dir != runDir {
+		t.Errorf("Dir = %s, want %s — a named run was displaced", loc.Dir, runDir)
 	}
 }
 
 // T028 — a directory holding a log is a run, not a results root, even when runs
 // sit beneath it. Anything else would make an archive of archives ambiguous.
-func TestFindRunDirectoryHoldingLogIsTheRun(t *testing.T) {
+func TestFindDirectoryHoldingLogIsTheRun(t *testing.T) {
 	t.Parallel()
 
 	outer := t.TempDir()
@@ -611,12 +623,12 @@ func TestFindRunDirectoryHoldingLogIsTheRun(t *testing.T) {
 
 	touchLog(t, mkRun(t, outer, runNames[2]), time.Date(2026, time.September, 6, 5, 0, 0, 0, time.UTC))
 
-	loc, err := gatling.FindRun(outer)
+	loc, err := run.Find(outer)
 	if err != nil {
-		t.Fatalf("FindRun: %v", err)
+		t.Fatalf("Find: %v", err)
 	}
 
-	if loc.Dir != outer || loc.Found != gatling.FoundByPath {
+	if loc.Dir != outer || loc.Found != run.FoundByPath {
 		t.Errorf("got %+v, want the directory itself (%s) found by path", loc, outer)
 	}
 }
@@ -625,7 +637,7 @@ func TestFindRunDirectoryHoldingLogIsTheRun(t *testing.T) {
 // This is the case os.Root would have refused, and the reason containment here
 // is a rule about the text of a lastRun.txt line rather than about the
 // filesystem.
-func TestFindRunSymlinkedRun(t *testing.T) {
+func TestFindSymlinkedRun(t *testing.T) {
 	t.Parallel()
 
 	parent := t.TempDir()
@@ -647,9 +659,9 @@ func TestFindRunSymlinkedRun(t *testing.T) {
 		t.Fatalf("symlink: %v", err)
 	}
 
-	loc, err := gatling.FindRun(root)
+	loc, err := run.Find(root)
 	if err != nil {
-		t.Fatalf("FindRun: %v", err)
+		t.Fatalf("Find: %v", err)
 	}
 
 	if loc.Dir != link {
@@ -659,30 +671,30 @@ func TestFindRunSymlinkedRun(t *testing.T) {
 
 // T022 — US1 scenario 5, completed. A consumer that reports which run it read
 // can say how it was chosen, and the three rules are distinguishable.
-func TestFindRunReportsWhichRuleChose(t *testing.T) {
+func TestFindReportsWhichRuleChose(t *testing.T) {
 	t.Parallel()
 
 	root := rootWithThreeRuns(t)
 
-	byNewest, err := gatling.FindRun(root)
+	byNewest, err := run.Find(root)
 	if err != nil {
-		t.Fatalf("FindRun(root): %v", err)
+		t.Fatalf("Find(root): %v", err)
 	}
 
 	writeLastRun(t, root, runNames[1]+"\n")
 
-	byPointer, err := gatling.FindRun(root)
+	byPointer, err := run.Find(root)
 	if err != nil {
-		t.Fatalf("FindRun(root) with pointer: %v", err)
+		t.Fatalf("Find(root) with pointer: %v", err)
 	}
 
-	byPath, err := gatling.FindRun(filepath.Join(root, runNames[0]))
+	byPath, err := run.Find(filepath.Join(root, runNames[0]))
 	if err != nil {
-		t.Fatalf("FindRun(run): %v", err)
+		t.Fatalf("Find(runDir): %v", err)
 	}
 
-	got := [...]gatling.FoundBy{byNewest.Found, byPointer.Found, byPath.Found}
-	want := [...]gatling.FoundBy{gatling.FoundByNewest, gatling.FoundByLastRun, gatling.FoundByPath}
+	got := [...]run.FoundBy{byNewest.Found, byPointer.Found, byPath.Found}
+	want := [...]run.FoundBy{run.FoundByNewest, run.FoundByLastRun, run.FoundByPath}
 
 	if got != want {
 		t.Errorf("Found = %v, want %v", got, want)
@@ -692,7 +704,7 @@ func TestFindRunReportsWhichRuleChose(t *testing.T) {
 // T031 — the whole cost of pointing a consumer at the wrong place is how long it
 // takes to learn where the right one is, so every failure names the directory it
 // read. The path is always the caller's own: nothing is ever substituted.
-func TestFindRunNotFound(t *testing.T) {
+func TestFindNotFound(t *testing.T) {
 	t.Parallel()
 
 	empty := t.TempDir()
@@ -719,18 +731,18 @@ func TestFindRunNotFound(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			loc, err := gatling.FindRun(tt.path)
+			loc, err := run.Find(tt.path)
 
-			var notFound *gatling.RunNotFoundError
+			var notFound *run.NotFoundError
 			if !errors.As(err, &notFound) {
-				t.Fatalf("FindRun(%q) error = %v, want a *RunNotFoundError", tt.path, err)
+				t.Fatalf("Find(%q) error = %v, want a *NotFoundError", tt.path, err)
 			}
 
 			if notFound.Dir != tt.path {
 				t.Errorf("Dir = %s, want %s", notFound.Dir, tt.path)
 			}
 
-			if loc != (gatling.RunLocation{}) {
+			if loc != (run.Location{}) {
 				t.Errorf("location = %+v, want the zero value beside an error", loc)
 			}
 
@@ -742,7 +754,7 @@ func TestFindRunNotFound(t *testing.T) {
 // T032 — the test that rots. A version treating every read error as "no runs
 // here" passes every other case in this file and turns a broken mount, a bad
 // permission or a dead network share into a clean, wrong answer.
-func TestFindRunUnreadableDirectory(t *testing.T) {
+func TestFindUnreadableDirectory(t *testing.T) {
 	t.Parallel()
 
 	requireUnixPermissions(t)
@@ -762,12 +774,12 @@ func TestFindRunUnreadableDirectory(t *testing.T) {
 		}
 	})
 
-	_, err := gatling.FindRun(root)
+	_, err := run.Find(root)
 	if err == nil {
-		t.Fatal("FindRun on an unreadable directory returned no error")
+		t.Fatal("Find on an unreadable directory returned no error")
 	}
 
-	var notFound *gatling.RunNotFoundError
+	var notFound *run.NotFoundError
 	if errors.As(err, &notFound) {
 		t.Fatalf("error = %v; a directory that could not be read was reported as an absence of runs", err)
 	}
@@ -786,7 +798,7 @@ func TestFindRunUnreadableDirectory(t *testing.T) {
 // silently becomes a question about target/gatling instead.
 //
 //nolint:paralleltest // t.Chdir cannot be used from a parallel test.
-func TestFindRunNamedPathDoesNotFallBackToDefault(t *testing.T) {
+func TestFindNamedPathDoesNotFallBackToDefault(t *testing.T) {
 	project := t.TempDir()
 	touchLog(t, mkRun(t, filepath.Join(project, "target", "gatling"), runNames[2]),
 		time.Date(2026, time.September, 6, 5, 0, 0, 0, time.UTC))
@@ -798,11 +810,11 @@ func TestFindRunNamedPathDoesNotFallBackToDefault(t *testing.T) {
 
 	t.Chdir(project)
 
-	_, err := gatling.FindRun(elsewhere)
+	_, err := run.Find(elsewhere)
 
-	var notFound *gatling.RunNotFoundError
+	var notFound *run.NotFoundError
 	if !errors.As(err, &notFound) {
-		t.Fatalf("error = %v, want a *RunNotFoundError", err)
+		t.Fatalf("error = %v, want a *NotFoundError", err)
 	}
 
 	if notFound.Dir != elsewhere {
@@ -814,7 +826,7 @@ func TestFindRunNamedPathDoesNotFallBackToDefault(t *testing.T) {
 // simulation.log, so a root full of logs that are not Gatling logs, or that
 // cannot be opened at all, still resolves; the version gate and the codec are
 // the reader's job and fire later.
-func TestFindRunNeverOpensTheLog(t *testing.T) {
+func TestFindNeverOpensTheLog(t *testing.T) {
 	t.Parallel()
 
 	root := t.TempDir()
@@ -842,9 +854,9 @@ func TestFindRunNeverOpensTheLog(t *testing.T) {
 
 	touchLog(t, unreadable, base.Add(time.Minute))
 
-	loc, err := gatling.FindRun(root)
+	loc, err := run.Find(root)
 	if err != nil {
-		t.Fatalf("FindRun: %v", err)
+		t.Fatalf("Find: %v", err)
 	}
 
 	if loc.Dir != unreadable {
@@ -856,7 +868,7 @@ func TestFindRunNeverOpensTheLog(t *testing.T) {
 // Maven's runMultipleSimulations produces. Whole-name order is alphabetical by
 // simulation id first, so it would hand back a run that started months earlier;
 // the run id's own UTC stamp is the only thing in the name that is about time.
-func TestFindRunTieBreakAcrossSimulationIds(t *testing.T) {
+func TestFindTieBreakAcrossSimulationIds(t *testing.T) {
 	t.Parallel()
 
 	root := t.TempDir()
@@ -869,9 +881,9 @@ func TestFindRunTieBreakAcrossSimulationIds(t *testing.T) {
 		touchLog(t, mkRun(t, root, name), same)
 	}
 
-	loc, err := gatling.FindRun(root)
+	loc, err := run.Find(root)
 	if err != nil {
-		t.Fatalf("FindRun: %v", err)
+		t.Fatalf("Find: %v", err)
 	}
 
 	if want := filepath.Join(root, newer); loc.Dir != want {
@@ -881,7 +893,7 @@ func TestFindRunTieBreakAcrossSimulationIds(t *testing.T) {
 
 // A name without a run-id stamp still has to resolve, and resolve the same way
 // every time: an archive is free to rename its directories.
-func TestFindRunTieBreakWithoutRunIDStamp(t *testing.T) {
+func TestFindTieBreakWithoutRunIDStamp(t *testing.T) {
 	t.Parallel()
 
 	root := t.TempDir()
@@ -891,13 +903,13 @@ func TestFindRunTieBreakWithoutRunIDStamp(t *testing.T) {
 		touchLog(t, mkRun(t, root, name), same)
 	}
 
-	first, err := gatling.FindRun(root)
+	first, err := run.Find(root)
 	if err != nil {
-		t.Fatalf("FindRun: %v", err)
+		t.Fatalf("Find: %v", err)
 	}
 
 	for i := range 10 {
-		again, err := gatling.FindRun(root)
+		again, err := run.Find(root)
 		if err != nil {
 			t.Fatalf("attempt %d: %v", i, err)
 		}
@@ -914,7 +926,7 @@ func TestFindRunTieBreakWithoutRunIDStamp(t *testing.T) {
 // directory's mtime; the run itself did not happen again. This is the scenario
 // US2 exists to prevent, and the pointer file that would otherwise defend
 // against it is absent for almost every caller.
-func TestFindRunIgnoresDirectoryMtime(t *testing.T) {
+func TestFindIgnoresDirectoryMtime(t *testing.T) {
 	t.Parallel()
 
 	root := rootWithThreeRuns(t)
@@ -927,9 +939,9 @@ func TestFindRunIgnoresDirectoryMtime(t *testing.T) {
 
 	touchDir(t, oldest, time.Date(2027, time.January, 1, 0, 0, 0, 0, time.UTC))
 
-	loc, err := gatling.FindRun(root)
+	loc, err := run.Find(root)
 	if err != nil {
-		t.Fatalf("FindRun: %v", err)
+		t.Fatalf("Find: %v", err)
 	}
 
 	if want := filepath.Join(root, runNames[2]); loc.Dir != want {
@@ -937,48 +949,48 @@ func TestFindRunIgnoresDirectoryMtime(t *testing.T) {
 	}
 }
 
-// One run, however it is spelled, is one RunLocation. RunLocation is comparable
+// One run, however it is spelled, is one Location. Location is comparable
 // and consumers key caches on Dir, so a path with a trailing separator or a "."
 // segment must not become a second run.
-func TestFindRunCanonicalisesPaths(t *testing.T) {
+func TestFindCanonicalisesPaths(t *testing.T) {
 	t.Parallel()
 
 	root := rootWithThreeRuns(t)
 	name := runNames[0]
-	run := filepath.Join(root, name)
+	runDir := filepath.Join(root, name)
 
 	spellings := []string{
-		run,
-		run + string(filepath.Separator),
+		runDir,
+		runDir + string(filepath.Separator),
 		filepath.Join(root, ".", name),
 		root + string(filepath.Separator) + "." + string(filepath.Separator) + name,
-		filepath.Join(run, "simulation.log"),
+		filepath.Join(runDir, "simulation.log"),
 	}
 
-	seen := map[gatling.RunLocation]bool{}
+	seen := map[run.Location]bool{}
 
 	for _, spelling := range spellings {
-		loc, err := gatling.FindRun(spelling)
+		loc, err := run.Find(spelling)
 		if err != nil {
-			t.Fatalf("FindRun(%q): %v", spelling, err)
+			t.Fatalf("Find(%q): %v", spelling, err)
 		}
 
 		if loc.Log != filepath.Join(loc.Dir, "simulation.log") {
-			t.Errorf("FindRun(%q): Log = %s, want it to be Dir joined with the log name", spelling, loc.Log)
+			t.Errorf("Find(%q): Log = %s, want it to be Dir joined with the log name", spelling, loc.Log)
 		}
 
 		seen[loc] = true
 	}
 
 	if len(seen) != 1 {
-		t.Errorf("%d distinct RunLocation values for one run: %v", len(seen), seen)
+		t.Errorf("%d distinct Location values for one run: %v", len(seen), seen)
 	}
 }
 
 // A failure to look is not an absence of runs. This is the case the root-level
 // permission test cannot reach: the root reads fine and the run inside it does
 // not.
-func TestFindRunUnreadableRunDirectory(t *testing.T) {
+func TestFindUnreadableRunDirectory(t *testing.T) {
 	t.Parallel()
 
 	requireUnixPermissions(t)
@@ -997,9 +1009,9 @@ func TestFindRunUnreadableRunDirectory(t *testing.T) {
 		}
 	})
 
-	_, err := gatling.FindRun(root)
+	_, err := run.Find(root)
 
-	var notFound *gatling.RunNotFoundError
+	var notFound *run.NotFoundError
 	if errors.As(err, &notFound) {
 		t.Fatalf("error = %v; an unreadable run directory was reported as an absence of runs", err)
 	}
@@ -1011,7 +1023,7 @@ func TestFindRunUnreadableRunDirectory(t *testing.T) {
 
 // A pointer that cannot be read is not the same as no pointer. Falling through
 // to the clock would hand back a different run with nothing said about it.
-func TestFindRunUnreadableLastRun(t *testing.T) {
+func TestFindUnreadableLastRun(t *testing.T) {
 	t.Parallel()
 
 	requireUnixPermissions(t)
@@ -1030,9 +1042,9 @@ func TestFindRunUnreadableLastRun(t *testing.T) {
 		}
 	})
 
-	loc, err := gatling.FindRun(root)
+	loc, err := run.Find(root)
 	if err == nil {
-		t.Fatalf("FindRun returned %s with no error; an unreadable pointer was silently ignored",
+		t.Fatalf("Find returned %s with no error; an unreadable pointer was silently ignored",
 			filepath.Base(loc.Dir))
 	}
 
@@ -1043,19 +1055,19 @@ func TestFindRunUnreadableLastRun(t *testing.T) {
 
 // What a run directory is called is Gatling's to choose and an archive's to
 // rewrite, so nothing may turn on the name — including the name of the log.
-func TestFindRunDirectoryNamedLikeTheLog(t *testing.T) {
+func TestFindDirectoryNamedLikeTheLog(t *testing.T) {
 	t.Parallel()
 
 	root := t.TempDir()
 	odd := mkRun(t, root, "simulation.log")
 	touchLog(t, odd, time.Date(2026, time.September, 6, 4, 47, 0, 0, time.UTC))
 
-	loc, err := gatling.FindRun(odd)
+	loc, err := run.Find(odd)
 	if err != nil {
-		t.Fatalf("FindRun(%s): %v", odd, err)
+		t.Fatalf("Find(%s): %v", odd, err)
 	}
 
-	if loc.Dir != odd || loc.Found != gatling.FoundByPath {
+	if loc.Dir != odd || loc.Found != run.FoundByPath {
 		t.Errorf("got %+v, want the directory itself (%s) found by path", loc, odd)
 	}
 }
