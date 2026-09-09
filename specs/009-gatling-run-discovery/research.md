@@ -169,10 +169,14 @@ imports both and mean something else entirely. Principle V makes that near-perma
 from now. Hence `RunLocation`, and `FoundBy` for how it was chosen — not `Source`, which in this
 module already means the tool that produced the artefact.
 
-**No options.** The results root is the argument: `FindRun("")` uses the default,
-`FindRun("build/reports/gatling")` is the Gradle override, `FindRun(dir)` names a run. A
+**No options.** The results root is the argument: `FindRun(DefaultResultsRoot)` asks for the Maven
+and sbt layout, `FindRun("build/reports/gatling")` is the Gradle one, `FindRun(dir)` names a run. A
 functional-option parameter was considered and dropped — there is one knob and it is already the
 first argument.
+
+**Revised in review**: `FindRun("")` originally meant the default. It no longer does, because `""` is
+the zero value of every unset flag and omitted request field, and a library that guesses for it turns
+missing input into a confident answer about an unrelated run. The layout is published instead.
 
 ---
 
@@ -193,11 +197,22 @@ the tie-break is not a tie-break at all: it is the selection. Ordering by mtime 
 arbitrarily among identical timestamps, which is exactly the "silently reports the wrong test"
 failure US2 exists to prevent.
 
+**Corrected after implementation.** Two things in this section were wrong, and review caught both.
+
+The timestamp compared is the **log's**, not the run directory's: a directory's time moves whenever
+anything is written into it, and regenerating a report into an old run made that run the newest —
+the failure US2 exists to prevent, arriving through the very rule meant to prevent it.
+
+And "descending name is run order" holds only *within one simulation id*. A run directory is
+`<simulationId>-<yyyyMMddHHmmssSSS>`, so whole-name order is alphabetical by simulation id first;
+a root holding two simulations — Maven's `runMultipleSimulations` — returned the run that started
+months earlier. The tie-break now compares the stamp itself, falling back to the whole name when a
+directory carries none.
+
 **Alternatives considered**: name first and mtime as the tie-break, which is arguably more faithful
-to "the newest run" for archived trees. Rejected because #11 settles modification time as the rule
-and a plan is not the place to overturn a decision the issue made — but the ordering above gets most
-of the benefit, and the case for reversing it is recorded here if the corpus ever shows mtime
-misleading in practice.
+to "the newest run" for archived trees. Still rejected: #11 settles modification time as the rule,
+and the stamp comparison recovers the accuracy that motivated the alternative without overturning
+the issue's decision.
 
 ---
 
