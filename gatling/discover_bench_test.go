@@ -29,7 +29,7 @@ func benchRoot(tb testing.TB, n int) string {
 		}
 
 		mod := base.Add(time.Duration(i) * time.Second)
-		if err := os.Chtimes(dir, mod, mod); err != nil {
+		if err := os.Chtimes(filepath.Join(dir, "simulation.log"), mod, mod); err != nil {
 			tb.Fatalf("chtimes: %v", err)
 		}
 	}

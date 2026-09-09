@@ -67,7 +67,7 @@ func ExampleFindRun_resultsRoot() {
 			panic(err)
 		}
 
-		if err := os.Chtimes(dir, same, same); err != nil {
+		if err := os.Chtimes(filepath.Join(dir, "simulation.log"), same, same); err != nil {
 			panic(err)
 		}
 	}

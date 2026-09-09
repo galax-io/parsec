@@ -9,15 +9,22 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 - **`gatling.FindRun` locates a run**, so the three consumers of this module stop each working out
   where a build tool put its results. It takes a path that may be the run itself — a
-  `simulation.log`, or a directory holding one — a results root, or nothing at all, and returns the
-  run directory with the log inside it and the rule that chose them. It opens no log and applies no
+  `simulation.log`, or a directory holding one — or a results root to search, and returns the run
+  directory with the log inside it and the rule that chose them. It opens no log and applies no
   version gate: a run whose log is truncated, damaged or outside the supported range still resolves,
   and fails when the log is read.
 
-  An empty path means `target/gatling`, which is where Maven and sbt both write. Gradle writes to
-  `build/reports/gatling`, and a run configured by hand writes wherever it was told to; both are
-  passed as the argument rather than guessed at, because reading a `pom.xml` or a `build.gradle`
-  would make this library aware of three build tools for a value the caller already has.
+  **A path is required.** `gatling.DefaultResultsRoot` publishes `target/gatling`, where Maven and
+  sbt both write, for a caller to pass; Gradle's `build/reports/gatling` and a hand-configured output
+  directory are passed the same way, because reading a `pom.xml` or a `build.gradle` would make this
+  library aware of three build tools for a value the caller already has. An empty path returns
+  `gatling.ErrNoPath` before anything is read, rather than falling back to the working directory:
+  `""` is the zero value of every unset flag, absent configuration field and omitted request member,
+  and a server that quietly lost its path is better told so than handed a confident report about an
+  unrelated run.
+
+  `Dir` and `Log` are cleaned, so every spelling of one run — a trailing separator, a `./` segment,
+  the log's own path — yields one `RunLocation`, which is comparable and safe to use as a map key.
 
 - **`RunLocation`, `FoundBy` and `RunNotFoundError`** beside it. `FoundBy` says which of the three
   rules selected the run — the caller's own path, `lastRun.txt`, or the most recently modified run in
@@ -33,10 +40,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   each give every run in a root one modification time, and a Gatling run directory is
   `<simulationId>-<yyyyMMddHHmmssSSS>`, so descending name is descending run start.
 
-  `RunNotFoundError` names the directory that was searched and says whether it was the default, so a
-  consumer with no meaningful working directory is not shown a relative path it never chose. A
-  directory that could not be *read* is reported as that failure instead, wrapping its
-  `*fs.PathError` — a broken mount is not an absence of runs.
+  `RunNotFoundError` names the directory that was searched, which is always one the caller gave. A
+  path that exists but is not a directory — an archive, a mistyped filename — reaches it too, rather
+  than surfacing a raw `ENOTDIR`. A directory that could not be *read* is reported as that failure
+  instead, wrapping its `*fs.PathError`, and that holds at every depth: the results root, a candidate
+  run directory inside it, and the pointer file. A broken mount is never an absence of runs.
+
+  Which run is newest is decided by the **log's** modification time, not the run directory's, so
+  regenerating a report into an old run does not make it look like the latest test. Ties break on the
+  run id's own UTC stamp before the directory name, which matters as soon as a root holds two
+  simulations: whole-name order is alphabetical by simulation id first and would return a run that
+  started months earlier.
 
   Nothing in `lastRun.txt` is trusted: a line is followed only when it is a bare name that matches a
   run actually present in the root, so a stale pointer, a deleted run, a directory without a log and

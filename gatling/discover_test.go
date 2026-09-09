@@ -5,6 +5,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -40,13 +41,41 @@ func mkRun(t *testing.T, root, name string) string {
 	return dir
 }
 
-// touch sets a directory's modification time, so a fixture can say which run is
-// newest instead of depending on how fast the test created them.
-func touch(t *testing.T, dir string, mod time.Time) {
+// touchLog sets a run's *log* modification time, which is what the ordering rule
+// compares. A fixture that set the directory's time instead would pass whether
+// the code read the log or the directory, and so would pin neither.
+func touchLog(t *testing.T, dir string, mod time.Time) {
+	t.Helper()
+
+	if err := os.Chtimes(filepath.Join(dir, "simulation.log"), mod, mod); err != nil {
+		t.Fatalf("chtimes %s: %v", dir, err)
+	}
+}
+
+// touchDir sets a run directory's modification time. It exists to build the case
+// the ordering must ignore: a report regenerated into an old run moves the
+// directory and leaves the log alone.
+func touchDir(t *testing.T, dir string, mod time.Time) {
 	t.Helper()
 
 	if err := os.Chtimes(dir, mod, mod); err != nil {
 		t.Fatalf("chtimes %s: %v", dir, err)
+	}
+}
+
+// requireUnixPermissions skips a test that needs a mode bit to actually deny
+// access. os.Geteuid returns -1 on Windows rather than 0, so a uid check does not
+// skip there, and os.Chmod only toggles the read-only attribute — a directory
+// stays traversable and the test would fail for the platform rather than the code.
+func requireUnixPermissions(t *testing.T) {
+	t.Helper()
+
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX permission bits do not deny directory traversal on Windows")
+	}
+
+	if os.Geteuid() == 0 {
+		t.Skip("running as root: the permission cannot be enforced")
 	}
 }
 
@@ -59,8 +88,10 @@ func rootWithThreeRuns(t *testing.T) string {
 	root := t.TempDir()
 	base := time.Date(2026, time.September, 6, 4, 47, 0, 0, time.UTC)
 
-	for i, name := range runNames {
-		touch(t, mkRun(t, root, name), base.Add(time.Duration(i)*time.Minute))
+	// Built newest-first, so that "the newest run" cannot be satisfied by
+	// creation order, directory order or os.ReadDir's name sort by accident.
+	for i := len(runNames) - 1; i >= 0; i-- {
+		touchLog(t, mkRun(t, root, runNames[i]), base.Add(time.Duration(i)*time.Minute))
 	}
 
 	return root
@@ -147,7 +178,7 @@ func TestFindRunDeterministicUnderSharedModTime(t *testing.T) {
 	same := time.Date(2026, time.September, 6, 4, 47, 0, 0, time.UTC)
 
 	for _, name := range runNames {
-		touch(t, mkRun(t, root, name), same)
+		touchLog(t, mkRun(t, root, name), same)
 	}
 
 	want := filepath.Join(root, runNames[2])
@@ -164,21 +195,21 @@ func TestFindRunDeterministicUnderSharedModTime(t *testing.T) {
 	}
 }
 
-// T011 — no path at all means the results root Maven and sbt share. The caller
-// can tell it got a default because it passed nothing and the returned Dir sits
-// under target/gatling; nothing else needs to say so.
+// T011 — the results root Maven and sbt share is a constant a caller passes, not
+// a guess this package makes. Asking for it by name is the whole feature for a
+// CLI standing in a project.
 //
 //nolint:paralleltest // t.Chdir cannot be used from a parallel test.
 func TestFindRunDefaultResultsRoot(t *testing.T) {
 	project := t.TempDir()
 	dir := mkRun(t, filepath.Join(project, "target", "gatling"), runNames[0])
-	touch(t, dir, time.Date(2026, time.September, 6, 4, 47, 0, 0, time.UTC))
+	touchLog(t, dir, time.Date(2026, time.September, 6, 4, 47, 0, 0, time.UTC))
 
 	t.Chdir(project)
 
-	loc, err := gatling.FindRun("")
+	loc, err := gatling.FindRun(gatling.DefaultResultsRoot)
 	if err != nil {
-		t.Fatalf(`FindRun(""): %v`, err)
+		t.Fatalf("FindRun(DefaultResultsRoot): %v", err)
 	}
 
 	if want := filepath.Join("target", "gatling", runNames[0]); loc.Dir != want {
@@ -190,6 +221,31 @@ func TestFindRunDefaultResultsRoot(t *testing.T) {
 	}
 }
 
+// An empty path is the zero value of every unset flag, config field and omitted
+// JSON member. Guessing a root for it would turn missing input into a confident
+// report about an unrelated run, so it is refused — and refused before any
+// filesystem access, so a server cannot be steered by its own working directory.
+//
+//nolint:paralleltest // t.Chdir cannot be used from a parallel test.
+func TestFindRunEmptyPathIsRefused(t *testing.T) {
+	project := t.TempDir()
+	touchLog(t, mkRun(t, filepath.Join(project, "target", "gatling"), runNames[0]),
+		time.Date(2026, time.September, 6, 4, 47, 0, 0, time.UTC))
+
+	// A run really is sitting in the default root: the refusal must not depend
+	// on there being nothing to find.
+	t.Chdir(project)
+
+	loc, err := gatling.FindRun("")
+	if !errors.Is(err, gatling.ErrNoPath) {
+		t.Fatalf(`FindRun("") error = %v, want ErrNoPath`, err)
+	}
+
+	if loc != (gatling.RunLocation{}) {
+		t.Errorf("location = %+v, want the zero value beside an error", loc)
+	}
+}
+
 // T012 — Gradle's layout is not a second thing to search for. It is passed, and
 // then it is just a results root like any other.
 func TestFindRunGradleLayout(t *testing.T) {
@@ -197,11 +253,11 @@ func TestFindRunGradleLayout(t *testing.T) {
 
 	project := t.TempDir()
 	root := filepath.Join(project, "build", "reports", "gatling")
-	touch(t, mkRun(t, root, runNames[1]), time.Date(2026, time.September, 6, 4, 48, 0, 0, time.UTC))
+	touchLog(t, mkRun(t, root, runNames[1]), time.Date(2026, time.September, 6, 4, 48, 0, 0, time.UTC))
 
 	// A decoy under the Maven layout in the same project: if the default were
 	// consulted at all, this is what would come back.
-	touch(t, mkRun(t, filepath.Join(project, "target", "gatling"), runNames[2]),
+	touchLog(t, mkRun(t, filepath.Join(project, "target", "gatling"), runNames[2]),
 		time.Date(2026, time.September, 6, 4, 49, 0, 0, time.UTC))
 
 	loc, err := gatling.FindRun(root)
@@ -238,7 +294,7 @@ func TestFindRunCandidates(t *testing.T) {
 	}
 
 	run := mkRun(t, root, runNames[0])
-	touch(t, run, time.Date(2026, time.September, 6, 4, 47, 0, 0, time.UTC))
+	touchLog(t, run, time.Date(2026, time.September, 6, 4, 47, 0, 0, time.UTC))
 
 	loc, err := gatling.FindRun(root)
 	if err != nil {
@@ -379,14 +435,14 @@ func TestFindRunLastRunContainment(t *testing.T) {
 
 			base := time.Date(2026, time.September, 6, 4, 47, 0, 0, time.UTC)
 			for i, name := range runNames {
-				touch(t, mkRun(t, root, name), base.Add(time.Duration(i)*time.Minute))
+				touchLog(t, mkRun(t, root, name), base.Add(time.Duration(i)*time.Minute))
 			}
 
 			// A real run outside the root, and a real run nested one level too
 			// deep inside it. Both are valid runs; neither is a direct child.
 			escape := mkRun(t, parent, "escape")
-			touch(t, escape, base.Add(time.Hour))
-			touch(t, mkRun(t, filepath.Join(root, "nested"), "run"), base.Add(time.Hour))
+			touchLog(t, escape, base.Add(time.Hour))
+			touchLog(t, mkRun(t, filepath.Join(root, "nested"), "run"), base.Add(time.Hour))
 
 			writeLastRun(t, root, tt.line(escape)+"\n")
 
@@ -476,7 +532,7 @@ func TestFindRunLastRunMultipleNames(t *testing.T) {
 	// A fourth run, newer than everything, that this build did not produce: it
 	// must not win, or the lines were ignored in favour of the clock.
 	stranger := "othersimulation-20260906050000000"
-	touch(t, mkRun(t, root, stranger), time.Date(2026, time.September, 6, 5, 0, 0, 0, time.UTC))
+	touchLog(t, mkRun(t, root, stranger), time.Date(2026, time.September, 6, 5, 0, 0, 0, time.UTC))
 
 	writeLastRun(t, root, runNames[0]+"\n"+runNames[1]+"\nExecutionError: boom\n")
 
@@ -553,7 +609,7 @@ func TestFindRunDirectoryHoldingLogIsTheRun(t *testing.T) {
 		t.Fatalf("write: %v", err)
 	}
 
-	touch(t, mkRun(t, outer, runNames[2]), time.Date(2026, time.September, 6, 5, 0, 0, 0, time.UTC))
+	touchLog(t, mkRun(t, outer, runNames[2]), time.Date(2026, time.September, 6, 5, 0, 0, 0, time.UTC))
 
 	loc, err := gatling.FindRun(outer)
 	if err != nil {
@@ -635,30 +691,33 @@ func TestFindRunReportsWhichRuleChose(t *testing.T) {
 
 // T031 — the whole cost of pointing a consumer at the wrong place is how long it
 // takes to learn where the right one is, so every failure names the directory it
-// read and says where that directory came from.
-//
-//nolint:paralleltest // t.Chdir cannot be used from a parallel test.
+// read. The path is always the caller's own: nothing is ever substituted.
 func TestFindRunNotFound(t *testing.T) {
+	t.Parallel()
+
 	empty := t.TempDir()
 	missing := filepath.Join(t.TempDir(), "no", "such", "place")
-	project := t.TempDir()
+
+	notLogFile := filepath.Join(t.TempDir(), "results.zip")
+	if err := os.WriteFile(notLogFile, []byte("PK"), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
 
 	tests := []struct {
-		name        string
-		path        string
-		wantDir     string
-		wantDefault bool
+		name string
+		path string
 	}{
-		{name: "a results root holding no run", path: empty, wantDir: empty},
-		{name: "a path that is not there", path: missing, wantDir: missing},
-		{name: "the default root, absent", path: "", wantDir: "target/gatling", wantDefault: true},
+		{name: "a results root holding no run", path: empty},
+		{name: "a path that is not there", path: missing},
+		// A file that exists but is not a simulation.log is the commonest typo
+		// in this feature. It must reach the same error type as every other
+		// "no run here", not a raw ENOTDIR from the syscall layer.
+		{name: "a regular file that is not a log", path: notLogFile},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if tt.path == "" {
-				t.Chdir(project)
-			}
+			t.Parallel()
 
 			loc, err := gatling.FindRun(tt.path)
 
@@ -667,19 +726,15 @@ func TestFindRunNotFound(t *testing.T) {
 				t.Fatalf("FindRun(%q) error = %v, want a *RunNotFoundError", tt.path, err)
 			}
 
-			if notFound.Dir != tt.wantDir {
-				t.Errorf("Dir = %s, want %s", notFound.Dir, tt.wantDir)
-			}
-
-			if notFound.Default != tt.wantDefault {
-				t.Errorf("Default = %v, want %v", notFound.Default, tt.wantDefault)
+			if notFound.Dir != tt.path {
+				t.Errorf("Dir = %s, want %s", notFound.Dir, tt.path)
 			}
 
 			if loc != (gatling.RunLocation{}) {
 				t.Errorf("location = %+v, want the zero value beside an error", loc)
 			}
 
-			mustContain(t, err.Error(), tt.wantDir)
+			mustContain(t, err.Error(), tt.path)
 		})
 	}
 }
@@ -690,12 +745,10 @@ func TestFindRunNotFound(t *testing.T) {
 func TestFindRunUnreadableDirectory(t *testing.T) {
 	t.Parallel()
 
-	if os.Geteuid() == 0 {
-		t.Skip("running as root: the permission cannot be enforced")
-	}
+	requireUnixPermissions(t)
 
 	root := t.TempDir()
-	touch(t, mkRun(t, root, runNames[0]), time.Date(2026, time.September, 6, 4, 47, 0, 0, time.UTC))
+	touchLog(t, mkRun(t, root, runNames[0]), time.Date(2026, time.September, 6, 4, 47, 0, 0, time.UTC))
 
 	if err := os.Chmod(root, 0o000); err != nil {
 		t.Fatalf("chmod: %v", err)
@@ -735,7 +788,7 @@ func TestFindRunUnreadableDirectory(t *testing.T) {
 //nolint:paralleltest // t.Chdir cannot be used from a parallel test.
 func TestFindRunNamedPathDoesNotFallBackToDefault(t *testing.T) {
 	project := t.TempDir()
-	touch(t, mkRun(t, filepath.Join(project, "target", "gatling"), runNames[2]),
+	touchLog(t, mkRun(t, filepath.Join(project, "target", "gatling"), runNames[2]),
 		time.Date(2026, time.September, 6, 5, 0, 0, 0, time.UTC))
 
 	elsewhere := filepath.Join(project, "somewhere-else")
@@ -752,9 +805,8 @@ func TestFindRunNamedPathDoesNotFallBackToDefault(t *testing.T) {
 		t.Fatalf("error = %v, want a *RunNotFoundError", err)
 	}
 
-	if notFound.Dir != elsewhere || notFound.Default {
-		t.Errorf("got Dir %s default %v, want %s and false — the default root was consulted",
-			notFound.Dir, notFound.Default, elsewhere)
+	if notFound.Dir != elsewhere {
+		t.Errorf("Dir = %s, want %s — a path the caller never gave was searched", notFound.Dir, elsewhere)
 	}
 }
 
@@ -774,7 +826,7 @@ func TestFindRunNeverOpensTheLog(t *testing.T) {
 		t.Fatalf("write: %v", err)
 	}
 
-	touch(t, garbage, base)
+	touchLog(t, garbage, base)
 
 	// A log that cannot be opened, in a directory that can still be listed.
 	unreadable := mkRun(t, root, runNames[1])
@@ -788,7 +840,7 @@ func TestFindRunNeverOpensTheLog(t *testing.T) {
 		}
 	})
 
-	touch(t, unreadable, base.Add(time.Minute))
+	touchLog(t, unreadable, base.Add(time.Minute))
 
 	loc, err := gatling.FindRun(root)
 	if err != nil {
@@ -797,5 +849,213 @@ func TestFindRunNeverOpensTheLog(t *testing.T) {
 
 	if loc.Dir != unreadable {
 		t.Errorf("Dir = %s, want %s — discovery is not affected by what a log contains", loc.Dir, unreadable)
+	}
+}
+
+// The tie-break has to survive a root holding two simulations, which is what
+// Maven's runMultipleSimulations produces. Whole-name order is alphabetical by
+// simulation id first, so it would hand back a run that started months earlier;
+// the run id's own UTC stamp is the only thing in the name that is about time.
+func TestFindRunTieBreakAcrossSimulationIds(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	same := time.Date(2026, time.September, 9, 0, 0, 0, 0, time.UTC)
+
+	older := "zzzsimulation-20260101000000000" // alphabetically last, ran in January
+	newer := "aaasimulation-20260909000000000" // alphabetically first, ran in September
+
+	for _, name := range []string{older, newer} {
+		touchLog(t, mkRun(t, root, name), same)
+	}
+
+	loc, err := gatling.FindRun(root)
+	if err != nil {
+		t.Fatalf("FindRun: %v", err)
+	}
+
+	if want := filepath.Join(root, newer); loc.Dir != want {
+		t.Errorf("Dir = %s, want %s — whole-name order picked the older run", loc.Dir, want)
+	}
+}
+
+// A name without a run-id stamp still has to resolve, and resolve the same way
+// every time: an archive is free to rename its directories.
+func TestFindRunTieBreakWithoutRunIDStamp(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	same := time.Date(2026, time.September, 9, 0, 0, 0, 0, time.UTC)
+
+	for _, name := range []string{"archived-run", "another-run", "sim-2026090900000000"} { // 16 digits, not 17
+		touchLog(t, mkRun(t, root, name), same)
+	}
+
+	first, err := gatling.FindRun(root)
+	if err != nil {
+		t.Fatalf("FindRun: %v", err)
+	}
+
+	for i := range 10 {
+		again, err := gatling.FindRun(root)
+		if err != nil {
+			t.Fatalf("attempt %d: %v", i, err)
+		}
+
+		if again.Dir != first.Dir {
+			t.Fatalf("attempt %d chose %s, attempt 0 chose %s — the ordering is not total",
+				i, again.Dir, first.Dir)
+		}
+	}
+}
+
+// The ordering reads the log's time, not the run directory's. Regenerating a
+// report writes an index.html and a js tree into an old run and moves that
+// directory's mtime; the run itself did not happen again. This is the scenario
+// US2 exists to prevent, and the pointer file that would otherwise defend
+// against it is absent for almost every caller.
+func TestFindRunIgnoresDirectoryMtime(t *testing.T) {
+	t.Parallel()
+
+	root := rootWithThreeRuns(t)
+	oldest := filepath.Join(root, runNames[0])
+
+	// A report regenerated into the oldest run, long after every other run.
+	if err := os.WriteFile(filepath.Join(oldest, "index.html"), nil, 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	touchDir(t, oldest, time.Date(2027, time.January, 1, 0, 0, 0, 0, time.UTC))
+
+	loc, err := gatling.FindRun(root)
+	if err != nil {
+		t.Fatalf("FindRun: %v", err)
+	}
+
+	if want := filepath.Join(root, runNames[2]); loc.Dir != want {
+		t.Errorf("Dir = %s, want %s — a regenerated report made an old run look newest", loc.Dir, want)
+	}
+}
+
+// One run, however it is spelled, is one RunLocation. RunLocation is comparable
+// and consumers key caches on Dir, so a path with a trailing separator or a "."
+// segment must not become a second run.
+func TestFindRunCanonicalisesPaths(t *testing.T) {
+	t.Parallel()
+
+	root := rootWithThreeRuns(t)
+	name := runNames[0]
+	run := filepath.Join(root, name)
+
+	spellings := []string{
+		run,
+		run + string(filepath.Separator),
+		filepath.Join(root, ".", name),
+		root + string(filepath.Separator) + "." + string(filepath.Separator) + name,
+		filepath.Join(run, "simulation.log"),
+	}
+
+	seen := map[gatling.RunLocation]bool{}
+
+	for _, spelling := range spellings {
+		loc, err := gatling.FindRun(spelling)
+		if err != nil {
+			t.Fatalf("FindRun(%q): %v", spelling, err)
+		}
+
+		if loc.Log != filepath.Join(loc.Dir, "simulation.log") {
+			t.Errorf("FindRun(%q): Log = %s, want it to be Dir joined with the log name", spelling, loc.Log)
+		}
+
+		seen[loc] = true
+	}
+
+	if len(seen) != 1 {
+		t.Errorf("%d distinct RunLocation values for one run: %v", len(seen), seen)
+	}
+}
+
+// A failure to look is not an absence of runs. This is the case the root-level
+// permission test cannot reach: the root reads fine and the run inside it does
+// not.
+func TestFindRunUnreadableRunDirectory(t *testing.T) {
+	t.Parallel()
+
+	requireUnixPermissions(t)
+
+	root := t.TempDir()
+	only := mkRun(t, root, runNames[0])
+	touchLog(t, only, time.Date(2026, time.September, 6, 4, 47, 0, 0, time.UTC))
+
+	if err := os.Chmod(only, 0o000); err != nil {
+		t.Fatalf("chmod: %v", err)
+	}
+
+	t.Cleanup(func() {
+		if err := os.Chmod(only, 0o700); err != nil { //nolint:gosec // a directory this test must leave traversable for its own cleanup
+			t.Errorf("restoring permissions: %v", err)
+		}
+	})
+
+	_, err := gatling.FindRun(root)
+
+	var notFound *gatling.RunNotFoundError
+	if errors.As(err, &notFound) {
+		t.Fatalf("error = %v; an unreadable run directory was reported as an absence of runs", err)
+	}
+
+	if !errors.Is(err, fs.ErrPermission) {
+		t.Errorf("error = %v, want it to carry the permission failure", err)
+	}
+}
+
+// A pointer that cannot be read is not the same as no pointer. Falling through
+// to the clock would hand back a different run with nothing said about it.
+func TestFindRunUnreadableLastRun(t *testing.T) {
+	t.Parallel()
+
+	requireUnixPermissions(t)
+
+	root := rootWithThreeRuns(t)
+	writeLastRun(t, root, runNames[0]+"\n")
+
+	pointer := filepath.Join(root, "lastRun.txt")
+	if err := os.Chmod(pointer, 0o000); err != nil {
+		t.Fatalf("chmod: %v", err)
+	}
+
+	t.Cleanup(func() {
+		if err := os.Chmod(pointer, 0o600); err != nil {
+			t.Errorf("restoring permissions: %v", err)
+		}
+	})
+
+	loc, err := gatling.FindRun(root)
+	if err == nil {
+		t.Fatalf("FindRun returned %s with no error; an unreadable pointer was silently ignored",
+			filepath.Base(loc.Dir))
+	}
+
+	if !errors.Is(err, fs.ErrPermission) {
+		t.Errorf("error = %v, want it to carry the permission failure", err)
+	}
+}
+
+// What a run directory is called is Gatling's to choose and an archive's to
+// rewrite, so nothing may turn on the name — including the name of the log.
+func TestFindRunDirectoryNamedLikeTheLog(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	odd := mkRun(t, root, "simulation.log")
+	touchLog(t, odd, time.Date(2026, time.September, 6, 4, 47, 0, 0, time.UTC))
+
+	loc, err := gatling.FindRun(odd)
+	if err != nil {
+		t.Fatalf("FindRun(%s): %v", odd, err)
+	}
+
+	if loc.Dir != odd || loc.Found != gatling.FoundByPath {
+		t.Errorf("got %+v, want the directory itself (%s) found by path", loc, odd)
 	}
 }
