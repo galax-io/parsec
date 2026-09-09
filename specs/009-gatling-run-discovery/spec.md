@@ -20,7 +20,7 @@ That was right while there was only one caller and it was a test.
 
 It is wrong now, because the answer is not obvious and it is the same answer three times. Gatling
 writes each run into a directory it names itself — the simulation's lowercased class name, a hyphen,
-and the run's start as seventeen digits of local date and time — under a results root the build tool
+and the run's start as seventeen digits of UTC date and time — under a results root the build tool
 chooses: `target/gatling` under Maven and sbt, `build/reports/gatling` under Gradle, anywhere at all
 when the run was configured by hand. Nobody types `corpussimulation-20260906044741110` correctly
 the first time, and today everybody has to: `galaxio report` takes the path, the comet sidecar
@@ -261,16 +261,15 @@ confirm each failure names the directory searched and returns no run.
   to the codec and runs unchanged when the located log is opened (FR-014).
 - **Not provided by this source**: nothing new is declared through `Capabilities`. This feature adds no
   field to the canonical model and computes nothing.
-- **Golden corpus**: planning established more from the existing recordings than this section first
-  assumed. The run-directory name format and the sbt results root are both evidenced by the three
-  recorded console logs, which name real run directories under `simulation/target/gatling/`; the
-  format of `lastRun.txt` is evidenced by the plugin that writes it. What no existing entry holds is a
-  real `lastRun.txt`, because only `gatling-maven-plugin` writes one and the corpus simulation is an
-  sbt project — so the one recording this feature wants is a **Maven** results root, committed with
-  its `lastRun.txt` and the run directories it names. That is the single open cost in the feature, and
-  the plan carries the decision. Everything beyond that shape (three runs, a stale pointer, an empty
-  root, a shared modification time, a symlinked run) is constructed, and is named as a fixture rather
-  than corpus.
+- **Golden corpus**: one recording was made and is committed as `testdata/corpus/gatling/lastrun/` —
+  a **Maven** results root, from three real runs of the existing corpus simulation, holding the three
+  run directories and the `lastRun.txt` that names the middle one. It was needed because only
+  `gatling-maven-plugin` writes that file and the corpus simulation was an sbt project; a `pom.xml`
+  beside `build.sbt` closed that gap without a second copy of the simulation. It earned its cost by
+  disproving two things planning believed: that an ordinary `mvn gatling:test` writes the file at all
+  (it does not — `failOnError` must be off), and that a run directory is named in local time (it is
+  UTC). Everything else (a stale pointer, an empty root, a shared modification time, a symlinked run,
+  an escaping line) is constructed, and is named as a fixture rather than corpus.
 
 ## Success Criteria *(mandatory)*
 

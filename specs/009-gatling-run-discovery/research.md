@@ -47,6 +47,15 @@ and absent for most.
 | Trailing content | An optional **error line** that is not a directory name at all. |
 | Encoding, endings | UTF-8 (`Files.newBufferedWriter` with no charset), `System.lineSeparator()` — so CRLF on Windows. |
 
+**And it is gated.** `GatlingMojo.execute()` calls `saveSimulationResultToFile` only when
+`failOnError` is **false** — the bytecode branches `getfield failOnError; ifne` straight past the
+call — and that parameter is declared `@Parameter(property = "gatling.failOnError", defaultValue =
+"true")`. So an ordinary `mvn gatling:test` writes no `lastRun.txt` at all. This was found by
+recording rather than by reading: the first Maven run made for
+[R9](#r9--what-the-corpus-already-proves-and-the-one-thing-it-cannot) produced a run directory and no
+file, which sent the search back to `execute()`. It is the sharpest limit on how often the file
+exists, and the reading alone had missed it.
+
 **Alternatives considered**: assuming a single line holding a bare name, which is what the spec
 implied. It is right in the common case and silently wrong for a multi-simulation build and for a
 failed one.
@@ -78,10 +87,11 @@ So the file is gone after `mvn gatling:verify`, which is the ordinary Maven life
   logs mentions the file. Treated as "assume absent", which is the safe direction: the code path that
   handles absence is exercised either way.
 
-**Consequence, and it is the important one.** For a Gradle user, an sbt user, and any Maven user who
-ran `gatling:verify`, `lastRun.txt` is not there. The rule the issue frames as the fallback is what
-almost every caller will actually hit — which is why [R6](#r6--the-tie-break-is-load-bearing-not-a-formality)
-matters far more than its one line in the spec suggests.
+**Consequence, and it is the important one.** For a Gradle user, an sbt user, any Maven user on the
+default `failOnError` (R1), and any Maven user who ran `gatling:verify`, `lastRun.txt` is not there.
+The rule the issue frames as the fallback is what almost every caller will actually hit — which is
+why [R6](#r6--the-tie-break-is-load-bearing-not-a-formality) matters far more than its one line in
+the spec suggests.
 
 ---
 
@@ -119,10 +129,18 @@ nothing else about it.
   `io.galaxio.parsec.corpus.CorpusSimulation` then `corpussimulation`.
 
 **Correction to the spec.** Its Context said the name ends in "the run's start in epoch
-milliseconds". It does not: it is seventeen digits of **formatted local date and time**, from a
-`RunMessage` that carries its own `zoneId`. The spec has been corrected. The difference is not
-cosmetic — epoch millis and `yyyyMMddHHmmssSSS` sort the same way, but only the latter is readable,
-which is why the tie-break below can be explained to a user rather than merely asserted.
+milliseconds". It does not: it is seventeen digits of `yyyyMMddHHmmssSSS`, and — measured, after
+[R9](#r9--what-the-corpus-already-proves-and-the-one-thing-it-cannot)'s recording made it checkable —
+in **UTC**, not local time as this section first claimed. The Maven run recorded on a machine at
++04:00 produced `corpussimulation-20260909022708912` from a run whose own RUN record decodes to
+`20260909022708.912` UTC and `20260909062708.912` local; the sbt-made `3.13.1` entry agrees, its
+console naming `corpussimulation-20260906044741110` for a start of `20260906044741.110` UTC. Two
+build tools, so this is Gatling's behaviour and not a plugin's JVM argument.
+
+The difference is not cosmetic. Epoch millis and `yyyyMMddHHmmssSSS` sort the same way, but a *local*
+`yyyyMMddHHmmssSSS` would not sort monotonically across a daylight-saving fall-back — an hour of run
+ids would repeat and the tie-break below would silently prefer the earlier run. In UTC it is a total
+order for good.
 
 ---
 
@@ -226,7 +244,7 @@ boundary.
 ## R9 — What the corpus already proves, and the one thing it cannot
 
 **Decision**: the spec's requirement for a new recording **narrows to one purpose**, and that purpose
-needs a build tool the corpus project does not have.
+needs a build tool the corpus project did not have. It was recorded; see the resolution below.
 
 What the existing recordings already establish, with no new run:
 
@@ -240,17 +258,33 @@ What the existing recordings already establish, with no new run:
 What they cannot establish, and no later work can recover: a real `lastRun.txt`. Per R1 and R2 only
 `gatling-maven-plugin` writes one, and `testdata/corpus/gatling/simulation/` is an sbt project.
 
-**This is the one open cost in the feature, and it wants a decision before tasks are cut:**
+**Resolved 2026-09-09: recorded.** `testdata/corpus/gatling/simulation/pom.xml` was added beside the
+existing `build.sbt` — same sources, same stub, a second build tool — and three Maven runs were made
+into one results root, committed as `testdata/corpus/gatling/lastrun/` with their console output and
+a `RECORDING.md`. The recording paid for itself twice over, and neither return was the one expected:
 
-| Option | What it costs | What it buys |
-|---|---|---|
-| **A — record it (recommended)** | A `pom.xml` beside the existing `build.sbt`, one Maven run of two simulations into one root, committed with its `lastRun.txt` and console output as `testdata/corpus/gatling/lastrun/`. | Principle III's evidence: a real artefact, from a real build, for the one input this feature parses. Also the only way to see the multi-line and error-line shapes as a build really writes them. |
-| **B — do not record it** | Nothing now. | Rests on R1's bytecode instead. That is arguably *stronger* evidence than one sample — it shows every branch of the writer, not one instance — but it is a reading of a plugin, and it is not what Principle III asks for. |
+1. **It found the `failOnError` gate.** The first run produced a run directory and *no*
+   `lastRun.txt`, which is what sent the search back into `GatlingMojo.execute()` and turned up the
+   branch now recorded in [R1](#r1--lastruntxt-is-written-by-the-maven-plugin-not-by-gatling). Reading
+   the writer had been enough to know the file's *format* and not enough to know when it exists at
+   all — precisely the gap Principle III's "real artefacts, not mocks" exists to close.
+2. **It disproved this document's own claim about the run-directory name.**
+   [R4](#r4--a-run-directory-is-named-simulationid-yyyymmddhhmmsssss) said local time; the recording
+   says UTC, and the sbt entries agree.
 
-The plan is written for **A**, and the recording is scheduled as its own task so that choosing B
-removes exactly one task and nothing else. Everything beyond that shape — three runs, a stale
-pointer, an empty root, a shared modification time, a symlinked run — is constructed under
-`t.TempDir()` and is a **fixture, not corpus**, exactly as the cut logs were in v0.0.8.
+It also produced #11's acceptance case as an artefact rather than a fixture: three real run
+directories whose `lastRun.txt` names the **middle** one. That took three runs, because the plugin
+writes only the directories its own execution created — run 1 (default) wrote no file, run 2
+(`failOnError=false`) wrote one naming itself, and run 3 (default again) added a directory and left
+the file alone.
+
+What was *not* captured: the multi-line shape (it needs a second simulation class and
+`runMultipleSimulations`) and the error line (it needs a failing run). Both are held by unit tests
+written against R1's bytecode, which shows every branch of the writer rather than one instance.
+
+Everything beyond that — a stale pointer, an empty root, a shared modification time, a symlinked run,
+an escaping line — is constructed under `t.TempDir()` and is a **fixture, not corpus**, exactly as the
+cut logs were in v0.0.8.
 
 ---
 

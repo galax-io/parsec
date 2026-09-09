@@ -1,8 +1,10 @@
 # Contract 2 — the `lastRun.txt` contract
 
 **Status**: an assumption about someone else's file, recorded so it can be re-checked rather than
-rediscovered. Read from `gatling-maven-plugin` **4.21.10** on 2026-09-08; the constant and the
-writing method are unchanged in every version from 3.0.5 to 4.21.10 present on that machine.
+rediscovered. Read from `gatling-maven-plugin` **4.21.10** on 2026-09-08, and then **confirmed
+against a real build of that same version** on 2026-09-09 — see
+`testdata/corpus/gatling/lastrun/RECORDING.md`. The constant and the writing method are unchanged in
+every version from 3.0.5 to 4.21.10 present on that machine.
 
 This is not a format this module decodes. It is a hint, and every rule below exists so that a wrong
 or stale hint costs nothing.
@@ -17,9 +19,22 @@ bytecode this was read from.
 | | |
 |---|---|
 | **Location** | `<resultsFolder>/lastRun.txt`, where `resultsFolder` defaults to `${project.build.directory}/gatling` |
-| **Written by** | `GatlingMojo.saveSimulationResultToFile`, at the end of a `gatling:test` execution |
+| **Written by** | `GatlingMojo.saveSimulationResultToFile`, at the end of a `gatling:test` execution — **only when `failOnError` is false**, and it defaults to true |
 | **Deleted by** | `VerifyMojo.verifyLastRun`, during `gatling:verify` — so it does not survive an ordinary Maven build |
 | **Not written by** | the Gradle plugin (verified), Gatling itself (verified), sbt (assumed — the plugin was not available to check) |
+
+## When it exists at all
+
+Three conditions, and every one of them has to hold:
+
+1. the build is **Maven** — the Gradle plugin never writes one, and Gatling itself never does;
+2. `failOnError` is **false**, against its default of true. `GatlingMojo.execute()` branches past the
+   write otherwise, which a recorded run confirmed: an ordinary `mvn gatling:test` left a run
+   directory and no file;
+3. `gatling:verify` has **not** run since, because it reads the file and deletes it.
+
+That is the whole reason `FoundByNewest` is the ordinary outcome and `FoundByLastRun` the exception.
+A reader that treated the file's absence as unusual would have the cases backwards.
 
 ## What it holds
 
@@ -59,8 +74,9 @@ ExecutionError: java.lang.RuntimeException: something failed | ...
    A bare name that is a symlink is followed, deliberately: an archive that stores runs elsewhere and
    links them in is a shape the spec's edge cases require to work
    (research [R8](../research.md#r8--containment-is-textual-so-a-symlinked-run-still-resolves)).
-4. **Absence is normal, not an error.** No `lastRun.txt` means the modification-time rule, which is
-   what Gradle and sbt users get always and Maven users get after `gatling:verify`.
+4. **Absence is normal, not an error.** No `lastRun.txt` means the modification-time rule — which is
+   what Gradle and sbt users get always, what Maven users get under the default `failOnError`, and
+   what every Maven user gets after `gatling:verify`.
 5. **It is never written, moved or deleted.** Discovery only reads. `VerifyMojo` deletes this file
    and would be racing anything that did otherwise.
 6. **Several usable lines resolve like several directories.** The newest wins, by the same ordering
@@ -76,5 +92,12 @@ ExecutionError: java.lang.RuntimeException: something failed | ...
 | The Gradle or sbt plugin starts writing one | It is read, with no change, provided the lines are bare names. |
 | The file grows large | It is read with a cap; a `lastRun.txt` over 64 KiB is treated as absent rather than loaded. |
 
-Re-read this contract when a Gatling plugin major version lands, and record the version checked in
-the header above.
+## The recording
+
+`testdata/corpus/gatling/lastrun/` holds a real results root from three Maven runs, with the
+`lastRun.txt` those runs left: 35 bytes, one bare directory name, one LF. It is the only place this
+module's reader meets a file a build tool actually wrote, and
+`gatling/discover_corpus_test.go` (behind `-tags=integration`) is what checks the two still agree.
+
+Re-read this contract when a Gatling plugin major version lands, record the version checked in the
+header above, and re-take the recording if the writer changed.
