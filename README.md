@@ -66,15 +66,18 @@ A caller that cannot use a number nothing has verified can say so: `gatling.With
 version above the recorded range instead of decoding it with a warning.
 
 `gatling.FindRun` answers the question that comes before all of them: which file to open. Give it a
-project and it finds the run — a `simulation.log`, a directory holding one, or a results root to
-search — so nobody types a generated name like `corpussimulation-20260906044741110` by hand. It
-defaults to `target/gatling`, where Maven and sbt both write, and takes Gradle's
-`build/reports/gatling` or any other root as its argument rather than reading a build file to guess
-one. It opens no log and runs no version gate, so it fails only about the thing it was asked.
+`simulation.log`, a directory holding one, or a results root to search, and it finds the run — so
+nobody types a generated name like `corpussimulation-20260906044741110` by hand. `target/gatling`,
+where Maven and sbt both write, is published as `gatling.DefaultResultsRoot` for a caller to pass;
+Gradle's `build/reports/gatling` and any other root are passed the same way, rather than read out of
+a build file. A path is never guessed at: an empty one is refused, because a server whose
+configuration silently lost its path should be told so rather than handed an unrelated run. It opens
+no log and runs no version gate, so it fails only about the thing it was asked.
 
-Which run it picked, and why, comes back with it: Gatling's own `lastRun.txt` when a Maven build left
-one, and otherwise the most recently modified run, ordered so that a checkout which flattened every
-timestamp still resolves the same run every time.
+Which run it picked, and why, comes back with it. `lastRun.txt` is preferred where there is one —
+though only a Maven build with `failOnError` turned off leaves one, and `gatling:verify` deletes it
+again, so most callers get the most recently written run instead, ordered so that a checkout which
+flattened every timestamp still resolves the same run every time.
 
 The log's own wire records are still there and still exported: they are the format's events rather
 than a result, and both codecs share them. Build on `model/`.
