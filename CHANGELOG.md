@@ -5,6 +5,24 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.0.9] - 2026-09-09
+
+Finding the run: which `simulation.log` to open, answered once instead of three times.
+
+Callers had to know the exact path of a run directory, and the three consumers of this module —
+`galaxio report`, the comet sidecar and platform ingestion — were each about to work it out
+differently. `gatling/run` answers it: give it the log, the directory holding one, or a results root
+to search, and it returns where the run's artefacts sit and which rule chose them. It stops exactly
+where reading begins, so a run whose log is truncated, damaged or outside the supported range still
+resolves and fails only when a codec is handed the file.
+
+What shaped it was reading `gatling-maven-plugin` and `gatling-core` rather than their documentation,
+and then recording a real Maven results root, which corrected the reading twice. `lastRun.txt` is not
+Gatling's: only the Maven plugin writes one, only when `failOnError` is turned off against its
+default, and `gatling:verify` deletes it again — so for almost every caller the rule the issue framed
+as a fallback is the only rule there is. And a run directory is named in UTC, not local time, which is
+what makes the ordering's tie-break an ordering by time at all.
+
 ### Added
 
 - **`run.Find` locates a run**, so the three consumers of this module stop each working out
