@@ -33,7 +33,7 @@ Go 1.25, standard library only in model/ and gatling/, and no third-party module
 <!-- A LIGHT search index, not a full tree. List only the entry points an agent needs
      to FIND code fast — one terse line per area (`dir/ -> what lives there`). Omit
      anything discoverable by looking; an exhaustive tree is noise and rots fast. -->
-model/ -> canonical result types and the primitives a consumer computes from; gatling/ -> text and binary simulation.log codecs, version gate, run discovery; jmeter/ k6/ locust/ phout/ -> per-tool adapters; testdata/corpus/ -> golden logs per tool and version
+model/ -> canonical result types and the primitives a consumer computes from; gatling/ -> text and binary simulation.log codecs, version gate; gatling/run/ -> finding which run to read; jmeter/ k6/ locust/ phout/ -> per-tool adapters; testdata/corpus/ -> golden logs per tool and version
 
 ## Architecture
 

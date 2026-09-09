@@ -1,4 +1,4 @@
-package gatling_test
+package run_test
 
 import (
 	"os"
@@ -7,12 +7,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/galax-io/parsec/gatling"
+	"github.com/galax-io/parsec/gatling/run"
 )
 
 // FuzzLastRun drives the only input this feature parses.
 //
-// Everything else FindRun reads is filesystem metadata; lastRun.txt is bytes
+// Everything else Find reads is filesystem metadata; lastRun.txt is bytes
 // written by another project, and it is the one place a malformed input could
 // reach. Two properties are asserted: no input panics, and none of them selects
 // a run outside the results root.
@@ -70,11 +70,11 @@ func FuzzLastRun(f *testing.F) {
 			t.Fatalf("write lastRun.txt: %v", err)
 		}
 
-		loc, err := gatling.FindRun(root)
+		loc, err := run.Find(root)
 		if err != nil {
 			// The root always holds three runs, so the only legal ending is a
 			// location. Anything else is the bug this target looks for.
-			t.Fatalf("FindRun: %v", err)
+			t.Fatalf("Find: %v", err)
 		}
 
 		// The chosen run must be a direct child of the root, whatever the file
@@ -87,7 +87,7 @@ func FuzzLastRun(f *testing.F) {
 			t.Fatalf("Log = %s, want it inside %s", loc.Log, loc.Dir)
 		}
 
-		if loc.Found != gatling.FoundByLastRun && loc.Found != gatling.FoundByNewest {
+		if loc.Found != run.FoundByLastRun && loc.Found != run.FoundByNewest {
 			t.Fatalf("Found = %v, want a results-root rule", loc.Found)
 		}
 	})

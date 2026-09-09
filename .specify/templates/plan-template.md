@@ -96,7 +96,8 @@ specs/[###-feature]/
 
 ```text
 model/                              # canonical result types and Capabilities
-gatling/                            # text + binary simulation.log codecs, version gate, run discovery
+gatling/                            # text + binary simulation.log codecs, version gate
+gatling/run/                        # finding which run to read
 jmeter/  k6/  locust/  phout/       # one adapter package per tool, added by milestone
 internal/                           # helpers shared across packages; not public API
 testdata/corpus/<tool>/<version>/   # golden artefacts recorded from real runs

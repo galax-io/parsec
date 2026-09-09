@@ -155,17 +155,3 @@ func TestTruncationError(t *testing.T) {
 		}
 	})
 }
-
-func TestRunNotFoundError(t *testing.T) {
-	t.Parallel()
-
-	err := &gatling.RunNotFoundError{Dir: "/srv/results"}
-	mustContain(t, err.Error(), "/srv/results", "no Gatling run")
-
-	// The directory is always one the caller gave — FindRun substitutes none —
-	// so there is nothing here to say where the path came from.
-	var target *gatling.RunNotFoundError
-	if wrapped := fmt.Errorf("find: %w", err); !errors.As(wrapped, &target) || target.Dir != "/srv/results" {
-		t.Fatalf("errors.As does not recover the RunNotFoundError from %v", wrapped)
-	}
-}

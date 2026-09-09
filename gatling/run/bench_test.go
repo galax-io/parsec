@@ -1,4 +1,4 @@
-package gatling_test
+package run_test
 
 import (
 	"fmt"
@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/galax-io/parsec/gatling"
+	"github.com/galax-io/parsec/gatling/run"
 )
 
 // benchRoot builds a results root holding n runs, with modification times a
@@ -44,7 +44,7 @@ func benchRoot(tb testing.TB, n int) string {
 //
 // One directory read, one stat per entry to test for a log, and a second stat
 // for each entry that turns out to be a run. Allocations track the entry count.
-func BenchmarkFindRun(b *testing.B) {
+func BenchmarkFind(b *testing.B) {
 	for _, n := range []int{10, 100, 1000} {
 		b.Run(fmt.Sprintf("runs=%d", n), func(b *testing.B) {
 			root := benchRoot(b, n)
@@ -53,8 +53,8 @@ func BenchmarkFindRun(b *testing.B) {
 			b.ResetTimer()
 
 			for range b.N {
-				if _, err := gatling.FindRun(root); err != nil {
-					b.Fatalf("FindRun: %v", err)
+				if _, err := run.Find(root); err != nil {
+					b.Fatalf("Find: %v", err)
 				}
 			}
 		})
@@ -64,7 +64,7 @@ func BenchmarkFindRun(b *testing.B) {
 // BenchmarkFindRunLastRun is the same root with a pointer to read, so the cost
 // of the file — a stat, a bounded read and a split — is visible beside the scan
 // rather than hidden inside it.
-func BenchmarkFindRunLastRun(b *testing.B) {
+func BenchmarkFindLastRun(b *testing.B) {
 	root := benchRoot(b, 1000)
 
 	pointer := fmt.Sprintf("corpussimulation-2026090604%012d", 42)
@@ -74,32 +74,32 @@ func BenchmarkFindRunLastRun(b *testing.B) {
 
 	// Guard the benchmark against measuring the wrong thing: if the name ever
 	// stopped matching a run, this would quietly time the plain scan again.
-	if loc, err := gatling.FindRun(root); err != nil || loc.Found != gatling.FoundByLastRun {
-		b.Fatalf("setup: FindRun = %+v, %v; want a run found by lastRun.txt", loc, err)
+	if loc, err := run.Find(root); err != nil || loc.Found != run.FoundByLastRun {
+		b.Fatalf("setup: Find = %+v, %v; want a run found by lastRun.txt", loc, err)
 	}
 
 	b.ReportAllocs()
 	b.ResetTimer()
 
 	for range b.N {
-		if _, err := gatling.FindRun(root); err != nil {
-			b.Fatalf("FindRun: %v", err)
+		if _, err := run.Find(root); err != nil {
+			b.Fatalf("Find: %v", err)
 		}
 	}
 }
 
 // BenchmarkFindRunNamedPath is the path a caller already knows: two stats and no
 // listing at all, which is the floor the other two are measured against.
-func BenchmarkFindRunNamedPath(b *testing.B) {
+func BenchmarkFindNamedPath(b *testing.B) {
 	root := benchRoot(b, 10)
-	run := filepath.Join(root, "corpussimulation-2026090604000000000005")
+	runDir := filepath.Join(root, "corpussimulation-2026090604000000000005")
 
 	b.ReportAllocs()
 	b.ResetTimer()
 
 	for range b.N {
-		if _, err := gatling.FindRun(run); err != nil {
-			b.Fatalf("FindRun: %v", err)
+		if _, err := run.Find(runDir); err != nil {
+			b.Fatalf("Find: %v", err)
 		}
 	}
 }
