@@ -41,8 +41,9 @@ in `model/`, and no existing identifier changes.
 1.26.4). `os.Root` is available and deliberately not used — research
 [R8](research.md#r8--containment-is-textual-so-a-symlinked-run-still-resolves).
 
-**Primary Dependencies**: standard library only. `os`, `io/fs`, `path/filepath`, `sort`, `strings`.
-No module is added, and `gatling/` stays stdlib-only as the `deps` job requires (Principle IV).
+**Primary Dependencies**: standard library only — `errors`, `fmt`, `io`, `io/fs`, `os`, `path/filepath`,
+`strconv`, `strings`, `time`. No module is added, and `gatling/` stays stdlib-only as the `deps` job
+requires (Principle IV).
 
 **Storage**: N/A — the filesystem is read, never written. Discovery creates, moves and deletes
 nothing, which also keeps it out of `VerifyMojo`'s way (contract 2, promise 5).
@@ -74,20 +75,24 @@ read, at most one `stat` per entry, one bounded read of `lastRun.txt` (64 KiB ca
 allocations proportional to the entry count and independent of anything inside a run. No existing
 benchmark is touched; no decoder code path changes, so none can regress.
 
-**Measured 2026-09-08 (T036)**, darwin/arm64, `-benchtime=200ms`:
+**Measured 2026-09-08, re-measured 2026-09-09 after review**, darwin/arm64, `-benchtime=200ms`:
 
-| Benchmark | ns/op | B/op | allocs/op |
-|---|---|---|---|
-| `BenchmarkFindRun/runs=10` | 64 214 | 14 232 | 102 |
-| `BenchmarkFindRun/runs=100` | 524 134 | 118 362 | 825 |
-| `BenchmarkFindRun/runs=1000` | 4 932 562 | 1 166 752 | 8 028 |
-| `BenchmarkFindRunLastRun` (1000 runs, pointer read) | 4 601 819 | 1 152 357 | 8 041 |
-| `BenchmarkFindRunNamedPath` | 2 068 | 640 | 4 |
+| Benchmark | allocs/op before | after | B/op before | after |
+|---|---|---|---|---|
+| `BenchmarkFindRun/runs=10` | 102 | 71 | 14 232 | 9 384 |
+| `BenchmarkFindRun/runs=100` | 825 | 524 | 118 362 | 71 752 |
+| `BenchmarkFindRun/runs=1000` | 8 028 | **5 027** | 1 166 752 | **686 554** |
+| `BenchmarkFindRunLastRun` (1000 runs, pointer read) | 8 041 | 5 043 | 1 152 357 | 688 495 |
+| `BenchmarkFindRunNamedPath` | 4 | 3 | 640 | 496 |
 
-The bound holds: cost is linear in the entry count — roughly 8 allocations and 1.2 KB per entry at
-every size — and reading `lastRun.txt` adds 13 allocations to a 1000-run root, which is the file
-itself and not per-entry work. A path that already names a run costs two stats and four allocations,
-listing nothing, which is the floor the other rows are measured against.
+**−37% allocations and −41% bytes** at every size, because the ordering now uses the `FileInfo`
+`holdsLog` was already fetching instead of spending a second `stat` on the run directory — the fix
+for the report-regeneration defect and the cost reduction are the same change. The bound holds and
+tightens: one directory read and **one** `stat` per entry, where the first implementation took two.
+
+Wall-clock is not quoted as a delta. The re-measurement ran on a machine busy with the review itself
+and its ns/op is not comparable with the original figure; allocations and bytes are the stable
+numbers and are what the bound is stated in.
 
 **Constraints**: no `simulation.log` is opened (FR-013) and no version gate runs (FR-014); ordering
 is total and platform-independent (FR-008); nothing outside the results root is followed (FR-007);
@@ -212,3 +217,41 @@ are named `discover_*` so that the feature's whole surface is one `ls` away, mat
 ## Complexity Tracking
 
 No constitution gate fails; nothing to justify.
+
+## What review changed, after implementation
+
+A max-effort review (ten finder angles, plus a Codex pass and an adversarial pass) ran against the
+merged branch and found fifteen issues. The three that changed the design rather than the code:
+
+**The empty-path default is withdrawn.** `FindRun("")` meant `target/gatling`, resolved against the
+process working directory. `""` is also the zero value of every unset flag, absent configuration
+field and omitted request member — so a server whose path silently went missing would have been
+handed a confident report about whatever run happened to sit in its own working directory. The
+layout is now published as `DefaultResultsRoot` for a caller to pass, an empty path returns
+`ErrNoPath` before any filesystem access, and `RunNotFoundError.Default` is gone with it: nothing is
+substituted, so there is nothing to disclose. FR-010 and FR-011 are rewritten to match.
+
+**The ordering reads the log's modification time, not the run directory's.** A directory's time moves
+whenever anything is written into it, so regenerating a report into an old run made that run the
+newest — the exact failure US2 was written to prevent, on the path R2 shows is the ordinary one. The
+log is written by the run and by nothing else, and `holdsLog` was already fetching its `FileInfo` and
+discarding it, so the fix removes a syscall per candidate rather than adding one.
+
+**The tie-break compares the run id's own UTC stamp before the directory name.** Whole-name order is
+alphabetical by simulation id first, so a root holding two simulations — which is what Maven's
+`runMultipleSimulations` produces — returned the run that started months earlier while reporting
+`FoundByNewest`. R4 established the name format and that it is UTC; that is what the comparison now
+uses, falling back to the whole name for a directory an archive renamed.
+
+Beside those: a failed look inside a candidate is now an error rather than a skip (FR-012 at every
+depth); an unreadable `lastRun.txt` is reported instead of degrading silently to a guess; the pointer
+read is bounded by the open descriptor rather than by a prior stat of the path; paths are cleaned
+once so one run yields one comparable `RunLocation`; a path that exists but is not a directory reaches
+`*RunNotFoundError` rather than a raw `ENOTDIR`; a directory named `simulation.log` resolves; the
+pointer lookup is a set rather than a nested scan; the permission tests skip on Windows by platform
+rather than by uid; and the corpus tests fail rather than skip when the committed recording is absent.
+
+Mutation testing backs the new assertions: reverting each of the four load-bearing fixes in turn
+fails a test that is specific to it. The earlier suite could not do this — swapping the ordering key
+for the log's time had left all 214 tests green, because every fixture built its runs in ascending
+name order so directory time, log time and name order all agreed.

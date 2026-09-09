@@ -75,7 +75,7 @@ confirm the run directory and its `simulation.log` come back.
 
 - [X] T009 [P] [US1] Newest-run test in gatling/discover_test.go: three runs with distinct modification times resolve to the newest, with `Found == FoundByNewest` and `Log == filepath.Join(Dir, "simulation.log")`
 - [X] T010 [P] [US1] Determinism test in gatling/discover_test.go: three runs whose modification times are **identical** — the shape a clone, an rsync or a CI cache restore produces — resolve to the same run on every repetition, and it is the highest directory name (research R6). This is the test that catches an ordering that is merely "newest" and not total
-- [X] T011 [P] [US1] Default-root test in gatling/discover_test.go: with `t.Chdir` into a tree holding `target/gatling`, `FindRun("")` resolves it, and the result reports that the root was a default
+- [X] T011 [P] [US1] Default-root test in gatling/discover_test.go: with `t.Chdir` into a tree holding `target/gatling`, `FindRun(gatling.DefaultResultsRoot)` resolves it — and `FindRun("")` is refused with `ErrNoPath` even though a run is sitting there (revised in review; see the implementation record)
 - [X] T012 [P] [US1] Override test in gatling/discover_test.go: `FindRun("build/reports/gatling")` resolves the Gradle layout and consults no default
 - [X] T013 [P] [US1] Candidate test in gatling/discover_test.go: a child holding a report but no `simulation.log` is not a run, and a child that is a plain file is not a candidate at all
 
@@ -153,7 +153,7 @@ confirm each names the directory searched and returns no run.
 
 ### Tests for User Story 4 (write first, MUST fail) ⚠️
 
-- [X] T031 [P] [US4] Failure table in gatling/discover_test.go: an empty root, a path that does not exist, and `FindRun("")` with no `target/gatling` present — each returns a `*RunNotFoundError` naming the directory, with `Default` true only for the third, and the zero `RunLocation` beside it
+- [X] T031 [P] [US4] Failure table in gatling/discover_test.go: an empty root, a path that does not exist, and a regular file that is not a log — each returns a `*RunNotFoundError` naming the caller's own directory, with the zero `RunLocation` beside it (revised in review; `Default` is gone)
 - [X] T032 [P] [US4] Unreadable-directory test in gatling/discover_test.go: a directory whose permissions forbid reading returns the wrapped `*fs.PathError`, reachable with `errors.As`, and **not** a `*RunNotFoundError` (FR-012); `t.Skip` when running as root, where the permission cannot be enforced. This is the test that rots — a version treating every read error as "no runs here" passes every other case in this file
 - [X] T033 [P] [US4] No-fallback test in gatling/discover_test.go: a path naming neither a run nor a root containing one fails rather than falling back to the default root (FR-003)
 

@@ -1,6 +1,6 @@
 # Contract 1 — public API
 
-**Status**: four additions, no change to any existing identifier. Permitted before v0.1.0
+**Status**: six additions, no change to any identifier that existed before v0.0.9. Permitted before v0.1.0
 (Principle V) and recorded under **Added** in `CHANGELOG.md` in the same PR. The freeze
 [parsec#13](https://github.com/galax-io/parsec/issues/13) asks for is the next milestone, so these
 names are chosen as if permanent — see research
@@ -11,85 +11,62 @@ names are chosen as if permanent — see research
 ```go
 package gatling
 
-// FindRun locates a Gatling run. It returns where the run's artefacts sit and
-// which rule chose them; it opens no simulation.log and applies no version
-// gate, so a run whose log is truncated, damaged or out of the supported range
-// still resolves and fails only when the log is read.
-//
-// path may name the run itself — a simulation.log, or a directory holding one —
-// in which case it is returned as given and nothing else is searched. Otherwise
-// path is a results root and its immediate children are searched: the run named
-// by lastRun.txt if that file names one that is still there, and failing that
-// the most recently modified run in the root.
-//
-// An empty path means the results root Maven and sbt write to, target/gatling,
-// relative to the working directory. Gradle writes to build/reports/gatling and
-// a run configured by hand writes wherever it was told to; pass either as path.
-//
-// When no run is found it returns a *RunNotFoundError naming the directory that
-// was searched and saying whether that directory was the default. A directory
-// that cannot be read is reported as that failure, wrapping the *fs.PathError,
-// and never as an absence of runs.
+// DefaultResultsRoot is where Maven and sbt both write Gatling's output. It is
+// exported rather than applied automatically: the same relative path means
+// "this project" to a CLI standing in one and something arbitrary to a server.
+const DefaultResultsRoot = "target/gatling"
+
+// ErrNoPath is returned by FindRun when it is given an empty path. "" is the
+// zero value of every unset flag, configuration field and omitted request
+// member, so guessing a root for it would turn missing input into a confident
+// report about an unrelated run.
+var ErrNoPath = errors.New("gatling: no path given; …")
+
+// FindRun locates a Gatling run: a simulation.log, a directory holding one, or
+// a results root to search. It opens no log and applies no version gate.
 func FindRun(path string) (RunLocation, error)
 
 // RunLocation is where a Gatling run's artefacts sit, and how they were found.
+// Dir is cleaned, so every spelling of one run yields one value.
 type RunLocation struct {
-    // Dir is the run directory.
-    Dir string
-    // Log is the simulation.log inside Dir. It is always Dir joined with
-    // "simulation.log": a directory is a run because it holds one.
-    Log string
-    // Found is the rule that selected this run.
+    Dir   string
+    Log   string
     Found FoundBy
 }
 
-// FoundBy is how a run was chosen. A caller that reports which run it read
-// should say this too: FoundByNewest is a guess from modification times, and it
-// is the ordinary outcome, because only gatling-maven-plugin writes a
-// lastRun.txt and it deletes it again during gatling:verify.
+// FoundBy is how a run was chosen: FoundByPath, FoundByLastRun, FoundByNewest,
+// behind FoundByUnknown at iota 0. String() renders "path", "lastRun.txt",
+// "newest", "unknown".
 type FoundBy uint8
 
-const (
-    // FoundByUnknown is the zero value and is never returned.
-    FoundByUnknown FoundBy = iota
-    // FoundByPath means the caller named the run.
-    FoundByPath
-    // FoundByLastRun means lastRun.txt named it and it was still there.
-    FoundByLastRun
-    // FoundByNewest means it was the most recently modified run in the results
-    // root. Ties break on the directory name, descending, which is run-start
-    // order for the names Gatling generates.
-    FoundByNewest
-)
-
-// String returns the rule's name.
-func (f FoundBy) String() string
-
-// RunNotFoundError ends a search that completed and found no run. It is not
-// raised for a directory that could not be read: a failure to look is not an
-// absence of runs, and that failure is returned wrapping its *fs.PathError.
+// RunNotFoundError ends a search that found no run. It names only a directory
+// the caller gave: none is ever substituted.
 type RunNotFoundError struct {
-    // Dir is the directory that was searched.
     Dir string
-    // Default reports whether Dir is the default results root rather than one
-    // the caller named. A consumer with no meaningful working directory — a
-    // server — gets a relative path it never chose, and this says so.
-    Default bool
 }
-
-func (e *RunNotFoundError) Error() string
 ```
+
+`FoundByUnknown` is the zero value and is never returned beside a nil error; every failing branch
+returns the zero `RunLocation`.
 
 ## Changed
 
-Nothing. No existing identifier changes signature or behaviour, and no serialized format is touched.
-A consumer built against v0.0.8 compiles and behaves identically against v0.0.9.
+Nothing outside this feature. No identifier that existed before v0.0.9 changes signature or
+behaviour, and no serialized format is touched; a consumer built against v0.0.8 compiles and behaves
+identically against v0.0.9.
+
+Within the feature, review changed the shape before release: `FindRun("")` no longer means
+`target/gatling`. That convenience is withdrawn because `""` is what an unset flag, an absent
+configuration field and an omitted request member all look like, and a server that lost its path
+would have been handed a plausible run from its own working directory instead of an error. The
+layout is published as `DefaultResultsRoot` for a caller to pass deliberately. `RunNotFoundError`
+loses its `Default` field with it: nothing is substituted any more, so there is nothing to disclose.
 
 ## What a consumer does with it
 
 | Consumer | Before | After |
 |---|---|---|
-| `galaxio report`, given a project | works out `target/gatling`, lists it, picks by name or mtime | `gatling.FindRun("")`, then opens `loc.Log` |
+| `galaxio report`, given a project | works out `target/gatling`, lists it, picks by name or mtime | `gatling.FindRun(gatling.DefaultResultsRoot)`, then opens `loc.Log` |
 | `galaxio report`, given a path | opens it, or joins `simulation.log` itself | `gatling.FindRun(path)` — both shapes accepted |
 | the comet sidecar | its own results-root guessing before it can follow | `gatling.FindRun(root)` for the starting run; watching for the *next* one stays its own (spec, *Out of Scope*) |
 | the Galaxio backend | is handed a path by its uploader | unchanged; `FindRun(dir)` normalises a directory to its log if it wants |
@@ -97,7 +74,7 @@ A consumer built against v0.0.8 compiles and behaves identically against v0.0.9.
 The composition this feature is shaped around, and the whole of the integration:
 
 ```go
-loc, err := gatling.FindRun("")
+loc, err := gatling.FindRun(gatling.DefaultResultsRoot)
 if err != nil { return err }
 f, err := os.Open(loc.Log)
 if err != nil { return err }
@@ -116,7 +93,8 @@ Every identifier above carries the doc comment shown. Three facts must appear an
 because a caller who has to discover them by experiment has learned nothing this feature was for:
 
 1. `FindRun` opens no log and runs no version gate.
-2. The default root is `target/gatling`, and it is Maven's and sbt's, not Gradle's.
+2. `DefaultResultsRoot` is Maven's and sbt's, not Gradle's — and it is a value to pass, never a
+   substitution, so an absent path is `ErrNoPath` rather than a guess.
 3. `FoundByNewest` is a guess, and it is the common case — with the reason (contract 2).
 
 The package doc comment of `gatling` widens from "what every Gatling codec shares" to cover finding

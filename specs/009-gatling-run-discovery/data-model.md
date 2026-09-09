@@ -14,7 +14,7 @@ Where a run's artefacts sit, and how they were found. A value type; no method ne
 
 | Field | Type | Meaning | Invariant |
 |---|---|---|---|
-| `Dir` | `string` | The run directory. | Never empty on success. Cleaned; absolute if the caller's path was, relative if it was not. |
+| `Dir` | `string` | The run directory. | Never empty on success. Cleaned once in `FindRun`, so every spelling of one run yields one value and `RunLocation` is safe to compare and to key on. |
 | `Log` | `string` | The `simulation.log` inside `Dir`. | Never empty on success, and always `Dir` joined with `simulation.log`. |
 | `Found` | `FoundBy` | Which rule selected it. | Never `FoundByUnknown` on success. |
 
@@ -46,12 +46,11 @@ an absence of runs.
 
 | Field | Type | Meaning |
 |---|---|---|
-| `Dir` | `string` | The directory that was searched. Never empty (FR-011). |
-| `Default` | `bool` | True when `Dir` is the default results root rather than one the caller named. |
+| `Dir` | `string` | The directory that was searched. Never empty (FR-011), and always one the caller gave. |
 
-`Default` is not decoration. A server-side consumer with no working directory gets a relative path
-it never chose; the flag is what lets the message say where the path came from instead of only what
-it was.
+There is no flag saying where the path came from, because there is nothing to say: a path is never
+substituted. An absent path is refused outright with `ErrNoPath` before the filesystem is touched, so
+the only directory this error can name is one the caller chose.
 
 ## Resolution
 
@@ -61,23 +60,24 @@ producing reports in 3.13.5).
 
 ```
 FindRun(path):
-    root, isDefault := path, false
-    if path == "":
-        root, isDefault = "target/gatling", true          # R3
+    if path == "":                                        # refuse, never guess
+        return ErrNoPath
+    root := clean(path)                                   # one run, one spelling
 
     # 1. Is this already a run? (FR-002, FR-003, FR-004, FR-005)
     switch stat(root):
-        case missing:      return RunNotFoundError{root, isDefault}
+        case missing:      return RunNotFoundError{root}
         case regular file: return run(dir(root)) if base(root) == "simulation.log"
-                           else  RunNotFoundError{dir(root), isDefault}
-        case directory:    if exists(root/simulation.log):
+                           else  RunNotFoundError{root}
+        case directory:    if exists(root/simulation.log):    # even if named simulation.log
                                return RunLocation{root, root/simulation.log, FoundByPath}
                            # otherwise it is a results root; fall through
 
     # 2. Candidates: direct children only, one level deep  (Assumptions)
     entries := readdir(root)                              # error -> wrap, do not swallow (FR-012)
     candidates := [e for e in entries
-                   if isDir(e) and exists(root/e/simulation.log)]
+                   if exists(root/e/simulation.log)]      # a look that fails is an error, not a skip
+                                                          # and the time kept is the LOG's (FR-008)
 
     # 3. Gatling's own record, if there is one  (FR-006, FR-007, R7)
     named := [line for line in lines(root/lastRun.txt)    # absent -> skip, R2
@@ -87,10 +87,12 @@ FindRun(path):
 
     # 4. The newest run  (FR-002, FR-008, R6)
     if candidates is empty:
-        return RunNotFoundError{root, isDefault}
+        return RunNotFoundError{root}
     return location(newest(candidates), FoundByNewest)
 
-newest(xs):     max by (modification time, then name), both descending      # R6
+newest(xs):     max by (log mtime, then the run id's UTC stamp, then name)   # R6
+                all descending; the stamp is what makes it an ordering by time
+                when a root holds more than one simulation
 isBareName(s):  s == base(s) and s not in {"", ".", ".."} and no separator  # R8
 lines(p):       UTF-8, split on LF, each line stripped of a trailing CR and
                 surrounding whitespace, blanks dropped                      # R1
@@ -115,7 +117,7 @@ function's concern; noticing that is the sidecar's (spec, *Out of Scope*).
 | A path naming neither run nor root fails; it does not fall back to the default. | FR-003 | Step 1's `missing` case. |
 | A `lastRun.txt` line is followed only if it is a bare name. | FR-007, R8 | `isBareName`. |
 | A stale, logless or error line is a pointer to nothing, not a failure. | FR-006, R7 | Membership in `candidates`. |
-| Ordering is total and platform-independent. | FR-008, R6 | `newest`. |
-| An unreadable directory is a failure, not an absence. | FR-012 | Step 2's error path. |
+| Ordering is total, reads the log's time, and orders two simulations by their own recorded starts. | FR-008, R6 | `newest`, `later`, `runStart`. |
+| An unreadable directory is a failure, not an absence — at the root, at a candidate, and at the pointer file. | FR-012 | Every step. |
 | No `simulation.log` is opened. | FR-013, SC-004 | Every step. |
 | No version gate runs. | FR-014 | Every step — the gate belongs to the codec. |

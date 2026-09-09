@@ -74,9 +74,11 @@ ExecutionError: java.lang.RuntimeException: something failed | ...
    A bare name that is a symlink is followed, deliberately: an archive that stores runs elsewhere and
    links them in is a shape the spec's edge cases require to work
    (research [R8](../research.md#r8--containment-is-textual-so-a-symlinked-run-still-resolves)).
-4. **Absence is normal, not an error.** No `lastRun.txt` means the modification-time rule — which is
-   what Gradle and sbt users get always, what Maven users get under the default `failOnError`, and
-   what every Maven user gets after `gatling:verify`.
+4. **Absence is normal, not an error — but unreadability is an error.** No `lastRun.txt` means the
+   modification-time rule, which is what Gradle and sbt users get always, what Maven users get under
+   the default `failOnError`, and what every Maven user gets after `gatling:verify`. A file that is
+   *there* and cannot be read is a different thing and is reported: falling through to the clock would
+   hand back a different run than the one the build recorded, with nothing said about it.
 5. **It is never written, moved or deleted.** Discovery only reads. `VerifyMojo` deletes this file
    and would be racing anything that did otherwise.
 6. **Several usable lines resolve like several directories.** The newest wins, by the same ordering
@@ -90,7 +92,7 @@ ExecutionError: java.lang.RuntimeException: something failed | ...
 | The plugin changes the error-line wording | Nothing. No error text is matched. |
 | The plugin stops deleting the file in `verify` | `FoundByLastRun` becomes common where `FoundByNewest` is today. No code change. |
 | The Gradle or sbt plugin starts writing one | It is read, with no change, provided the lines are bare names. |
-| The file grows large | It is read with a cap; a `lastRun.txt` over 64 KiB is treated as absent rather than loaded. |
+| The file grows large | The size is taken from the open descriptor and the read is bounded by it, so a file over 64 KiB is treated as absent even if it grew after the directory was listed. |
 
 ## The recording
 

@@ -66,9 +66,10 @@ value with none of the tie-breaking rules built.
 1. **Given** a results root holding one run directory with a `simulation.log`, **When** a run is
    resolved against that root, **Then** that run directory and the `simulation.log` inside it are
    returned.
-2. **Given** a working directory whose default results root holds that run, **When** a run is
-   resolved with no path at all, **Then** the same run is returned, and the caller can tell that the
-   root was a default rather than one it chose.
+2. **Given** a working directory whose usual results root holds that run, **When** a run is resolved
+   against the published default-root value, **Then** the same run is returned; **and when** a run is
+   resolved with no path at all, **Then** it is refused rather than guessed at, even though a run is
+   sitting in that root.
 3. **Given** a results root holding three runs and no `lastRun.txt`, **When** a run is resolved,
    **Then** the most recently modified of the three is returned.
 4. **Given** a project whose results sit under the Gradle layout rather than the default, **When** the
@@ -160,9 +161,9 @@ confirm each failure names the directory searched and returns no run.
    directory that was searched and no run is returned.
 2. **Given** a results root that does not exist, **When** a run is resolved, **Then** the failure names
    that path and says it was not there.
-3. **Given** that no results root was supplied and the default was used, **When** resolution fails,
-   **Then** the failure says the root was a default and which one, so the caller is not shown a path
-   they never typed with no explanation of where it came from.
+3. **Given** that no path was supplied at all, **When** a run is resolved, **Then** it fails without
+   touching the filesystem, so a consumer whose configuration silently omitted the path — a server, a
+   job, an unset flag — is told what is missing rather than shown a run it never asked for.
 4. **Given** a directory that cannot be read because of its permissions, **When** a run is resolved,
    **Then** that is reported as the failure it is and not as an absence of runs.
 
@@ -217,18 +218,28 @@ confirm each failure names the directory searched and returns no run.
   rather than fail.
 - **FR-007**: A value read from `lastRun.txt` MUST NOT be followed outside the results root. Anything
   that does not resolve to a direct child of that root is treated as a pointer to nothing.
-- **FR-008**: Selection by modification time MUST be deterministic. Where several candidates share the
-  newest time, the tie MUST be broken by a documented rule that yields the same run on every platform
-  and on every repetition.
+- **FR-008**: Selection MUST be deterministic and MUST compare the time the *run* wrote, not the time
+  its directory was last touched: regenerating a report into an old run MUST NOT make that run the
+  newest. Where several candidates share the newest time, the tie MUST be broken by a documented rule
+  that yields the same run on every platform and on every repetition, and that rule MUST hold when the
+  root contains more than one simulation — a name ordered alphabetically before a run's own recorded
+  start is not an ordering by time.
 - **FR-009**: The caller MUST be able to learn how the run was chosen — given explicitly, named by
   `lastRun.txt`, or selected as the newest — so a consumer can say which run it is about to read and
   so a pointer that was skipped is visible rather than silent.
-- **FR-010**: The results root MUST default to the layout Maven and sbt write to, and MUST be
-  overridable by the caller for the Gradle layout and for any configured output directory.
-- **FR-011**: When no run is found, the failure MUST name the directory that was searched, MUST state
-  whether that directory was the caller's or the default, and MUST return no run alongside it.
+- **FR-010**: The layout Maven and sbt write to MUST be published as a value the caller can pass, and
+  MUST NOT be substituted for a path the caller did not give. An absent path MUST be refused before any
+  filesystem access: an empty string is the zero value of every unset flag, configuration field and
+  omitted request member, and guessing a root for it turns missing input into a confident report about
+  an unrelated run.
+- **FR-011**: When no run is found, the failure MUST name the directory that was searched — which is
+  always one the caller gave, since none is ever substituted — and MUST return no run alongside it.
+  A path that exists but is not a directory MUST reach this same failure rather than a raw filesystem
+  error: pointing at an archive or a mistyped filename is an absent run, not a broken tree.
 - **FR-012**: A directory that cannot be read MUST be reported as that failure, carrying the path
-  concerned, and MUST NOT be reported as an absence of runs or silently skipped.
+  concerned, and MUST NOT be reported as an absence of runs or silently skipped. This holds at every
+  depth the search touches — the results root, a candidate run directory inside it, and the pointer
+  file — because a caller cannot tell a clean "no runs here" from a broken mount by looking at it.
 - **FR-013**: Resolution MUST NOT open or read any `simulation.log`. It reads directory entries and,
   at most, `lastRun.txt`.
 - **FR-014**: Resolution MUST NOT apply, duplicate or pre-empt the version gate. A run whose log is
@@ -304,18 +315,19 @@ confirm each failure names the directory searched and returns no run.
   way to open a log would be a second public decoding interface to freeze at v0.1.0, which #10 and
   comet#3 both rejected for the same reason, and Principle VI rules out building one before something
   needs it.
-- **The default results root is the Maven layout, as #11 directs.** sbt writes to the same
-  `target/gatling`, so one default covers two of the three build tools; Gradle's
-  `build/reports/gatling` is the documented override rather than a second thing to search. The default
-  is resolved relative to the caller's working directory, which is why FR-011 requires a failure to say
-  the root was a default — a consumer running as a server has no such directory and should be told so
-  rather than shown a relative path it never chose.
+- **The Maven layout is published, not applied.** sbt writes to the same `target/gatling`, so one
+  value covers two of the three build tools, and Gradle's `build/reports/gatling` is passed like any
+  other root. It is a constant the caller reaches for rather than a fallback this module substitutes:
+  the same relative path means "this project" to a CLI standing in one and something arbitrary to a
+  server, and nothing inside discovery can tell those apart. Refusing an absent path is what keeps a
+  configuration that quietly lost its value from becoming a plausible answer.
 - **A results root is searched one level deep.** That is the layout Gatling writes, and walking an
   arbitrary tree turns a wrong path into a long, surprising scan of whatever it was pointed at. A run
   anywhere else is reached by naming it (US3).
 - **Modification time is the fallback, per #11.** Its weakness under clones and cache restores is why
-  `lastRun.txt` comes first (US2) and why FR-008 requires the tie to break deterministically; it is not
-  a reason to change the order the issue settled.
+  `lastRun.txt` comes first (US2) and why FR-008 requires the tie to break deterministically. The rule
+  #11 settled stands; what changed is only which timestamp is read — the log's, written by the run,
+  rather than the directory's, which any later report regeneration moves.
 - **What `lastRun.txt` contains is not assumed, and is no longer unknown.** Planning read the plugin
   that writes it: each line is a bare directory name, there is one line per run the build produced, a
   failed run appends a line that is an error message rather than a name, and the separator is the
