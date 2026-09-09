@@ -7,26 +7,26 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
-- **`gatling.FindRun` locates a run**, so the three consumers of this module stop each working out
+- **`run.Find` locates a run**, so the three consumers of this module stop each working out
   where a build tool put its results. It takes a path that may be the run itself — a
   `simulation.log`, or a directory holding one — or a results root to search, and returns the run
   directory with the log inside it and the rule that chose them. It opens no log and applies no
   version gate: a run whose log is truncated, damaged or outside the supported range still resolves,
   and fails when the log is read.
 
-  **A path is required.** `gatling.DefaultResultsRoot` publishes `target/gatling`, where Maven and
+  **A path is required.** `run.DefaultResultsRoot` publishes `target/gatling`, where Maven and
   sbt both write, for a caller to pass; Gradle's `build/reports/gatling` and a hand-configured output
   directory are passed the same way, because reading a `pom.xml` or a `build.gradle` would make this
   library aware of three build tools for a value the caller already has. An empty path returns
-  `gatling.ErrNoPath` before anything is read, rather than falling back to the working directory:
+  `run.ErrNoPath` before anything is read, rather than falling back to the working directory:
   `""` is the zero value of every unset flag, absent configuration field and omitted request member,
   and a server that quietly lost its path is better told so than handed a confident report about an
   unrelated run.
 
   `Dir` and `Log` are cleaned, so every spelling of one run — a trailing separator, a `./` segment,
-  the log's own path — yields one `RunLocation`, which is comparable and safe to use as a map key.
+  the log's own path — yields one `Location`, which is comparable and safe to use as a map key.
 
-- **`RunLocation`, `FoundBy` and `RunNotFoundError`** beside it. `FoundBy` says which of the three
+- **`Location`, `FoundBy` and `NotFoundError`** beside it. `FoundBy` says which of the three
   rules selected the run — the caller's own path, `lastRun.txt`, or the most recently modified run in
   the results root — so a consumer that reports which run it read can say how it was chosen.
 
@@ -40,7 +40,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   each give every run in a root one modification time, and a Gatling run directory is
   `<simulationId>-<yyyyMMddHHmmssSSS>`, so descending name is descending run start.
 
-  `RunNotFoundError` names the directory that was searched, which is always one the caller gave. A
+  `NotFoundError` names the directory that was searched, which is always one the caller gave. A
   path that exists but is not a directory — an archive, a mistyped filename — reaches it too, rather
   than surfacing a raw `ENOTDIR`. A directory that could not be *read* is reported as that failure
   instead, wrapping its `*fs.PathError`, and that holds at every depth: the results root, a candidate

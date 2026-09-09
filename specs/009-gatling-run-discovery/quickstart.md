@@ -60,7 +60,7 @@ Each maps to the spec's acceptance criteria and each says how to break it.
 ### 1. The newest run, with no pointer (US1, SC-001)
 
 Build the tree above with no `lastRun.txt`, give the three **logs** distinct modification times,
-call `FindRun(root)`.
+call `Find(root)`.
 
 **Expect** `Dir` is the newest of the three, and `Found` is `FoundByNewest`.
 
@@ -100,7 +100,7 @@ outside the root. It must not be selected.
 
 ### 4. A path that is already a run (US3)
 
-Call `FindRun` with the run directory, then with the `simulation.log` inside it.
+Call `Find` with the run directory, then with the `simulation.log` inside it.
 
 **Expect** both return that run with `FoundByPath`, and identical `Dir` and `Log`.
 
@@ -114,11 +114,11 @@ itself, not a root (FR-005).
 
 | Given | Expect |
 |---|---|
-| an empty directory | `*RunNotFoundError`, `Dir` is that directory, no location returned |
-| a path that does not exist | `*RunNotFoundError` naming it |
-| `FindRun("")` | `ErrNoPath`, before any filesystem access — even when a run *is* sitting in `target/gatling` |
-| a regular file that is not a `simulation.log` | `*RunNotFoundError` naming it, not a raw `ENOTDIR` |
-| a directory whose permissions forbid reading | the wrapped `*fs.PathError`, reachable with `errors.As`, and **not** a `*RunNotFoundError` |
+| an empty directory | `*NotFoundError`, `Dir` is that directory, no location returned |
+| a path that does not exist | `*NotFoundError` naming it |
+| `Find("")` | `ErrNoPath`, before any filesystem access — even when a run *is* sitting in `target/gatling` |
+| a regular file that is not a `simulation.log` | `*NotFoundError` naming it, not a raw `ENOTDIR` |
+| a directory whose permissions forbid reading | the wrapped `*fs.PathError`, reachable with `errors.As`, and **not** a `*NotFoundError` |
 
 **Make it fail**: the permissions case is the one that rots. A version that treats any read error as
 "no runs here" passes every other scenario and turns a broken mount into a clean "not found"
@@ -129,7 +129,7 @@ itself, not a root (FR-005).
 Build a root whose `simulation.log` files hold bytes that are not a Gatling log at all — or are a
 version far below the gate.
 
-**Expect** `FindRun` resolves normally. The failure, if any, arrives later when the caller opens
+**Expect** `Find` resolves normally. The failure, if any, arrives later when the caller opens
 `loc.Log`.
 
 **Make it fail**: it is worth asserting positively rather than by absence — make the log unreadable
@@ -153,7 +153,7 @@ recording needs Maven and why the existing sbt corpus cannot supply it.
 ## The bound
 
 ```bash
-go test -run '^$' -bench '^BenchmarkFindRun$' -benchmem ./gatling/
+go test -run '^$' -bench '^BenchmarkFind$' -benchmem ./gatling/
 ```
 
 Over a synthetic root of 1000 runs, resolution must stay one directory read plus one `stat` per

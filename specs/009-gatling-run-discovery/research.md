@@ -146,39 +146,59 @@ order for good.
 
 ## R5 — Where discovery lives, and what it is called
 
-**Decision**: the `gatling` root package. One function and one result type.
+**Decision, revised after review: the `gatling/run` subpackage.** This section originally chose the
+root `gatling` package and the reasoning did not survive scrutiny.
 
 ```go
-func FindRun(path string) (RunLocation, error)
+package run
+
+func Find(path string) (Location, error)
 ```
 
-**Rationale**. Issue #11 says "**Where**: `gatling`: run-directory discovery and the results-root
-defaults"; `AGENTS.md` "Structure" and the plan template's source-tree block both already list run
-discovery under `gatling/`. The package holds `Version`, `Format`, `Policy` and the error types —
-the cross-cutting things that are not any one codec's — and discovery is another. Its doc comment
-widens from "what every Gatling codec shares" to say so.
+**Why the original reasoning failed.** It rested on three supports and none carried weight. Issue
+#11's "**Where**: `gatling`: run-directory discovery" is prose about scope, not architecture.
+`AGENTS.md` "Structure" lists run discovery under `gatling/`, which `gatling/run` satisfies exactly
+as `gatling/simlog` does — so it does not discriminate between them. And the real argument, that
+discovery is "another cross-cutting thing like `Version`, `Format` and `Policy`", inverts the
+relationship: those types are **imported by** the codecs, whereas nothing imports discovery. It runs
+strictly before them and is called only by end consumers. That is not shared infrastructure; it is a
+leaf.
 
-**Alternative rejected**: a `gatling/run` subpackage, symmetric with `gatling/simlog`. It is cleaner
-in the abstract and would keep `gatling` free of filesystem code, but it buys separation this
-feature has no use for and adds a second package to freeze at v0.1.0 — an abstraction ahead of its
-need (Principle VI).
+Two further facts settled it. `discover.go` was the first `os` and `path/filepath` import anywhere in
+`gatling/` or `model/` — the root package had been pure vocabulary over byte slices, and every codec
+imports it. And the boundary was already protesting: `gatling/doc.go` had grown a paragraph
+contradicting its own first sentence, "holds what every Gatling codec shares" followed by "it also
+holds the step before all of them".
 
-**Naming** (`golang-naming`, required reading). `model.Run` already exists and is *the* canonical
-result; a `gatling.Run` meaning "a directory we located" would sit next to it in every consumer that
-imports both and mean something else entirely. Principle V makes that near-permanent one milestone
-from now. Hence `RunLocation`, and `FoundBy` for how it was chosen — not `Source`, which in this
-module already means the tool that produced the artefact.
+The cost argument was counting the wrong thing, too. A subpackage is a namespace, not an
+abstraction, so Principle VI's clause about indirection does not apply; both placements freeze the
+same identifiers, and the root placement *additionally* freezes the root package's filesystem-touching
+character and its claim on the generic names `RunLocation` and `FoundBy`.
 
-**No options.** The results root is the argument: `FindRun(DefaultResultsRoot)` asks for the Maven
-and sbt layout, `FindRun("build/reports/gatling")` is the Gradle one, `FindRun(dir)` names a run. A
-functional-option parameter was considered and dropped — there is one knob and it is already the
-first argument.
+**What the move bought, beyond tidiness.** The package name is part of every identifier, so the names
+got shorter and better: `run.Find`, `run.Location`, `run.NotFoundError`. `gatling.RunLocation` had
+existed only to avoid colliding with `model.Run`; in `run` there is no collision to dodge.
+`gatling/run` also imports nothing from the rest of the module — it carries its own `unknownName` —
+so if a forwarding shim from `gatling` is ever wanted, it can be added without a cycle.
 
-**Revised in review**: `FindRun("")` originally meant the default. It no longer does, because `""` is
+**Timing.** This was the one structural decision that got materially more expensive to reverse: after
+v0.1.0 a package move cannot be deprecated cleanly, and `gatling.FindRun` would have had to forward
+forever. Done before the freeze it is a relocation and a rename.
+
+**Naming** (`golang-naming`, required reading). `model.Run` is *the* canonical result; the original
+`gatling.Run` avoidance is what produced `RunLocation`. Under `run` the type is `Location`, `FoundBy`
+still says how a run was chosen — not `Source`, which in this module already means the tool that
+produced the artefact — and the error is `NotFoundError`, read at the call site as
+`run.NotFoundError`.
+
+**No options.** The results root is the argument: `run.Find(run.DefaultResultsRoot)` asks for the
+Maven and sbt layout, `run.Find("build/reports/gatling")` is the Gradle one, `run.Find(dir)` names a
+run. A functional-option parameter was considered and dropped — there is one knob and it is already
+the first argument.
+
+**Revised in review**: `Find("")` originally meant the default. It no longer does, because `""` is
 the zero value of every unset flag and omitted request field, and a library that guesses for it turns
 missing input into a confident answer about an unrelated run. The layout is published instead.
-
----
 
 ## R6 — The tie-break is load-bearing, not a formality
 

@@ -7,7 +7,7 @@
 ## Summary
 
 Three consumers each work out where a Gatling run's `simulation.log` lives, and they are about to
-work it out differently. This feature answers the question once: `gatling.FindRun` takes a path that
+work it out differently. This feature answers the question once: `run.Find` takes a path that
 may be a run, a results root, or nothing, and returns the run directory, the log inside it, and
 which rule chose it. It opens no log and runs no version gate — it stops exactly one line short of
 `simlog.NewRunReader`.
@@ -70,7 +70,7 @@ the Galaxio backend. Path handling must hold on Windows, where the plugin writes
 **Performance Goals**: no throughput figure — this feature decodes nothing and opens no log, so the
 constitution's decoder-benchmark rule does not bite (research
 [R10](research.md#r10--no-decoder-benchmark-rule-applies-a-bound-is-stated-anyway)). The bound
-stated instead, and held by `BenchmarkFindRun` over a synthetic root of 1000 runs: **one directory
+stated instead, and held by `BenchmarkFind` over a synthetic root of 1000 runs: **one directory
 read, at most one `stat` per entry, one bounded read of `lastRun.txt` (64 KiB cap)**, with
 allocations proportional to the entry count and independent of anything inside a run. No existing
 benchmark is touched; no decoder code path changes, so none can regress.
@@ -79,11 +79,11 @@ benchmark is touched; no decoder code path changes, so none can regress.
 
 | Benchmark | allocs/op before | after | B/op before | after |
 |---|---|---|---|---|
-| `BenchmarkFindRun/runs=10` | 102 | 71 | 14 232 | 9 384 |
-| `BenchmarkFindRun/runs=100` | 825 | 524 | 118 362 | 71 752 |
-| `BenchmarkFindRun/runs=1000` | 8 028 | **5 027** | 1 166 752 | **686 554** |
-| `BenchmarkFindRunLastRun` (1000 runs, pointer read) | 8 041 | 5 043 | 1 152 357 | 688 495 |
-| `BenchmarkFindRunNamedPath` | 4 | 3 | 640 | 496 |
+| `BenchmarkFind/runs=10` | 102 | 71 | 14 232 | 9 384 |
+| `BenchmarkFind/runs=100` | 825 | 524 | 118 362 | 71 752 |
+| `BenchmarkFind/runs=1000` | 8 028 | **5 027** | 1 166 752 | **686 554** |
+| `BenchmarkFindLastRun` (1000 runs, pointer read) | 8 041 | 5 043 | 1 152 357 | 688 495 |
+| `BenchmarkFindNamedPath` | 4 | 3 | 640 | 496 |
 
 **−37% allocations and −41% bytes** at every size, because the ordering now uses the `FileInfo`
 `holdsLog` was already fetching instead of spending a second `stat` on the run directory — the fix
@@ -181,38 +181,45 @@ specs/009-gatling-run-discovery/
 ### Source Code (repository root)
 
 ```text
+gatling/run/                      # new package — imports nothing else in this module
+├── doc.go                        # what the package is for, and why it is not in gatling/
+├── find.go                       # Find, the resolution pass, the bare-name rule, the
+│                                 #   bounded pointer read, newest-by-(log mtime, run-id
+│                                 #   stamp, name)
+├── errors.go                     # NotFoundError
+├── find_test.go                  # table-driven over t.TempDir(): the newest run, the
+│                                 #   pointer, the pointers-to-nothing, a named run, a
+│                                 #   shared mtime, two simulation ids, symlinks,
+│                                 #   permissions, canonical paths
+├── errors_test.go                # the error's message and errors.As
+├── corpus_test.go                # the lastRun.txt recording, integration tag
+├── example_test.go               # Find, and Find over a results root
+├── fuzz_test.go                  # FuzzLastRun
+└── bench_test.go                 # BenchmarkFind over a synthetic 1000-run root
 gatling/
-├── discover.go                   # new — FindRun, the resolution pass, the bare-name rule,
-│                                 #   the 64 KiB cap, newest-by-(mtime, name) ordering
-├── discover_test.go              # new — table-driven over t.TempDir(): the newest run, the
-│                                 #   pointer, the four pointers-to-nothing, a path that is
-│                                 #   already a run, shared mtimes, symlinks, permissions
-├── discover_corpus_test.go       # new — four tests over the recording, integration tag,
-│                                 #   skipping with a reason when it is absent
-├── discover_fuzz_test.go         # new — FuzzLastRun: no panic, nothing outside the root
-├── discover_bench_test.go        # new — BenchmarkFindRun over a synthetic 1000-run root
-├── discover_example_test.go      # new — FindRun composed with os.Open and simlog
-├── errors.go                     # + RunNotFoundError, its doc comment and Error()
-├── errors_test.go                # + its message, and that it is not what an unreadable
-│                                 #   directory returns
-└── doc.go                        # package doc widens: finding the run sits before the codecs
-testdata/corpus/gatling/simulation/pom.xml   # new — the same sources under Maven, the only
+├── doc.go                        # points at gatling/run; the codec vocabulary is unchanged
+└── errors.go                     # unchanged — the discovery error moved out with the code
+testdata/corpus/gatling/simulation/pom.xml   # the same sources under Maven, the only
                                   #   build tool that writes a lastRun.txt at all
-testdata/corpus/gatling/lastrun/  # new recording — a Maven results root: three run
+testdata/corpus/gatling/lastrun/  # recording — a Maven results root: three run
                                   #   directories, the lastRun.txt naming the middle one,
                                   #   all three runs' console output, RECORDING.md
-CHANGELOG.md                      # Added: gatling.FindRun and the three types beside it
+CHANGELOG.md                      # Added: gatling/run and the four types in it
 ```
 
-**Structure Decision**: no package is added and no file moves. Discovery goes in the `gatling` root
-package because #11 names it, and because `AGENTS.md` "Structure" and this template's own source
-block already list run discovery there; it sits beside `Version`, `Format` and `Policy`, which are
-the other things that are cross-cutting rather than any one codec's. A `gatling/run` subpackage was
-considered and rejected in research
-[R5](research.md#r5--where-discovery-lives-and-what-it-is-called): it is tidier in the abstract and
-buys nothing this feature needs, while adding a second package to freeze at v0.1.0. The new files
-are named `discover_*` so that the feature's whole surface is one `ls` away, matching how
-`truncation_*` was grouped in v0.0.8.
+**Structure Decision**: discovery lives in **`gatling/run`**, symmetric with `gatling/simlog`, and
+imports nothing else in this module. The first draft put it in the root `gatling` package; review
+overturned that, and research [R5](research.md#r5--where-discovery-lives-and-what-it-is-called)
+carries the argument and the reversal. In short: the root package is what every codec imports, and
+discovery is imported by none of them — it runs strictly before them and is called only by end
+consumers. Putting it there also made `gatling/` touch the filesystem for the first time and forced
+its doc comment to contradict its own opening sentence.
+
+Moving it was the one structural decision that got materially more expensive after v0.1.0, where a
+package move cannot be deprecated cleanly. Done now it is a relocation plus a rename, and the rename
+is a gain: with the package name carrying `run`, the identifiers are `Find`, `Location` and
+`NotFoundError` rather than `FindRun`, `RunLocation` and `RunNotFoundError` — the last of which
+existed only to dodge a collision with `model.Run` that does not arise here.
 
 ## Complexity Tracking
 
@@ -223,7 +230,7 @@ No constitution gate fails; nothing to justify.
 A max-effort review (ten finder angles, plus a Codex pass and an adversarial pass) ran against the
 merged branch and found fifteen issues. The three that changed the design rather than the code:
 
-**The empty-path default is withdrawn.** `FindRun("")` meant `target/gatling`, resolved against the
+**The empty-path default is withdrawn.** `Find("")` meant `target/gatling`, resolved against the
 process working directory. `""` is also the zero value of every unset flag, absent configuration
 field and omitted request member — so a server whose path silently went missing would have been
 handed a confident report about whatever run happened to sit in its own working directory. The
@@ -246,8 +253,8 @@ uses, falling back to the whole name for a directory an archive renamed.
 Beside those: a failed look inside a candidate is now an error rather than a skip (FR-012 at every
 depth); an unreadable `lastRun.txt` is reported instead of degrading silently to a guess; the pointer
 read is bounded by the open descriptor rather than by a prior stat of the path; paths are cleaned
-once so one run yields one comparable `RunLocation`; a path that exists but is not a directory reaches
-`*RunNotFoundError` rather than a raw `ENOTDIR`; a directory named `simulation.log` resolves; the
+once so one run yields one comparable `Location`; a path that exists but is not a directory reaches
+`*NotFoundError` rather than a raw `ENOTDIR`; a directory named `simulation.log` resolves; the
 pointer lookup is a set rather than a nested scan; the permission tests skip on Windows by platform
 rather than by uid; and the corpus tests fail rather than skip when the committed recording is absent.
 
@@ -255,3 +262,18 @@ Mutation testing backs the new assertions: reverting each of the four load-beari
 fails a test that is specific to it. The earlier suite could not do this — swapping the ordering key
 for the log's time had left all 214 tests green, because every fixture built its runs in ascending
 name order so directory time, log time and name order all agreed.
+
+## The package move
+
+Review's adversarial pass called the root-package placement "defensible, but R5's reasoning is weak"
+and recommended `gatling/run`. It was taken, in a separate commit from the defect fixes so that each
+is reviewable on its own.
+
+Nothing about the behaviour changed: the same resolution pass, the same tests, the same recording.
+What changed is the import path, four exported names, and the fact that `gatling/` no longer imports
+`os`. `gatling/run` deliberately imports nothing from the rest of the module — it carries its own
+`unknownName` constant rather than borrowing the one in `gatling/record.go` — so a forwarding shim
+from `gatling` remains possible without a cycle if a consumer ever needs one.
+
+The coverage gate needed no change: its floor glob is `*/gatling/*`, so the new package inherits the
+90% decoder floor and holds at 95.6%.

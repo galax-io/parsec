@@ -34,12 +34,12 @@ The Gatling log format is internal to Gatling, undocumented, and has already cha
     model/          canonical result types shared by every source                       (v0.0.3)
     gatling/        version type, version policy, format detection and the errors        (v0.0.2)
                     every Gatling codec shares                                           (v0.0.4)
-                    finding the run to read, and the results-root default                (v0.0.9)
     gatling/text/   the text simulation.log codec for 3.11.5 and 3.12.0, and the         (v0.0.2)
                     conversion of a log into model types                                 (v0.0.3)
     gatling/binary/ the binary simulation.log codec for 3.13.1 through 3.15.1            (v0.0.5)
                     — the format every Gatling from 3.13.0 writes
     gatling/simlog/ opens a simulation.log without being told which Gatling wrote it     (v0.0.4)
+    gatling/run/    finds which run to read, and publishes the results-root default      (v0.0.9)
 
 `model` and `gatling` depend on the standard library only, and CI checks that. No module is pre-approved anywhere: `go.mod` naming no requirement is the intended steady state, not a property of a young project.
 
@@ -65,10 +65,10 @@ instead of hard-coding a version range.
 A caller that cannot use a number nothing has verified can say so: `gatling.WithStrict` refuses a
 version above the recorded range instead of decoding it with a warning.
 
-`gatling.FindRun` answers the question that comes before all of them: which file to open. Give it a
+`run.Find` answers the question that comes before all of them: which file to open. Give it a
 `simulation.log`, a directory holding one, or a results root to search, and it finds the run — so
 nobody types a generated name like `corpussimulation-20260906044741110` by hand. `target/gatling`,
-where Maven and sbt both write, is published as `gatling.DefaultResultsRoot` for a caller to pass;
+where Maven and sbt both write, is published as `run.DefaultResultsRoot` for a caller to pass;
 Gradle's `build/reports/gatling` and any other root are passed the same way, rather than read out of
 a build file. A path is never guessed at: an empty one is refused, because a server whose
 configuration silently lost its path should be told so rather than handed an unrelated run. It opens

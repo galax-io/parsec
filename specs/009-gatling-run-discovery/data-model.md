@@ -14,7 +14,7 @@ Where a run's artefacts sit, and how they were found. A value type; no method ne
 
 | Field | Type | Meaning | Invariant |
 |---|---|---|---|
-| `Dir` | `string` | The run directory. | Never empty on success. Cleaned once in `FindRun`, so every spelling of one run yields one value and `RunLocation` is safe to compare and to key on. |
+| `Dir` | `string` | The run directory. | Never empty on success. Cleaned once in `Find`, so every spelling of one run yields one value and `Location` is safe to compare and to key on. |
 | `Log` | `string` | The `simulation.log` inside `Dir`. | Never empty on success, and always `Dir` joined with `simulation.log`. |
 | `Found` | `FoundBy` | Which rule selected it. | Never `FoundByUnknown` on success. |
 
@@ -59,16 +59,16 @@ run — a report without one is not a run, and a run without a report still is (
 producing reports in 3.13.5).
 
 ```
-FindRun(path):
+Find(path):
     if path == "":                                        # refuse, never guess
         return ErrNoPath
     root := clean(path)                                   # one run, one spelling
 
     # 1. Is this already a run? (FR-002, FR-003, FR-004, FR-005)
     switch stat(root):
-        case missing:      return RunNotFoundError{root}
+        case missing:      return NotFoundError{root}
         case regular file: return run(dir(root)) if base(root) == "simulation.log"
-                           else  RunNotFoundError{root}
+                           else  NotFoundError{root}
         case directory:    if exists(root/simulation.log):    # even if named simulation.log
                                return RunLocation{root, root/simulation.log, FoundByPath}
                            # otherwise it is a results root; fall through
@@ -87,7 +87,7 @@ FindRun(path):
 
     # 4. The newest run  (FR-002, FR-008, R6)
     if candidates is empty:
-        return RunNotFoundError{root}
+        return NotFoundError{root}
     return location(newest(candidates), FoundByNewest)
 
 newest(xs):     max by (log mtime, then the run id's UTC stamp, then name)   # R6
@@ -104,7 +104,7 @@ with no log, or an `ExecutionError:` message — falls out with no special case 
 
 ## State transitions
 
-None. `FindRun` is a pure question about the filesystem at one instant, with no handle, no cursor
+None. `Find` is a pure question about the filesystem at one instant, with no handle, no cursor
 and nothing to close. A run that appears, is deleted or is rewritten after it returns is not this
 function's concern; noticing that is the sidecar's (spec, *Out of Scope*).
 

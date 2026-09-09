@@ -99,7 +99,7 @@ ExecutionError: java.lang.RuntimeException: something failed | ...
 `testdata/corpus/gatling/lastrun/` holds a real results root from three Maven runs, with the
 `lastRun.txt` those runs left: 35 bytes, one bare directory name, one LF. It is the only place this
 module's reader meets a file a build tool actually wrote, and
-`gatling/discover_corpus_test.go` (behind `-tags=integration`) is what checks the two still agree.
+`gatling/run/corpus_test.go` (behind `-tags=integration`) is what checks the two still agree.
 
 Re-read this contract when a Gatling plugin major version lands, record the version checked in the
 header above, and re-take the recording if the writer changed.
