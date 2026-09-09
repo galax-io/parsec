@@ -34,6 +34,7 @@ The Gatling log format is internal to Gatling, undocumented, and has already cha
     model/          canonical result types shared by every source                       (v0.0.3)
     gatling/        version type, version policy, format detection and the errors        (v0.0.2)
                     every Gatling codec shares                                           (v0.0.4)
+                    finding the run to read, and the results-root default                (v0.0.9)
     gatling/text/   the text simulation.log codec for 3.11.5 and 3.12.0, and the         (v0.0.2)
                     conversion of a log into model types                                 (v0.0.3)
     gatling/binary/ the binary simulation.log codec for 3.13.1 through 3.15.1            (v0.0.5)
@@ -63,6 +64,17 @@ instead of hard-coding a version range.
 
 A caller that cannot use a number nothing has verified can say so: `gatling.WithStrict` refuses a
 version above the recorded range instead of decoding it with a warning.
+
+`gatling.FindRun` answers the question that comes before all of them: which file to open. Give it a
+project and it finds the run — a `simulation.log`, a directory holding one, or a results root to
+search — so nobody types a generated name like `corpussimulation-20260906044741110` by hand. It
+defaults to `target/gatling`, where Maven and sbt both write, and takes Gradle's
+`build/reports/gatling` or any other root as its argument rather than reading a build file to guess
+one. It opens no log and runs no version gate, so it fails only about the thing it was asked.
+
+Which run it picked, and why, comes back with it: Gatling's own `lastRun.txt` when a Maven build left
+one, and otherwise the most recently modified run, ordered so that a checkout which flattened every
+timestamp still resolves the same run every time.
 
 The log's own wire records are still there and still exported: they are the format's events rather
 than a result, and both codecs share them. Build on `model/`.
