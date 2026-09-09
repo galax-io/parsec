@@ -47,7 +47,7 @@ func FuzzLastRun(f *testing.F) {
 		}
 
 		mod := base.Add(time.Duration(i) * time.Minute)
-		if err := os.Chtimes(dir, mod, mod); err != nil {
+		if err := os.Chtimes(filepath.Join(dir, "simulation.log"), mod, mod); err != nil {
 			f.Fatalf("chtimes: %v", err)
 		}
 	}

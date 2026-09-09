@@ -259,31 +259,21 @@ func (e *UnsupportedFormatError) Error() string {
 	return fmt.Sprintf("gatling: %s simulation.log: this module has no codec for it yet", e.Format)
 }
 
-// RunNotFoundError ends a search that completed and found no run: the directory
-// it names was read, and nothing in it was a Gatling run.
+// RunNotFoundError ends a search that found no run: the directory it names was
+// read and held none, or was not there at all.
 //
-// It is not what a directory that could not be read returns. A failure to look
+// It is not what a directory that could not be *read* returns. A failure to look
 // is not an absence of runs, and reporting a broken mount or a permission as a
 // clean "no runs here" is how a caller ends up debugging the wrong thing; that
 // failure is returned wrapping its *fs.PathError instead.
 type RunNotFoundError struct {
-	// Dir is the directory that was searched. It is never empty.
+	// Dir is the directory that was searched. It is never empty, and it is the
+	// caller's own path — FindRun never substitutes one, so there is nothing
+	// here a caller did not ask for.
 	Dir string
-	// Default reports whether Dir is the results root FindRun falls back to
-	// rather than one the caller named.
-	//
-	// A consumer with no meaningful working directory — a server, or a job whose
-	// directory is not the project — is otherwise shown a relative path it never
-	// chose and left to guess where it came from.
-	Default bool
 }
 
-// Error names the directory that was searched, and says so when that directory
-// was a default rather than the caller's.
+// Error names the directory that was searched.
 func (e *RunNotFoundError) Error() string {
-	if e.Default {
-		return fmt.Sprintf("gatling: no Gatling run under %s, the default results root", e.Dir)
-	}
-
 	return "gatling: no Gatling run under " + e.Dir
 }

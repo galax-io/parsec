@@ -71,12 +71,19 @@ Two things planning had wrong, both now corrected in `specs/009-gatling-run-disc
 
 ## What was kept, and what was not
 
-`results/` holds, per run, exactly what the sibling corpus entries hold: `simulation.log` and
-`index.html`, byte for byte as produced. The report's `js/` and `style/` asset trees and its
-per-request HTML pages were **not** copied — the same choice every existing entry under
-`testdata/corpus/gatling/` already makes, and they are 2.1 MB of Gatling's own static assets
-duplicated three times. `records.golden` is absent on purpose: this is not a decoder entry, and
-3.15.1's own entry carries that evidence.
+`results/` holds, per run, `simulation.log` and `index.html`, byte for byte as produced. The
+report's `js/` and `style/` asset trees and its per-request HTML pages were **not** copied: they are
+2.1 MB of Gatling's own vendored JavaScript and stylesheets, duplicated three times, and this entry
+exists to record a *layout*, not to prove a decoder's numbers. `records.golden` is absent for the
+same reason — 3.15.1's own entry carries that evidence.
+
+**Do not generalise this to a decoder entry.** The sibling entries drop only the vendored assets the
+report needs to render, and they keep the statistics files: `3.13.1/js/` holds `global_stats.json`,
+`stats.json`, `stats.js`, `all_sessions.js` and `assertions.xml`, and `3.11.5/` and `3.12.0/` keep
+`global_stats.json` and `stats.json` at top level. `gatling/binary/fold_corpus_test.go` falls back to
+`js/global_stats.json` when `console.txt` carries no throughput line, so stripping those would
+destroy the only evidence of a decoder's statistics — unrecoverably, per Principle III. Nothing was
+lost here only because Gatling 3.15.1 writes no `global_stats.json` or `stats.json` at all.
 
 `console.txt` is the full Maven output of all three runs, including run 1's dependency resolution,
 with a header naming the exact command each time.
@@ -93,5 +100,11 @@ mvn -B gatling:test -Dgatling.simulationClass=io.galaxio.parsec.corpus.CorpusSim
 ```
 
 The run directory names will differ — they carry the run's start — so a test must read them from the
-directory rather than hard-code them. `pom.xml` takes `-Dgatling.version` the same way `build.sbt`
-takes it.
+directory rather than hard-code them.
+
+`pom.xml` takes `-Dgatling.version` as `build.sbt` does, but **not over the same range**: it defaults
+to 3.15.1 where the sbt build defaults to 3.11.5, and an enforcer rule refuses anything below 3.13.0.
+That is deliberate. This build assembles only the `scala-plain` assertion flavour; below 3.13.0 the
+sbt build uses `scala-opennfr`, so a Maven run of 3.12.0 would look like a peer of
+`testdata/corpus/gatling/3.12.0/` while having stated its expectations through a different
+mechanism. Decoder corpus entries come from `build.sbt`; this pom exists for `lastRun.txt` alone.

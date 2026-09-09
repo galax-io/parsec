@@ -3,8 +3,6 @@
 package gatling_test
 
 import (
-	"errors"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -27,11 +25,11 @@ func namedByRecording(t *testing.T) string {
 
 	raw, err := os.ReadFile(filepath.Join(recordedRoot, "lastRun.txt"))
 	if err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			t.Skip("no lastRun.txt recording: see testdata/corpus/gatling/lastrun/RECORDING.md")
-		}
-
-		t.Fatalf("read recorded lastRun.txt: %v", err)
+		// Not a skip: the recording is committed, so its absence is a broken
+		// checkout rather than a missing tool, and skipping would take the only
+		// evidence that gatling-maven-plugin's format was read correctly out of
+		// the gate without failing it.
+		t.Fatalf("read recorded lastRun.txt (the recording is committed; this is a broken checkout): %v", err)
 	}
 
 	return strings.TrimSpace(string(raw))
@@ -105,11 +103,7 @@ func TestRecordedLastRunShape(t *testing.T) {
 
 	raw, err := os.ReadFile(filepath.Join(recordedRoot, "lastRun.txt"))
 	if err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			t.Skip("no lastRun.txt recording: see testdata/corpus/gatling/lastrun/RECORDING.md")
-		}
-
-		t.Fatalf("read: %v", err)
+		t.Fatalf("read recorded lastRun.txt (the recording is committed; this is a broken checkout): %v", err)
 	}
 
 	text := string(raw)
@@ -174,7 +168,7 @@ func TestRecordedRootWithoutPointerIsDeterministic(t *testing.T) {
 			t.Fatalf("write log: %v", err)
 		}
 
-		if err := os.Chtimes(dir, same, same); err != nil {
+		if err := os.Chtimes(filepath.Join(dir, "simulation.log"), same, same); err != nil {
 			t.Fatalf("chtimes: %v", err)
 		}
 	}

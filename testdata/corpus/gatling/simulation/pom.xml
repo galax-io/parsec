@@ -26,7 +26,12 @@
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <maven.compiler.release>17</maven.compiler.release>
     <scala.version>2.13.18</scala.version>
-    <!-- Overridable the same way the sbt build takes -Dgatling.version. -->
+    <!--
+      Overridable with -Dgatling.version, like the sbt build — but NOT over the same range, and the
+      default deliberately differs from build.sbt's 3.11.5. See the enforcer rule below: this build
+      only assembles the scala-plain assertion flavour, so it is restricted to the versions that
+      flavour is correct for. build.sbt remains the only way to record a decoder corpus entry.
+    -->
     <gatling.version>3.15.1</gatling.version>
     <gatling-maven-plugin.version>4.21.10</gatling-maven-plugin.version>
     <scala-maven-plugin.version>4.9.5</scala-maven-plugin.version>
@@ -80,11 +85,20 @@
       </plugin>
 
       <!--
-        The assertion flavour, chosen the way build.sbt chooses it. scala-plain states the run's
-        expectations in Gatling's own DSL and needs no gatling-picatinny, which has no release above
-        3.13.x; scala-opennfr renders them from src/test/resources/nfr.yaml and is what the versions
-        through 3.12.x record with. This build defaults to plain because the recording it exists for
-        is about a file the build tool writes, not about a log format.
+        The assertion flavour, fixed to scala-plain — which is where this build stops being a peer of
+        build.sbt and why the enforcer rule below exists.
+
+        build.sbt *chooses* between two flavours: scala-opennfr renders the run's expectations from
+        src/test/resources/nfr.yaml and is what the versions through 3.12.x record with, and
+        scala-plain states the same expectations in Gatling's own DSL for the versions above, where
+        gatling-picatinny has no release. Reproducing that choice here would mean carrying picatinny
+        and a profile for a range this build has no reason to enter: it exists to record a
+        lastRun.txt, which is a file the build tool writes and has nothing to do with the log format.
+
+        Leaving it unconditional without the version guard would have been the trap — `mvn
+        -Dgatling.version=3.12.0 gatling:test` would have been accepted and would have recorded a run
+        whose assertions came from a different mechanism than testdata/corpus/gatling/3.12.0/'s,
+        while looking like its peer. Spec 005 FR-032 asks for runs that can be compared.
       -->
       <plugin>
         <groupId>org.codehaus.mojo</groupId>
@@ -101,6 +115,40 @@
               <sources>
                 <source>src/test/scala-plain</source>
               </sources>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+
+      <!--
+        Refuse the versions this build cannot record faithfully. Only scala-plain is assembled here
+        (see the flavour comment above), and that flavour is the right one from 3.13.0 on; below it
+        build.sbt uses scala-opennfr, so a run made here would not be comparable with the corpus
+        entry for the same version.
+      -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-enforcer-plugin</artifactId>
+        <version>3.5.0</version>
+        <executions>
+          <execution>
+            <id>gatling-version-supported-here</id>
+            <goals>
+              <goal>enforce</goal>
+            </goals>
+            <configuration>
+              <rules>
+                <requireProperty>
+                  <property>gatling.version</property>
+                  <regex>^3\.(1[3-9]|[2-9][0-9])\..*$</regex>
+                  <regexMessage>
+                    This pom records lastRun.txt only, and assembles the scala-plain assertion
+                    flavour, which is correct from Gatling 3.13.0 on. For 3.11.5 or 3.12.x use the
+                    sbt build (build.sbt), which selects the scala-opennfr flavour those versions
+                    are recorded with.
+                  </regexMessage>
+                </requireProperty>
+              </rules>
             </configuration>
           </execution>
         </executions>
