@@ -5,6 +5,44 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+
+- **`gatling.FindRun` locates a run**, so the three consumers of this module stop each working out
+  where a build tool put its results. It takes a path that may be the run itself — a
+  `simulation.log`, or a directory holding one — a results root, or nothing at all, and returns the
+  run directory with the log inside it and the rule that chose them. It opens no log and applies no
+  version gate: a run whose log is truncated, damaged or outside the supported range still resolves,
+  and fails when the log is read.
+
+  An empty path means `target/gatling`, which is where Maven and sbt both write. Gradle writes to
+  `build/reports/gatling`, and a run configured by hand writes wherever it was told to; both are
+  passed as the argument rather than guessed at, because reading a `pom.xml` or a `build.gradle`
+  would make this library aware of three build tools for a value the caller already has.
+
+- **`RunLocation`, `FoundBy` and `RunNotFoundError`** beside it. `FoundBy` says which of the three
+  rules selected the run — the caller's own path, `lastRun.txt`, or the most recently modified run in
+  the results root — so a consumer that reports which run it read can say how it was chosen.
+
+  `FoundByNewest` is the ordinary answer rather than the exceptional one, and that is worth knowing.
+  A `lastRun.txt` exists only when three things hold at once: the build is Maven, its `failOnError`
+  parameter was turned off against its default, and `gatling:verify` has not run since — that goal
+  reads the file and deletes it. Neither the Gradle plugin nor Gatling itself writes one at all. So for most callers the
+  rule the issue framed as a fallback is the only rule there is, which is why the ordering is total —
+  modification time first, then the directory name, both descending. The tie-break is not a
+  formality: a `git clone`, an `rsync` without `-t`, a CI cache restore and a container image build
+  each give every run in a root one modification time, and a Gatling run directory is
+  `<simulationId>-<yyyyMMddHHmmssSSS>`, so descending name is descending run start.
+
+  `RunNotFoundError` names the directory that was searched and says whether it was the default, so a
+  consumer with no meaningful working directory is not shown a relative path it never chose. A
+  directory that could not be *read* is reported as that failure instead, wrapping its
+  `*fs.PathError` — a broken mount is not an absence of runs.
+
+  Nothing in `lastRun.txt` is trusted: a line is followed only when it is a bare name that matches a
+  run actually present in the root, so a stale pointer, a deleted run, a directory without a log and
+  the error line the Maven plugin appends after a failed run all cost one `stat` and fall through to
+  the clock. No error text is matched, so the plugin is free to reword its messages.
+
 ## [0.0.8] - 2026-09-07
 
 An incomplete record: what a run killed mid-flight leaves behind, and what a follower may rely on.

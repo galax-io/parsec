@@ -155,3 +155,38 @@ func TestTruncationError(t *testing.T) {
 		}
 	})
 }
+
+func TestRunNotFoundError(t *testing.T) {
+	t.Parallel()
+
+	t.Run("names the directory the caller gave", func(t *testing.T) {
+		t.Parallel()
+
+		err := &gatling.RunNotFoundError{Dir: "/srv/results"}
+		mustContain(t, err.Error(), "/srv/results", "no Gatling run")
+
+		var target *gatling.RunNotFoundError
+		if wrapped := fmt.Errorf("find: %w", err); !errors.As(wrapped, &target) || target.Dir != "/srv/results" {
+			t.Fatalf("errors.As does not recover the RunNotFoundError from %v", wrapped)
+		}
+	})
+
+	// A consumer with no meaningful working directory — a server — is otherwise
+	// shown a relative path it never chose, with nothing saying where it came
+	// from. The flag is the difference between a puzzle and an instruction.
+	t.Run("says when the directory was a default", func(t *testing.T) {
+		t.Parallel()
+
+		err := &gatling.RunNotFoundError{Dir: "target/gatling", Default: true}
+		mustContain(t, err.Error(), "target/gatling", "default")
+	})
+
+	t.Run("does not say default when the caller chose the directory", func(t *testing.T) {
+		t.Parallel()
+
+		err := &gatling.RunNotFoundError{Dir: "build/reports/gatling"}
+		if strings.Contains(err.Error(), "default") {
+			t.Fatalf("message %q calls a caller-supplied directory a default", err.Error())
+		}
+	})
+}

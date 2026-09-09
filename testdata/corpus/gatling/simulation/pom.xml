@@ -1,0 +1,116 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  A second build tool for the one corpus simulation, and it exists for exactly one artefact.
+
+  `lastRun.txt` is written by gatling-maven-plugin and by nothing else — not by Gatling, not by the
+  Gradle plugin, and the plugin's own gatling:verify goal deletes it again. See
+  specs/009-gatling-run-discovery/research.md R1 and R2, which were read from this plugin's
+  bytecode. The sbt build beside this file cannot produce one, so the recording under
+  testdata/corpus/gatling/lastrun/ is made from here.
+
+  It is deliberately not a second way to record a simulation.log: the sbt build stays the one that
+  makes decoder corpus entries, and this compiles the same sources against the same stub so the two
+  cannot drift. See testdata/corpus/gatling/lastrun/RECORDING.md for how the recording was taken.
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>io.galaxio.parsec.corpus</groupId>
+  <artifactId>corpus</artifactId>
+  <version>0.1.0</version>
+  <packaging>jar</packaging>
+
+  <properties>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <maven.compiler.release>17</maven.compiler.release>
+    <scala.version>2.13.18</scala.version>
+    <!-- Overridable the same way the sbt build takes -Dgatling.version. -->
+    <gatling.version>3.15.1</gatling.version>
+    <gatling-maven-plugin.version>4.21.10</gatling-maven-plugin.version>
+    <scala-maven-plugin.version>4.9.5</scala-maven-plugin.version>
+  </properties>
+
+  <dependencies>
+    <dependency>
+      <groupId>org.scala-lang</groupId>
+      <artifactId>scala-library</artifactId>
+      <version>${scala.version}</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>io.gatling.highcharts</groupId>
+      <artifactId>gatling-charts-highcharts</artifactId>
+      <version>${gatling.version}</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>io.gatling</groupId>
+      <artifactId>gatling-test-framework</artifactId>
+      <version>${gatling.version}</version>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <testSourceDirectory>src/test/scala</testSourceDirectory>
+
+    <plugins>
+      <plugin>
+        <groupId>net.alchim31.maven</groupId>
+        <artifactId>scala-maven-plugin</artifactId>
+        <version>${scala-maven-plugin.version}</version>
+        <executions>
+          <execution>
+            <goals>
+              <goal>testCompile</goal>
+            </goals>
+            <configuration>
+              <args>
+                <arg>-encoding</arg>
+                <arg>UTF-8</arg>
+                <arg>-deprecation</arg>
+                <arg>-feature</arg>
+                <arg>-unchecked</arg>
+              </args>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+
+      <!--
+        The assertion flavour, chosen the way build.sbt chooses it. scala-plain states the run's
+        expectations in Gatling's own DSL and needs no gatling-picatinny, which has no release above
+        3.13.x; scala-opennfr renders them from src/test/resources/nfr.yaml and is what the versions
+        through 3.12.x record with. This build defaults to plain because the recording it exists for
+        is about a file the build tool writes, not about a log format.
+      -->
+      <plugin>
+        <groupId>org.codehaus.mojo</groupId>
+        <artifactId>build-helper-maven-plugin</artifactId>
+        <version>3.6.0</version>
+        <executions>
+          <execution>
+            <id>add-assertion-flavour</id>
+            <phase>generate-test-sources</phase>
+            <goals>
+              <goal>add-test-source</goal>
+            </goals>
+            <configuration>
+              <sources>
+                <source>src/test/scala-plain</source>
+              </sources>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+
+      <plugin>
+        <groupId>io.gatling</groupId>
+        <artifactId>gatling-maven-plugin</artifactId>
+        <version>${gatling-maven-plugin.version}</version>
+      </plugin>
+    </plugins>
+  </build>
+</project>
