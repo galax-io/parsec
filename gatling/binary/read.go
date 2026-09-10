@@ -8,6 +8,7 @@ import (
 	"io"
 
 	"github.com/galax-io/parsec/gatling"
+	"github.com/galax-io/parsec/internal/source"
 )
 
 // MaxStringLen is the ceiling on one string or assertion payload, in bytes. A
@@ -208,15 +209,11 @@ func (r *reader) sourceFailed(at int64, expected string, err error) error {
 		return r.truncated(at, expected)
 	}
 
-	// A cause that itself ends in io.EOF cannot be wrapped. errors.Is would then
-	// match io.EOF on this failure, and every caller whose loop breaks on the
-	// clean end of a log — including this module's own — would read a broken
-	// transport as a complete run. The text is kept; the chain is not.
-	if errors.Is(err, io.EOF) {
-		return fmt.Errorf("gatling: byte %d: reading %s: %s", at, expected, err.Error())
-	}
-
-	return fmt.Errorf("gatling: byte %d: reading %s: %w", at, expected, err)
+	// A cause whose chain holds io.EOF must not satisfy errors.Is(err, io.EOF):
+	// every caller whose loop breaks on the clean end of a log — including this
+	// module's own — would read a broken transport as a complete run.
+	// source.Failed hides io.EOF and keeps every other cause reachable.
+	return source.Failed(fmt.Sprintf("gatling: byte %d: reading %s", at, expected), err)
 }
 
 // u8 reads one byte.

@@ -8,6 +8,7 @@ import (
 	"strconv"
 
 	"github.com/galax-io/parsec/gatling"
+	"github.com/galax-io/parsec/internal/source"
 )
 
 // Reader decodes a Gatling 3.11.5 or 3.12.0 text simulation.log from a stream.
@@ -143,15 +144,11 @@ func readError(lineNo int, err error) error {
 		return err
 	}
 
-	// A cause that itself ends in io.EOF cannot be wrapped: errors.Is would then
-	// match io.EOF on this failure, and a caller whose loop breaks on the clean
-	// end of a log would read a broken source as a complete run. The text is
-	// kept; the chain is not. gatling/binary's sourceFailed does the same.
-	if errors.Is(err, io.EOF) {
-		return fmt.Errorf("gatling: reading line %d: %s", lineNo, err.Error())
-	}
-
-	return fmt.Errorf("gatling: reading line %d: %w", lineNo, err)
+	// A cause whose chain holds io.EOF must not satisfy errors.Is(err, io.EOF):
+	// a caller whose loop breaks on the clean end of a log would read a broken
+	// source as a complete run. source.Failed hides io.EOF and keeps every other
+	// cause reachable; gatling/binary's sourceFailed does the same.
+	return source.Failed(fmt.Sprintf("gatling: reading line %d", lineNo), err)
 }
 
 // unterminated reports a line the writer never finished. That is not a damaged

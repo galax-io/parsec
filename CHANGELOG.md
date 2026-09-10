@@ -16,6 +16,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   same call now succeeds, a failure that arrives with the last bytes is still reported as the
   source's failure, and a stream that leaves the value short is still a
   `*gatling.TruncationError`. (#82)
+- `gatling/simlog` returned an error satisfying `errors.Is(err, io.EOF)` when the source failed with
+  an error wrapping `io.EOF` — a torn upload, a closed transport — so an ingest handler that breaks
+  its loop on the end of the log booked the failure as an empty run, before a single record had been
+  decoded to contradict it. The package documentation promised the opposite in the list of what a
+  follower may rely on. Only `io.EOF` is hidden now: the message keeps the cause's text, and every
+  other cause in the chain stays reachable through `errors.Is` and `errors.As` — in `simlog`, and in
+  both codecs, which until now cut the whole chain and so hid a `context.Canceled` or an
+  `*fs.PathError` along with the `io.EOF`. (#83)
 
 ## [0.0.9] - 2026-09-09
 

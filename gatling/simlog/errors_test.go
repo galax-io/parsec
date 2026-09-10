@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"reflect"
 	"slices"
 	"strings"
@@ -308,10 +309,12 @@ func TestRefusalHandsBackTheBytesItRead(t *testing.T) {
 	}
 }
 
-// io.ReadFull converts a source EOF with ==, so an error that merely wraps
-// io.EOF reaches the caller unconverted. Matching it with errors.Is would
-// swallow a truncated decompressor or a closed transport and report it as bytes
-// that are not a Gatling log, sending a user to inspect a file that is fine.
+// A source that fails with an error merely wrapping io.EOF has not reached the
+// end of anything. Matching it with errors.Is would swallow a truncated
+// decompressor or a closed transport and report it as bytes that are not a
+// Gatling log; letting errors.Is(err, io.EOF) through would read the same
+// failure as the clean end of the log. So io.EOF alone is hidden, and every
+// other cause in the chain stays reachable: the rule all three packages share.
 func TestWrappedEOFIsAStreamFailure(t *testing.T) {
 	t.Parallel()
 
@@ -323,8 +326,84 @@ func TestWrappedEOFIsAStreamFailure(t *testing.T) {
 		t.Fatalf("NewReader = _, %v; want the source's own failure", err)
 	}
 
+	if errors.Is(err, io.EOF) {
+		t.Fatalf("a wrapped io.EOF from the source reads as the end of the log: %v", err)
+	}
+
 	if errors.As(err, new(*gatling.FormatError)) {
 		t.Fatal("a wrapped io.EOF from the source must not read as a bad format")
+	}
+
+	var pathErr *fs.PathError
+
+	_, err = simlog.NewReader(iotest.ErrReader(&fs.PathError{Op: "read", Path: "simulation.log", Err: io.EOF}))
+	if !errors.As(err, &pathErr) || errors.Is(err, io.EOF) {
+		t.Fatalf("NewReader over a failing file = _, %v; want its *fs.PathError reachable and no io.EOF", err)
+	}
+}
+
+// A failure of the source is a failure from every constructor of this module,
+// whatever shape it arrives in: never the end of the log, never a log cut
+// short, never a stream too short to identify. The package documentation
+// promises the first, in the list of what a follower may rely on; the codecs
+// keep it; and identify — the entry point a consumer is told to prefer — broke
+// it, so the rule is stated once here, over all three packages, rather than in
+// a comment per package. In every cell the cause also stays reachable.
+func TestASourceFailureIsNeverTheEndOfTheLog(t *testing.T) {
+	t.Parallel()
+
+	constructors := []struct {
+		name string
+		open func(io.Reader) error
+	}{
+		{"simlog.NewReader", func(r io.Reader) error { _, err := simlog.NewReader(r); return err }},
+		{"simlog.NewRunReader", func(r io.Reader) error { _, err := simlog.NewRunReader(r); return err }},
+		{"binary.NewReader", func(r io.Reader) error { _, err := binary.NewReader(r); return err }},
+		{"binary.NewRunReader", func(r io.Reader) error { _, err := binary.NewRunReader(r); return err }},
+		{"text.NewReader", func(r io.Reader) error { _, err := text.NewReader(r); return err }},
+		{"text.NewRunReader", func(r io.Reader) error { _, err := text.NewRunReader(r); return err }},
+	}
+
+	causes := []struct {
+		name string
+		err  error
+		says string
+	}{
+		{"a plain failure", errors.New("transport closed"), "transport closed"},
+		{"a failure wrapping io.EOF", fmt.Errorf("upload aborted: %w", io.EOF), "upload aborted"},
+	}
+
+	for _, c := range constructors {
+		for _, cause := range causes {
+			t.Run(c.name+"/"+cause.name, func(t *testing.T) {
+				t.Parallel()
+
+				err := c.open(iotest.ErrReader(cause.err))
+				if err == nil {
+					t.Fatal("a failing source was read as a log")
+				}
+
+				if errors.Is(err, io.EOF) {
+					t.Fatalf("errors.Is(err, io.EOF) is true for a source failure: %v", err)
+				}
+
+				if errors.As(err, new(*gatling.TruncationError)) {
+					t.Fatalf("a source failure is reported as a log cut short: %v", err)
+				}
+
+				if errors.As(err, new(*gatling.FormatError)) {
+					t.Fatalf("a source failure is reported as bytes that are not a log: %v", err)
+				}
+
+				if !strings.Contains(err.Error(), cause.says) {
+					t.Fatalf("the cause's text is lost: %v", err)
+				}
+
+				if !errors.Is(err, cause.err) {
+					t.Fatalf("the cause is not reachable through the error: %v", err)
+				}
+			})
+		}
 	}
 }
 
