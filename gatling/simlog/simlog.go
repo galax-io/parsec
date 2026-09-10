@@ -2,6 +2,7 @@ package simlog
 
 import (
 	"bytes"
+	"errors"
 	"io"
 
 	"github.com/galax-io/parsec/gatling"
@@ -216,12 +217,17 @@ func identify(r io.Reader) (gatling.Format, []byte, io.Reader, error) {
 
 	n, err := readHead(r, buf[:])
 
-	// Compared with == rather than errors.Is, deliberately, and matching
-	// io.ReadFull's own contract: it converts a source EOF with == too. An error
-	// that merely wraps io.EOF is the source reporting a failure of its own — a
-	// truncated decompressor, a closed transport — and reporting that as bytes
-	// we did not recognise would send a user to inspect a file that is fine.
-	if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF { //nolint:errorlint // deliberate: ReadFull's contract is identity, not wrapping
+	// Two endings alone mean "the head is what we have", and both are the
+	// stream's own: io.EOF straight from the source with nothing read, and
+	// errShortHead, which readHead raises when the source's io.EOF came after
+	// some bytes. Compared with == rather than errors.Is, deliberately. An
+	// error that merely wraps io.EOF is the source reporting a failure of its
+	// own — a truncated decompressor, a closed transport — and so is
+	// io.ErrUnexpectedEOF, which gzip, flate and zlib return by identity when
+	// their compressed input was cut. Reporting either as bytes we did not
+	// recognise would send a user to inspect a file that is fine; reporting it
+	// as a head that has not arrived yet would have a follower retry forever.
+	if err != nil && err != io.EOF && err != errShortHead { //nolint:errorlint // deliberate: identity, not wrapping; see above
 		return gatling.FormatUnknown, nil, nil, sourceFailed(err)
 	}
 
@@ -253,20 +259,35 @@ func sourceFailed(err error) error {
 // doubt. It is bufio's own figure, for the same reason.
 const maxEmptyReads = 100
 
-// readHead fills buf from r and follows io.ReadFull's contract: nil when buf is
-// filled, io.EOF when nothing was read, io.ErrUnexpectedEOF when the stream
-// ended part-way, and the source's own error otherwise.
+// errShortHead is what readHead returns when the stream ended inside the
+// detection window: some bytes arrived, then the source's own io.EOF. It exists
+// so that this package's conversion of a short head can be told from
+// io.ErrUnexpectedEOF, which compress/gzip, flate and zlib all return by
+// identity when their *compressed* input was cut. That is a failure of the
+// source, not a stream that has yet to arrive, and answering "come back with
+// more bytes" to it would leave a follower retrying an archive that never gets
+// longer. gatling/binary's errCutShort is the same device for the same reason.
+var errShortHead = errors.New("the stream ended inside the detection window")
+
+// readHead fills buf from r, and differs from io.ReadFull in three ways. A head
+// the stream ends inside is reported as errShortHead rather than
+// io.ErrUnexpectedEOF, so only this loop can claim the head ran short. A read
+// that fills buf and ends the stream succeeds, but one that arrives with any
+// other error returns it, where io.ReadFull would drop it: the head is read
+// straight from the source, so a failure dropped here is not seen again.
+// gatling/binary's readFull holds the same rule. And a source that keeps
+// returning (0, nil) ends the read with io.ErrNoProgress
+// rather than spinning: that return is legal — the io.Reader contract says so,
+// and says it must not be taken for EOF — and io.ReadFull loops on it forever,
+// wedging the caller with no error and nothing to cancel. bufio has the same
+// guard, but in fill(), which its Read does not use; wrapping in one would also
+// over-read past the window and put bytes beyond reach of the error a refusal
+// returns.
 //
-// It exists because io.ReadFull has no guard against a reader that makes no
-// progress. A Read returning (0, nil) is legal — the io.Reader contract says so
-// explicitly, and says it must not be taken for EOF — and io.ReadFull loops on
-// it forever, wedging the caller with no error and nothing to cancel. bufio has
-// the same guard, but in fill(), which its Read does not use; wrapping in one
-// would also over-read past the window and put bytes beyond reach of the error
-// a refusal returns.
-//
-// It reads no more than len(buf) bytes, so a caller handed back the head and
-// the untouched reader holds the whole stream between them.
+// Otherwise it returns io.EOF when nothing was read and the source's own error,
+// untouched, when the source failed. It reads no more than len(buf) bytes, so
+// a caller handed back the head and the untouched reader holds the whole stream
+// between them.
 func readHead(r io.Reader, buf []byte) (int, error) {
 	n, empty := 0, 0
 
@@ -274,12 +295,24 @@ func readHead(r io.Reader, buf []byte) (int, error) {
 		read, err := r.Read(buf[n:])
 		n += read
 
+		// The count says whether the head is complete, and the stream ending
+		// beside its last bytes does not make it less so. Any other error is
+		// the source's failure, and is returned below: the head is read
+		// straight from the source, so a failure dropped here is gone.
+		if n == len(buf) && err == io.EOF {
+			return n, nil
+		}
+
 		switch {
-		case err != nil:
-			if err == io.EOF && n > 0 {
-				return n, io.ErrUnexpectedEOF
+		// Identity: only the stream itself ending, never a source wrapping io.EOF.
+		case err == io.EOF:
+			if n > 0 {
+				return n, errShortHead
 			}
 
+			return n, io.EOF
+
+		case err != nil:
 			return n, err
 
 		case read > 0:

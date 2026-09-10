@@ -1,6 +1,8 @@
 package simlog_test
 
 import (
+	"bytes"
+	"compress/gzip"
 	"errors"
 	"fmt"
 	"io"
@@ -371,6 +373,8 @@ func TestASourceFailureIsNeverTheEndOfTheLog(t *testing.T) {
 	}{
 		{"a plain failure", errors.New("transport closed"), "transport closed"},
 		{"a failure wrapping io.EOF", fmt.Errorf("upload aborted: %w", io.EOF), "upload aborted"},
+		{"io.ErrUnexpectedEOF, as a torn gzip returns it", io.ErrUnexpectedEOF, "unexpected EOF"},
+		{"a failure wrapping io.ErrUnexpectedEOF", fmt.Errorf("gunzip: %w", io.ErrUnexpectedEOF), "gunzip"},
 	}
 
 	for _, c := range constructors {
@@ -440,4 +444,129 @@ func TestBinaryIsReadByBothConstructors(t *testing.T) {
 			t.Fatal("a successful read must hand back a reader")
 		}
 	})
+}
+
+// simlogConstructors opens a stream through each of this package's
+// constructors, for the tests that hold both to one answer.
+func simlogConstructors() map[string]func(io.Reader) error {
+	return map[string]func(io.Reader) error{
+		"NewReader":    func(r io.Reader) error { _, err := simlog.NewReader(r); return err },
+		"NewRunReader": func(r io.Reader) error { _, err := simlog.NewRunReader(r); return err },
+	}
+}
+
+// A source's io.ErrUnexpectedEOF is not this package's to interpret.
+// compress/gzip, flate and zlib return it by identity when their compressed
+// input was cut, and the head loop used to return the same value for a head
+// that merely ran short — so identify could not tell a torn archive from a
+// stream that had not arrived yet, and answered "come back with more bytes" to
+// both. A follower retries on that answer; a torn archive never gets longer.
+func TestASourceUnexpectedEOFIsNotAShortHead(t *testing.T) {
+	t.Parallel()
+
+	t.Run("two bytes, then io.ErrUnexpectedEOF", func(t *testing.T) {
+		t.Parallel()
+
+		for name, open := range simlogConstructors() {
+			err := open(io.MultiReader(strings.NewReader("RU"), iotest.ErrReader(io.ErrUnexpectedEOF)))
+			if errors.As(err, new(*gatling.FormatError)) {
+				t.Fatalf("%s: a source's io.ErrUnexpectedEOF is reported as a stream too short to identify: %v", name, err)
+			}
+
+			if err == nil || errors.Is(err, io.EOF) {
+				t.Fatalf("%s = %v; want a failure that is not the end of the log", name, err)
+			}
+
+			if !errors.Is(err, io.ErrUnexpectedEOF) {
+				t.Fatalf("%s: the source's own failure is not reachable through the error: %v", name, err)
+			}
+		}
+	})
+
+	t.Run("a gzip of a text log cut inside the detection window", func(t *testing.T) {
+		t.Parallel()
+
+		var zipped bytes.Buffer
+
+		zw := gzip.NewWriter(&zipped)
+		if _, err := zw.Write([]byte(textLog("3.12.0"))); err != nil {
+			t.Fatal(err)
+		}
+
+		if err := zw.Close(); err != nil {
+			t.Fatal(err)
+		}
+
+		// The gzip header is ten bytes and parses whole; the four bytes of
+		// deflate stream after it end mid-block, which flate reports as
+		// io.ErrUnexpectedEOF by identity.
+		cut := zipped.Bytes()[:14]
+
+		for name, open := range simlogConstructors() {
+			zr, err := gzip.NewReader(bytes.NewReader(cut))
+			if err != nil {
+				t.Fatalf("gzip.NewReader over %d bytes: %v", len(cut), err)
+			}
+
+			err = open(zr)
+			if errors.As(err, new(*gatling.FormatError)) {
+				t.Fatalf("%s: a torn gzip is reported as a stream too short to identify: %v", name, err)
+			}
+
+			if err == nil || errors.Is(err, io.EOF) {
+				t.Fatalf("%s over a torn gzip = %v; want a failure that is not the end of the log", name, err)
+			}
+		}
+	})
+}
+
+// A stream that genuinely ends inside the detection window — io.EOF from the
+// source itself, after bytes that are still a possible opening — is the one
+// case that is a short head, and it stays one: a sidecar attaching in a run's
+// first milliseconds relies on that answer to come back with more.
+func TestAGenuinelyShortStreamIsStillAShortHead(t *testing.T) {
+	t.Parallel()
+
+	for name, open := range simlogConstructors() {
+		err := open(strings.NewReader("RU"))
+
+		var formatErr *gatling.FormatError
+		if !errors.As(err, &formatErr) || !formatErr.Short {
+			t.Fatalf("%s over two bytes then io.EOF = %v; want a *gatling.FormatError with Short set", name, err)
+		}
+	}
+}
+
+// errSpool is the failure of a spool that took the bytes and then failed.
+var errSpool = errors.New("the spool failed")
+
+// spoolFailingOnce is the spool of an io.TeeReader that reports a failure on
+// its first write, having taken the bytes. The tee hands that failure back
+// beside the bytes it read, once, and reads on normally afterwards, so nothing
+// downstream sees it again.
+type spoolFailingOnce struct{ failed bool }
+
+func (s *spoolFailingOnce) Write(p []byte) (int, error) {
+	if s.failed {
+		return len(p), nil
+	}
+
+	s.failed = true
+
+	return len(p), errSpool
+}
+
+// A failure that arrives with the byte that completes the detection window is
+// a failure, not a head. The window is read straight from the source, so a
+// failure dropped there would be gone: the log behind it would decode, and the
+// caller's spool would be short without anything saying so.
+func TestAFailureBesideTheTenthByteIsNotAShortHead(t *testing.T) {
+	t.Parallel()
+
+	for name, open := range simlogConstructors() {
+		err := open(io.TeeReader(strings.NewReader(textLog("3.12.0")), &spoolFailingOnce{}))
+		if !errors.Is(err, errSpool) {
+			t.Fatalf("%s over a tee whose spool fails beside the tenth byte = %v; want the spool's failure", name, err)
+		}
+	}
 }

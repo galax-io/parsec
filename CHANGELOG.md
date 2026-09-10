@@ -24,6 +24,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   other cause in the chain stays reachable through `errors.Is` and `errors.As` — in `simlog`, and in
   both codecs, which until now cut the whole chain and so hid a `context.Canceled` or an
   `*fs.PathError` along with the `io.EOF`. (#83)
+- `gatling/simlog` reported a source's `io.ErrUnexpectedEOF` — what a truncated gzip, flate or zlib
+  stream returns by identity — as a stream too short to identify, the `*gatling.FormatError` with
+  `Short` set that tells a follower to come back with more bytes; a torn archive or a broken
+  decompressor inside the first ten bytes was retried rather than reported. Only the end of the
+  stream itself now produces that answer: the head loop keeps a sentinel of its own for a head that
+  ran short, as the binary codec's record loop already did. (#102)
 
 ## [0.0.9] - 2026-09-09
 
