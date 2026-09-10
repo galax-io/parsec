@@ -27,20 +27,34 @@ const (
 	maxGroupDepth = 1024
 	// maxScenarios caps the scenario names a run record declares. A simulation
 	// declares its scenarios in code, a few at most; at this ceiling a corrupt
-	// count can force at most 1 MiB of headers, against a 32 MiB budget.
+	// count can force at most 1 MiB of headers, and what the names behind them
+	// come to is bounded by maxScenarioBytes.
 	maxScenarios = 1 << 16
+	// maxScenarioBytes caps what those names come to, headers included. The
+	// count bounds the slice; this bounds what the reader keeps, and the two
+	// are not the same ceiling: at maxScenarios a corrupt count could force
+	// sixty-four gigabytes of names under MaxStringLen behind one megabyte of
+	// headers. A simulation's scenario names are class names and come to a few
+	// hundred bytes.
+	maxScenarioBytes = 1 << 20
 	// maxAssertions caps the assertion payloads a run record carries. A
 	// generated suite may run to thousands — two thousand is the floor the spec
 	// fixes — and the same 1 MiB bound holds on the headers.
 	maxAssertions = 1 << 16
-	// maxAssertionBytes caps what those payloads come to in total. The count
-	// bounds the headers; this bounds what the reader keeps, and the two are not
-	// the same ceiling: a payload is retained for the life of the read and
-	// copied again by Assertions, so a count alone would let 65,536 payloads
-	// read under MaxStringLen hold hundreds of megabytes against the budget this
-	// package documents. Every recorded run's assertions come to a few hundred
-	// bytes.
+	// maxAssertionBytes caps what those payloads come to in total, headers
+	// included. The count bounds the slice; this bounds what the reader keeps,
+	// and the two are not the same ceiling: a payload is retained for the life
+	// of the read and copied again by Assertions, so a count alone would let
+	// 65,536 payloads read under MaxStringLen hold hundreds of megabytes against
+	// the budget this package documents. Every recorded run's assertions come
+	// to a few hundred bytes.
 	maxAssertionBytes = 8 << 20
+	// stringHeader is what a retained string costs beyond its bytes: the
+	// pointer and the length of its header, sixteen bytes on the 64-bit targets
+	// this module is measured on. A 32-bit target retains half as much per
+	// entry, so a bound stated with this figure only loosens in the safe
+	// direction there.
+	stringHeader = 16
 	// initialCountCap is how much of an untrusted count is reserved up front.
 	// The count comes from the file, so the slice grows with what is actually
 	// decoded rather than with what the file claims, and a corrupt count costs
@@ -140,7 +154,7 @@ func readRunRest(r *reader, version gatling.Version) (runHeader, error) {
 		return out, err
 	}
 
-	if out.scenarios, err = readStrings(r, maxScenarios, "the scenario count", "a scenario name"); err != nil {
+	if out.scenarios, err = readScenarios(r); err != nil {
 		return out, err
 	}
 
@@ -167,18 +181,41 @@ func readRunRest(r *reader, version gatling.Version) (runHeader, error) {
 	return out, nil
 }
 
-// readStrings reads a count and that many plain strings, refusing a count above
-// the ceiling the caller names for it.
-func readStrings(r *reader, limit int32, countExpected, itemExpected string) ([]string, error) {
+// retained is the running total, in bytes, of one table the reader keeps for
+// the life of a read. Every entry is charged its bytes and a string header,
+// because that is what the heap holds: a count alone bounds the headers and
+// lets the bytes behind them run to gigabytes, which is how three tables sat
+// under one 32 MiB budget while two of them were bounded by nothing but their
+// counts. The zero value is an empty table.
+type retained struct {
+	total int
+}
+
+// add charges one entry of n bytes against the table's ceiling and refuses the
+// read past it, at the entry's own offset, naming what the table holds. The log
+// is not large, it is damaged: no simulation Gatling writes declares names,
+// carries payloads or introduces distinct strings by the megabyte, and a
+// consumer that needs a larger table needs an option, not an accident.
+func (h *retained) add(r *reader, at int64, n, ceiling int, what string) error {
+	if h.total += stringHeader + n; h.total > ceiling {
+		return r.syntax(at, what, strconv.Itoa(h.total)+" bytes, past the ceiling of "+strconv.Itoa(ceiling))
+	}
+
+	return nil
+}
+
+// readScenarios reads the scenario count and that many plain names, refusing a
+// count above maxScenarios and names past maxScenarioBytes in total.
+func readScenarios(r *reader) ([]string, error) {
 	at := r.off
 
-	n, err := r.i32(countExpected)
+	n, err := r.i32("the scenario count")
 	if err != nil {
 		return nil, err
 	}
 
-	if n < 0 || n > limit {
-		return nil, r.syntax(at, countExpected, "a count of "+strconv.Itoa(int(n)))
+	if n < 0 || n > maxScenarios {
+		return nil, r.syntax(at, "the scenario count", "a count of "+strconv.Itoa(int(n)))
 	}
 
 	if n == 0 {
@@ -187,9 +224,17 @@ func readStrings(r *reader, limit int32, countExpected, itemExpected string) ([]
 
 	out := make([]string, 0, min(int(n), initialCountCap))
 
+	var held retained
+
 	for range n {
-		s, err := r.str(itemExpected)
+		nameAt := r.off
+
+		s, err := r.str("a scenario name")
 		if err != nil {
+			return nil, err
+		}
+
+		if err := held.add(r, nameAt, len(s), maxScenarioBytes, "the scenario names"); err != nil {
 			return nil, err
 		}
 
@@ -220,7 +265,9 @@ func readBlobs(r *reader) ([]string, error) {
 
 	out := make([]string, 0, min(int(n), initialCountCap))
 
-	var total int
+	// The payloads are held for the whole read, so what they come to is
+	// checked as they arrive rather than left to the count alone.
+	var held retained
 
 	for range n {
 		blobAt := r.off
@@ -235,11 +282,8 @@ func readBlobs(r *reader) ([]string, error) {
 			return nil, err
 		}
 
-		// The payloads are held for the whole read, so what they come to is
-		// checked as they arrive rather than left to the count alone.
-		if total += len(buf); total > maxAssertionBytes {
-			return nil, r.syntax(blobAt, "the assertion payloads",
-				strconv.Itoa(total)+" bytes, past the ceiling of "+strconv.Itoa(maxAssertionBytes))
+		if err := held.add(r, blobAt, len(buf), maxAssertionBytes, "the assertion payloads"); err != nil {
+			return nil, err
 		}
 
 		out = append(out, string(buf))

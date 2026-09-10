@@ -8,6 +8,7 @@ import (
 	"runtime"
 	"testing"
 
+	"github.com/galax-io/parsec/gatling"
 	"github.com/galax-io/parsec/gatling/binary"
 	"github.com/galax-io/parsec/model"
 )
@@ -86,27 +87,12 @@ func liveHeap() uint64 {
 func decodeSized(t *testing.T, size int64) (records int64, peak uint64) {
 	t.Helper()
 
-	runtime.GC()
-
-	src := &sampler{r: newSynthLog(size), every: max(size/samples, 1)}
-
-	rd, err := binary.NewReader(src)
+	n, peak, err := decodeStream(t, newSynthLog(size), max(size/samples, 1))
 	if err != nil {
-		t.Fatalf("NewReader: %v", err)
+		t.Fatalf("after %d records: %v", n, err)
 	}
 
-	for {
-		_, err := rd.Next()
-		if errors.Is(err, io.EOF) {
-			return records, max(src.peak, liveHeap())
-		}
-
-		if err != nil {
-			t.Fatalf("Next after %d records: %v", records, err)
-		}
-
-		records++
-	}
+	return int64(n), peak
 }
 
 // The reader's memory must not grow with the log. A 256 MiB log and one ten
@@ -261,37 +247,17 @@ func TestFoldPeakMemory(t *testing.T) {
 	}
 }
 
-// peakOf decodes a whole log and reports the highest heap seen.
-//
-// The draw after the loop is not decoration: the largest allocation of a record
-// happens while that record is being built, after the reader has stopped pulling
-// its bytes, so a sampler wrapped around the input alone can miss it entirely.
+// peakOf decodes a whole log and reports the highest heap seen, failing the
+// test if the log does not decode.
 func peakOf(t *testing.T, src io.Reader, every int64) (records int, peak uint64) {
 	t.Helper()
 
-	runtime.GC()
-
-	s := &sampler{r: src, every: every}
-
-	rd, err := binary.NewReader(s)
+	records, peak, err := decodeStream(t, src, every)
 	if err != nil {
-		t.Fatalf("NewReader: %v", err)
+		t.Fatalf("after %d records: %v", records, err)
 	}
 
-	for {
-		_, err := rd.Next()
-		if errors.Is(err, io.EOF) {
-			break
-		}
-
-		if err != nil {
-			t.Fatalf("Next after %d records: %v", records, err)
-		}
-
-		records++
-	}
-
-	return records, max(s.peak, liveHeap())
+	return records, peak
 }
 
 // The budget Reader documents must hold for the field the ceiling is written
@@ -339,10 +305,12 @@ func TestStringCeilingPeakMemory(t *testing.T) {
 //nolint:paralleltest // measures peak heap and must run alone
 func TestAssertionCeilingPeakMemory(t *testing.T) {
 	// Filling the assertion ceiling with payloads at the string ceiling is the
-	// worst shape that stays inside both limits.
+	// worst shape that stays inside both limits — each a header short of
+	// MaxStringLen, since the ceiling counts what the heap holds.
 	payloads := max(binary.MaxAssertionBytes/binary.MaxStringLen, 1)
+	size := binary.MaxStringLen - binary.StringHeader
 
-	_, peak := peakOf(t, newAssertionLog(payloads, binary.MaxStringLen), int64(binary.MaxStringLen)/8)
+	_, peak := peakOf(t, newAssertionLog(payloads, size), int64(binary.MaxStringLen)/8)
 
 	t.Logf("%d assertion payloads of %d MiB, %d MiB retained: peak heap %.1f MiB",
 		payloads, binary.MaxStringLen/mib, payloads*binary.MaxStringLen/mib, float64(peak)/mib)
@@ -350,5 +318,103 @@ func TestAssertionCeilingPeakMemory(t *testing.T) {
 	if peak >= budget {
 		t.Fatalf("peak heap %.1f MiB reading a run record's assertion payloads, "+
 			"want under the %d MiB this package documents", float64(peak)/mib, budget/mib)
+	}
+}
+
+// decodeStream decodes a log to its end, sampling the live heap every so many
+// bytes and once more at the end, and reports how the read ended — a refusal is
+// an ending some of these tests expect.
+//
+// The draw after the loop is not decoration: the largest allocation of a record
+// happens while that record is being built, after the reader has stopped pulling
+// its bytes, so a sampler wrapped around the input alone can miss it entirely.
+func decodeStream(t *testing.T, log io.Reader, every int64) (records int, peak uint64, err error) {
+	t.Helper()
+
+	runtime.GC()
+
+	src := &sampler{r: log, every: every}
+
+	rd, err := binary.NewReader(src)
+	if err != nil {
+		return 0, max(src.peak, liveHeap()), err
+	}
+
+	for {
+		_, err := rd.Next()
+		if errors.Is(err, io.EOF) {
+			return records, max(src.peak, liveHeap()), nil
+		}
+
+		if err != nil {
+			return records, max(src.peak, liveHeap()), err
+		}
+
+		records++
+	}
+}
+
+// refusedWithinBudget requires the read to have ended as damage and the heap
+// never to have left the budget on the way.
+func refusedWithinBudget(t *testing.T, what string, peak uint64, err error) {
+	t.Helper()
+
+	if !errors.As(err, new(*gatling.SyntaxError)) {
+		t.Fatalf("%s = %v; want a refusal as damaged", what, err)
+	}
+
+	if peak >= budget {
+		t.Fatalf("%s: peak heap %.1f MiB, want under the %d MiB this package documents", what, float64(peak)/mib, budget/mib)
+	}
+
+	t.Logf("%s: refused — %v; peak heap %.1f MiB", what, err, float64(peak)/mib)
+}
+
+// Forty-eight scenario names of MaxStringLen each: 48 MiB that a ceiling on the
+// count alone let the reader retain — 49.1 MiB measured — against the 32 MiB it
+// documents. Bounded in bytes, the run record is refused as damaged long before
+// that, and the heap never leaves the budget.
+//
+//nolint:paralleltest // measures peak heap and must run alone
+func TestDistinctScenarioNamesPeakMemory(t *testing.T) {
+	_, peak, err := decodeStream(t, &tablesLog{scenarios: 48, scenarioLen: binary.MaxStringLen}, mib)
+	refusedWithinBudget(t, "48 scenario names of MaxStringLen", peak, err)
+}
+
+// The same shape built from the string table: forty-eight request records each
+// introducing a fresh MaxStringLen name. The table was bounded by entries and
+// by nothing else, so a log a little over the budget retained all of it.
+//
+//nolint:paralleltest // measures peak heap and must run alone
+func TestDistinctStringsPeakMemory(t *testing.T) {
+	_, peak, err := decodeStream(t, &tablesLog{scenarios: 1, scenarioLen: 1, introduced: 48, introducedLen: binary.MaxStringLen}, mib)
+	refusedWithinBudget(t, "48 introduced strings of MaxStringLen", peak, err)
+}
+
+// The proof of the figure: every table just under its ceiling at once — 1 MiB of
+// scenario names, 8 MiB of assertion payloads, 12 MiB of string table, headers
+// counted — followed by a hundred thousand records that refer back to it. The
+// log is accepted, and what the reader holds for it stays under the budget,
+// which the arithmetic in the plan puts near 26 MiB in the worst case.
+//
+//nolint:paralleltest // measures peak heap and must run alone
+func TestTablesAtTheirCeilingsPeakMemory(t *testing.T) {
+	log := &tablesLog{
+		scenarios: 16_384, scenarioLen: 48, // 64 bytes each with the header: 1 MiB
+		payloads: 8, payloadLen: binary.MaxStringLen - binary.StringHeader, // 1 MiB each with the header: 8 MiB
+		introduced: 98_300, introducedLen: 112, // 128 bytes each with the header: just under 12 MiB
+		referring: 100_000,
+	}
+
+	records, peak, err := decodeStream(t, log, mib)
+	if err != nil {
+		t.Fatalf("a log with every table just under its ceiling is refused after %d records: %v", records, err)
+	}
+
+	t.Logf("%d records: peak live heap %.1f MiB with every table just under its ceiling", records, float64(peak)/mib)
+
+	if peak >= budget {
+		t.Fatalf("peak heap %.1f MiB with the tables at their ceilings, want under the %d MiB this package documents",
+			float64(peak)/mib, budget/mib)
 	}
 }

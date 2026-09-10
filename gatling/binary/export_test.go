@@ -23,3 +23,12 @@ const MaxAssertionBytes = maxAssertionBytes
 // reason and by the same route: a test bounds what a refusal may pull from the
 // source by it, and a copied literal would drift.
 const ReadBufferSize = readBufferSize
+
+// The other ceilings on what the reader retains, and the header each entry is
+// charged, exported for the same reason: the boundary tests size their tables
+// against the real figures.
+const (
+	MaxScenarioBytes = maxScenarioBytes
+	MaxCacheBytes    = maxCacheBytes
+	StringHeader     = stringHeader
+)

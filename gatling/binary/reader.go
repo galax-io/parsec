@@ -15,8 +15,8 @@ import (
 // refused log costs one read. Records then arrive one at a time in file order. Peak memory does not grow with the log: it
 // is bounded by a fixed read buffer, the deepest group nesting, and the number
 // of distinct strings the log introduces — not by the number of records. The
-// string table is capped, so a log whose every failure message differs cannot
-// make that table follow the record count.
+// string table is capped in bytes, so a log whose every failure message
+// differs cannot make that table follow the record count.
 //
 // # The budget
 //
@@ -28,10 +28,24 @@ import (
 // at roughly five and a half times the ceiling because the garbage from one
 // field is not collected before the next is built.
 //
-// The two halves of that sentence are why [MaxStringLen] is what it is. A
-// ceiling that let one field cost more than the budget would make the budget
-// false for a log no larger than a few megabytes, which is the failure this
-// documentation exists to rule out.
+// It holds by construction. Everything the reader keeps for the life of a read
+// is bounded in bytes, each entry counted with its string header: the scenario
+// names at 1 MiB, the assertion payloads at 8 MiB, and the string table —
+// every distinct string the log introduces — at 12 MiB, beside the fixed read
+// buffer and one scratch buffer of at most [MaxStringLen]. A log past a ceiling
+// is refused as damaged at the entry that crossed it. No log Gatling writes for
+// an ordinary simulation approaches one: scenario names are class names,
+// assertion payloads run to tens of kilobytes, and a run's distinct strings are
+// its request and group names and its failure messages, which Gatling
+// truncates. A simulation whose checks put a per-session value into every
+// failure message can introduce more than 12 MiB of distinct text over a long
+// run, and such a log is refused where it was previously accepted at a cost
+// this documentation denied.
+//
+// The measured shape is why [MaxStringLen] is what it is. A ceiling that let
+// one field cost more than the budget would make the budget false for a log no
+// larger than a few megabytes, which is the failure this documentation exists
+// to rule out.
 //
 // A read ends in one of three ways, and each ending is terminal — every later
 // Next returns the same value.
