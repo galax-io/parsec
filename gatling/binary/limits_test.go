@@ -380,3 +380,156 @@ func TestAssertionPayloadsInsideTheByteCeilingDecode(t *testing.T) {
 		t.Errorf("Assertions() returned %d payloads, want %d", got, len(payloads))
 	}
 }
+
+// The three tables the reader keeps for the life of a read are bounded in
+// bytes, counting each entry's content and its string header, because that is
+// what the heap holds. A log exactly at a ceiling is accepted; one byte over is
+// refused as damaged, at the entry that crossed the line. The ceilings are the
+// package's own, through export_test.go, so a raised figure moves these tests
+// with it.
+
+// ceilingRefusal insists err is a *gatling.SyntaxError raised at the entry that
+// crossed a ceiling, and says so.
+func ceilingRefusal(t *testing.T, err error, wantAt int64) {
+	t.Helper()
+
+	var se *gatling.SyntaxError
+	if !errors.As(err, &se) {
+		t.Fatalf("a log past a ceiling = %v; want a *gatling.SyntaxError", err)
+	}
+
+	if se.Offset != wantAt {
+		t.Fatalf("the refusal names byte %d; the entry that crossed the ceiling starts at %d", se.Offset, wantAt)
+	}
+
+	if !strings.Contains(err.Error(), "past the ceiling") {
+		t.Fatalf("the refusal does not say what was exceeded: %v", err)
+	}
+}
+
+func TestScenarioNamesAreBoundedInBytes(t *testing.T) {
+	t.Parallel()
+
+	name := strings.Repeat("s", 64-binary.StringHeader) // 64 bytes with its header
+
+	names := make([]string, binary.MaxScenarioBytes/64) // exactly the ceiling
+	for i := range names {
+		names[i] = name
+	}
+
+	if _, err := binary.NewReader(bytes.NewReader((&builder{}).runRecord("3.15.1", names, nil).bytes())); err != nil {
+		t.Fatalf("scenario names of exactly %d bytes are refused: %v", binary.MaxScenarioBytes, err)
+	}
+
+	w := (&builder{}).u8(0).str("3.15.1").str("io.example.Sim").i64(runStart).str("")
+	w.i32(length(len(names) + 1))
+
+	for _, n := range names {
+		w.str(n)
+	}
+
+	crossingAt := int64(len(w.bytes()))
+	w.str("x").i32(0)
+
+	_, err := binary.NewReader(bytes.NewReader(w.bytes()))
+	ceilingRefusal(t, err, crossingAt)
+}
+
+func TestAssertionPayloadsCountTheirHeaders(t *testing.T) {
+	t.Parallel()
+
+	payload := strings.Repeat("a", binary.MaxStringLen-binary.StringHeader)
+
+	payloads := make([]string, binary.MaxAssertionBytes/binary.MaxStringLen) // exactly the ceiling, headers included
+	for i := range payloads {
+		payloads[i] = payload
+	}
+
+	if _, err := binary.NewReader(bytes.NewReader((&builder{}).runRecord("3.15.1", []string{"s"}, payloads).bytes())); err != nil {
+		t.Fatalf("assertion payloads of exactly %d bytes with their headers are refused: %v", binary.MaxAssertionBytes, err)
+	}
+
+	w := (&builder{}).u8(0).str("3.15.1").str("io.example.Sim").i64(runStart).str("").i32(1).str("s")
+	w.i32(length(len(payloads) + 1))
+
+	for _, p := range payloads {
+		w.i32(length(len(p)))
+		w.b = append(w.b, p...)
+	}
+
+	crossingAt := int64(len(w.bytes()))
+	w.i32(1)
+	w.b = append(w.b, 'a')
+
+	_, err := binary.NewReader(bytes.NewReader(w.bytes()))
+	ceilingRefusal(t, err, crossingAt)
+}
+
+// introducing writes a request record that introduces name into the string
+// table and refers back to entry 2, the empty message the first record made.
+func introducing(w *builder, name string) *builder {
+	return w.u8(1).i32(0).newString(name).i32(10).i32(20).u8(1).ref(2)
+}
+
+func TestTheStringTableIsBoundedInBytes(t *testing.T) {
+	t.Parallel()
+
+	// Entries of 48 KiB with their header, so a few hundred records reach the
+	// ceiling where 128-byte ones took a hundred thousand, each decoded under
+	// the race detector on every run.
+	const entry = 48 << 10
+
+	name := strings.Repeat("n", entry-binary.StringHeader)
+
+	w := (&builder{}).runRecord("3.15.1", []string{"s"}, nil)
+	// Entry 1 is the name, entry 2 the empty message.
+	w.request(name, true)
+
+	held, records := 2*binary.StringHeader+len(name), 1
+
+	for binary.MaxCacheBytes-held > 2*entry {
+		introducing(w, name)
+
+		held, records = held+entry, records+1
+	}
+
+	// The one entry that lands exactly on the ceiling.
+	introducing(w, strings.Repeat("n", binary.MaxCacheBytes-held-binary.StringHeader))
+
+	records++
+
+	// And one past it. The entry's index is what the refusal names: one kind
+	// byte and one group-depth field into the record.
+	crossingAt := int64(len(w.bytes())) + 1 + 4
+	introducing(w, "x")
+
+	// One read proves both halves: every record up to the ceiling is
+	// delivered, and the one that crosses it is refused where it starts.
+	recs, _, _, err := readThrough(bytes.NewReader(w.bytes()))
+	if len(recs) != records {
+		t.Fatalf("a string table of exactly %d bytes with its headers ended after %d of its %d records: %v",
+			binary.MaxCacheBytes, len(recs), records, err)
+	}
+
+	ceilingRefusal(t, err, crossingAt)
+}
+
+// The count ceiling on scenario names stays reachable beside the byte ceiling:
+// 65,536 empty names are exactly 1 MiB of headers and are accepted, and one
+// more is refused by count, as before.
+func TestTheScenarioCountCeilingStaysReachable(t *testing.T) {
+	t.Parallel()
+
+	if _, err := binary.NewReader(bytes.NewReader((&builder{}).runRecord("3.15.1", make([]string, 1<<16), nil).bytes())); err != nil {
+		t.Fatalf("65,536 empty scenario names are refused: %v", err)
+	}
+
+	w := (&builder{}).u8(0).str("3.15.1").str("io.example.Sim").i64(runStart).str("").i32(1<<16 + 1)
+
+	_, err := binary.NewReader(bytes.NewReader(w.bytes()))
+
+	var se *gatling.SyntaxError
+	if !errors.As(err, &se) || !strings.Contains(err.Error(), "a count of 65537") {
+		t.Fatalf("a scenario count past the ceiling = %v; want the count refused", err)
+	}
+}

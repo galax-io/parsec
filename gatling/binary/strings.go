@@ -178,19 +178,26 @@ func unit(b []byte, i int) (u, pair uint16) {
 // from the middle.
 type cache struct {
 	entries []string
+	// held is what the entries come to, headers included, against
+	// maxCacheBytes.
+	held retained
 }
 
-// maxCacheEntries bounds the table. Memory here is bounded by the number of
-// *distinct* strings, and for names and group paths a simulation declares a
-// fixed handful — but failure messages also go through the table, and Gatling
-// builds those from exception text that embeds addresses, ports and status
-// lines. A run that fails in a new way on every request would otherwise grow a
-// table linear in the record count, which is the one way this reader's memory
-// could follow the length of the log.
+// maxCacheBytes bounds the table, headers included. Memory here is bounded by
+// the *distinct* strings a log introduces, and for names and group paths a
+// simulation declares a fixed handful — but failure messages also go through
+// the table, and Gatling builds those from exception text that embeds
+// addresses, ports and status lines. A run that fails in a new way on every
+// request would otherwise grow a table linear in the record count, which is the
+// one way this reader's memory could follow the length of the log.
 //
-// A simulation with more than this many distinct strings is not something
-// Gatling produces; a log that claims one is damaged.
-const maxCacheEntries = 1 << 20
+// It bounds bytes rather than entries because a count said nothing about what
+// the budget promises: a million entries under MaxStringLen would have been a
+// terabyte. At this ceiling the table holds over a hundred thousand strings of
+// realistic length. A simulation that introduces more — a check whose expected
+// value differs per session can, over a long run — is refused as damaged, and
+// a consumer that needs a larger table needs an option, not an accident.
+const maxCacheBytes = 12 << 20
 
 // read reads one cached string: a big-endian index, then — when the index is
 // positive — the string being introduced.
@@ -216,13 +223,12 @@ func (c *cache) read(r *reader, expected string) (string, error) {
 				", where entry "+strconv.Itoa(len(c.entries)+1)+" comes next")
 		}
 
-		if len(c.entries) >= maxCacheEntries {
-			return "", r.syntax(at, expected, "more than "+strconv.Itoa(maxCacheEntries)+
-				" distinct strings, which no simulation declares")
-		}
-
 		s, err := r.str(expected)
 		if err != nil {
+			return "", err
+		}
+
+		if err := c.held.add(r, at, len(s), maxCacheBytes, "the string table"); err != nil {
 			return "", err
 		}
 

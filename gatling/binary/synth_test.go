@@ -3,7 +3,9 @@
 package binary_test
 
 import (
+	"bytes"
 	"io"
+	"strings"
 
 	"github.com/galax-io/parsec/gatling/binary"
 )
@@ -199,4 +201,95 @@ func newAssertionLog(payloads, size int) *ceilingLog {
 	}
 
 	return s
+}
+
+// tablesLog streams a log whose three retained tables are sized by the caller
+// — scenario names, assertion payloads, and strings introduced into the table
+// by request records — followed by records that only refer back. It is
+// streamed for the reason synthLog is: a fixture held in a []byte sits on the
+// heap for the whole decode and is measured as if the reader retained it, and
+// at these sizes that would be the whole answer. Each call to fill writes one
+// item, so the staging buffer never holds more than the largest field.
+type tablesLog struct {
+	scenarios, scenarioLen    int
+	payloads, payloadLen      int
+	introduced, introducedLen int
+	referring                 int
+
+	w     builder
+	phase int
+	i     int
+	buf   []byte
+	done  bool
+}
+
+func (l *tablesLog) fill() {
+	w := &l.w
+	w.b = w.b[:0]
+
+	switch l.phase {
+	case 0:
+		w.u8(0).str("3.15.1").str("io.example.Sim").i64(runStart).str("").i32(length(l.scenarios))
+		l.phase++
+	case 1:
+		if l.i < l.scenarios {
+			w.str(strings.Repeat("s", l.scenarioLen))
+
+			l.i++
+		} else {
+			w.i32(length(l.payloads))
+			l.phase, l.i = l.phase+1, 0
+		}
+	case 2:
+		if l.i < l.payloads {
+			w.i32(length(l.payloadLen))
+			w.b = append(w.b, bytes.Repeat([]byte{'a'}, l.payloadLen)...)
+
+			l.i++
+		} else {
+			l.phase, l.i = l.phase+1, 0
+		}
+	case 3:
+		// Each record introduces a fresh name. The first also introduces the
+		// empty message as entry 2; the rest refer back to it.
+		switch {
+		case l.i == 0 && l.introduced > 0:
+			w.request(strings.Repeat("n", l.introducedLen), true)
+
+			l.i++
+		case l.i < l.introduced:
+			introducing(w, strings.Repeat("n", l.introducedLen))
+
+			l.i++
+		default:
+			l.phase, l.i = l.phase+1, 0
+		}
+	case 4:
+		if l.i < l.referring && l.introduced > 0 {
+			w.u8(1).i32(0).ref(1).i32(10).i32(20).u8(1).ref(2)
+
+			l.i++
+		} else {
+			l.phase++
+		}
+	default:
+		l.done = true
+	}
+
+	l.buf = append(l.buf, w.b...)
+}
+
+func (l *tablesLog) Read(p []byte) (int, error) {
+	for len(l.buf) < len(p) && !l.done {
+		l.fill()
+	}
+
+	if len(l.buf) == 0 {
+		return 0, io.EOF
+	}
+
+	n := copy(p, l.buf)
+	l.buf = l.buf[n:]
+
+	return n, nil
 }

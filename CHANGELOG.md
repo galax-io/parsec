@@ -20,6 +20,18 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   version string longer than 64 bytes is refused as damaged before its bytes are read.
   What the gate decides is unchanged; only its place in the order moved, and it moved now because
   from v0.1.0 the error a read returns is a contract. (#76)
+- `gatling/binary` bounds what it retains in **bytes** for every table it keeps across a read, each
+  entry counted with its 16-byte string header. The scenario names are capped at 1 MiB and the
+  string table — every distinct string a log introduces — at 12 MiB, beside the assertion payloads'
+  existing 8 MiB, which now counts headers too; a log past a ceiling is refused as damaged at the
+  entry that crossed it. The count-only ceiling on the string table (1,048,576 entries) is gone,
+  because the byte ceiling binds first. Two of the three tables were bounded by nothing but their
+  counts — up to 64 GiB of scenario names and a terabyte of table under `MaxStringLen` — so a
+  48 MiB log of distinct strings retained all of it against the 32 MiB `Reader` documents; that
+  figure now holds by construction, with every table just under its ceiling measured at 23.8 MiB
+  of live heap. No log Gatling writes for an ordinary simulation approaches a ceiling; one whose
+  checks put a per-session value into every failure message can, over a long run, and is now
+  refused where it was previously accepted at a cost the documentation denied. (#75)
 
 ### Fixed
 
