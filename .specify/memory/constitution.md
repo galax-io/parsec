@@ -1,52 +1,33 @@
 <!--
 Sync Impact Report
 ==================
-Version change: 2.1.0 → 2.2.0
-Bump rationale: MINOR. A gate is added to the Quality Gates table — the shell tests, which
-existed for two scripts and were run by nothing — and the Milestones rule now names the mechanism
-that actually enforces the tag gate. No principle is removed or redefined, and nothing already
-compliant becomes non-compliant.
+Version change: 2.2.0 → 2.3.0
+Bump rationale: MINOR. Quality Gates & Tooling now distinguishes the `go` directive — the consumer
+floor, a compatibility promise — from the `toolchain` directive, the Go the gates actually run, and
+requires the latter to be a release still receiving fixes. No principle is removed or redefined.
 
-Modified principles: none.
+Modified principles: none in substance. Principle IV's text named `.github/workflows/ci.yml` as the
+home of the `deps` job; it is `verify.yml`, and the reference is corrected as wording.
 Modified sections:
-- Quality Gates & Tooling — one row added: every shell gate suite runs in `quick`.
-  `scripts/check-linkage_test.sh` and `scripts/check-coverage_test.sh` were committed and never
-  executed by any workflow, so the gates that guard every release were themselves unguarded.
-- Development Workflow & Release Process → Milestones — the tag gate now names all three places
-  that run it, and which of them is the authority.
+- Quality Gates & Tooling — the Toolchain paragraph, and where `golangci-lint` is pinned
+  (`verify.yml`, not `ci.yml`).
 
 Added sections: none. Removed sections: none. Renamed principles: none.
 
-Why now: parsec's copy of the shared `linkage-guard.sh` had drifted to an old revision, and two
-attempts to sharpen it here each introduced a defect the one before it did not have. A max-effort
-review found eleven shapes that walked through the second attempt — a wrapper such as xargs or
-sudo, a `bash -c` body, a subshell, a heredoc anywhere in the command — and, worse, that a failure
-of `awk` produced no output and allowed everything silently.
-
-The fix was not to write a third parser. `galax-io/gatling-kafka-plugin` had already solved the
-same problem, with a suite of cases, after hitting the identical incident — its header records a
-`gh pr create` whose heredoc body documented the hook and was blocked by it. That version is ported
-here whole, together with its tests, with one rule carried back the other way: a release-branch push
-is not a release, which is parsec#46 and belongs upstream too.
-
-What the ported guard cannot do is see a push it was not asked to run. It is a PreToolUse hook, so a
-maintainer tagging from a terminal or an IDE never reaches it. `.githooks/pre-push` closes that: git
-hands it the refs themselves, so there is nothing to parse and nothing to guess, and it fires for
-every client. The two are layers, not alternatives.
-
-The second half of the amendment is the reason the first was possible to get wrong twice. Both
-sibling gate scripts shipped a test and neither was wired into CI, so nothing caught a regression in
-the machinery that guards releases. The new row runs all four suites.
+Why now: `go.mod` carried `go 1.25` alone, so `setup-go` resolved the newest 1.25.x — 1.25.14, the
+final patch of a line that stopped receiving fixes when Go 1.27 shipped — and every gate certified
+the module on it. It bit before the next stdlib CVE did: the compat gate's pinned `golang.org/x/exp`
+required `go >= 1.26.0`, and its first run failed on the runner (#106, #109). The consumer floor does
+not move for this — a `toolchain` line is ignored by anyone importing the module — so the fix is one
+line and a rule that keeps it current (#104).
 
 Templates:
-- ✅ .specify/templates/plan-template.md — no gate list; no change.
-- ✅ .specify/templates/spec-template.md, tasks-template.md, checklist-template.md — no reference to
-  the hook or the gate table; no change.
-- ✅ AGENTS.md — the enforcement comment now names `.githooks/pre-push`, the one-time
-  `core.hooksPath` setup, and the shell-test command; Commands gains both lines.
-- ✅ .github/workflows/verify.yml — the `quick` job runs the three shell tests.
-- ✅ .claude/settings.json — unchanged; it still registers the guard, which stays.
-- ✅ README.md, doc.go — no reference; no change.
+- ✅ .specify/templates/plan-template.md — "Go 1.25 (`go.mod` is authoritative)" and "any Go 1.25
+  target" describe the floor, which is unchanged; no edit.
+- ✅ spec-template.md, tasks-template.md, checklist-template.md — no toolchain text; no change.
+- ✅ AGENTS.md — "Go 1.25" in Stack is the floor; agrees. No change.
+- ✅ specs/001-ci-release-automation/contracts/dependency-ownership.md, quickstart.md — updated in
+  the same PR: the toolchain row names the `toolchain` directive and who bumps it.
 
 Follow-up TODOs:
 - Carried forward, still unresolved: `.claude/skills/speckit-tasks/SKILL.md` says test tasks are
@@ -57,6 +38,8 @@ Follow-up TODOs:
 - The skills classification is pinned to `samber/cc-skills-golang` 2.0.1 and
   `galaxio/galaxio-gatling` 2.4.0, and is re-read at every `release/X.Y.0` cut and on every
   skill-plugin update.
+- New: the `toolchain` directive has no bot owner until Renovate is installed (001 T043); until
+  then it is bumped by hand at each `release/X.Y.0` cut, like the `golangci-lint` pin.
 - Ratification date is the scaffold date (2026-09-02); no earlier constitution existed.
 -->
 # parsec Constitution
@@ -150,7 +133,7 @@ numbers — a gap no amount of later work can close.
 ### IV. Minimal, Explicit Dependencies
 
 - `model/` and `gatling/` MUST depend on the standard library only. The `deps` job in
-  `.github/workflows/ci.yml` enforces this and MUST NOT be weakened or skipped.
+  `.github/workflows/verify.yml` enforces this and MUST NOT be weakened or skipped.
 - Any other package MAY use a third-party module only when the plan names it, explains
   why the standard library is insufficient and records the decision in `research.md`.
   Adding or upgrading a dependency requires asking first (see Development Workflow).
@@ -202,10 +185,16 @@ written. Predictable Go keeps review fast and lets downstream engineers debug th
 
 ## Quality Gates & Tooling
 
-Toolchain: Go 1.25. The `go` directive in `go.mod` is authoritative and CI reads it
-through `go-version-file`. `golangci-lint` is pinned in `.github/workflows/ci.yml`
-(v2.12.2 at ratification) and upgraded only in a dedicated PR, together with any config
-change the upgrade requires.
+Toolchain: two directives in `go.mod`, answering different questions. The `go` directive
+(1.25) is the floor a consumer may build with; it is a compatibility promise, and raising
+it is recorded under Changed. The `toolchain` directive names the Go release CI and the
+local gates actually run: it MUST be a release still receiving security fixes, and it is
+bumped in a dedicated PR at each `release/X.Y.0` cut or when a pinned tool demands it.
+`setup-go` prefers it through `go-version-file`, and `GOTOOLCHAIN=auto` — Go's default —
+makes a local run use it. A tool run through `go run pkg@version` names the Go it needs
+itself and MAY override `GOTOOLCHAIN` for its own step. `golangci-lint` is pinned in
+`.github/workflows/verify.yml` (v2.12.2 at ratification) and upgraded only in a dedicated
+PR, together with any config change the upgrade requires.
 
 Every PR MUST be green on all CI jobs before merge:
 
@@ -398,4 +387,4 @@ contradict.
   re-reads Principles I–VI against the milestone's merged PRs and files an issue for
   each gap in the next milestone.
 
-**Version**: 2.2.0 | **Ratified**: 2026-09-02 | **Last Amended**: 2026-09-06
+**Version**: 2.3.0 | **Ratified**: 2026-09-02 | **Last Amended**: 2026-09-10

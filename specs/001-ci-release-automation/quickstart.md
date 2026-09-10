@@ -11,7 +11,7 @@ are repository settings or need a JVM.
 
 | Need | For |
 |---|---|
-| Go 1.25+ | every local gate |
+| Go 1.25+ | every local gate. `go.mod`'s `toolchain` line names the release the gates run; `GOTOOLCHAIN=auto` — Go's default — fetches it on first use |
 | `gh` and `jq` | `scripts/check-linkage.sh` |
 | `git-cliff` | previewing release notes locally |
 | A JVM and a Gatling distribution | recording the corpus run, **once** |

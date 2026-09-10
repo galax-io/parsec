@@ -14,7 +14,7 @@ managers for families it does not own — not by convention (FR-027).
 | Vulnerability advisories | Dependabot | security updates, plus `govulncheck` in the gate set | `dependencies`, `go` |
 | Pinned `golangci-lint` version | Renovate | custom regex manager | `dependencies`, `tooling` |
 | Pinned `govulncheck` and `git-cliff` versions | Renovate | custom regex manager | `dependencies`, `tooling` |
-| Go toolchain (`go` directive) | Renovate | `gomod` manager, `depType: golang` only | `dependencies`, `tooling` |
+| Go toolchain (`toolchain` directive) | Renovate — by hand at each `release/X.Y.0` cut until it is installed (T043) | `gomod` manager, `depType: toolchain`. The `go` directive is the consumer floor, a compatibility promise, and is not a bot's to raise | `dependencies`, `tooling` |
 
 Schedule: weekly, Monday, for both.
 
