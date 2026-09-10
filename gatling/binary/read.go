@@ -65,7 +65,12 @@ type reader struct {
 }
 
 func newReader(r io.Reader) *reader {
-	return &reader{src: bufio.NewReaderSize(r, readBufferSize)}
+	// r is wrapped in a plain io.Reader first. bufio.NewReaderSize hands back
+	// its argument when that is already a *bufio.Reader of at least the size
+	// asked for, so a caller who buffers its own file would otherwise raise
+	// the ceiling to its own buffer size without knowing it — the same reason
+	// gatling/text/scan.go wraps before it buffers.
+	return &reader{src: bufio.NewReaderSize(struct{ io.Reader }{r}, readBufferSize)}
 }
 
 // maxEmptyReads is how many times a stalled source is given the benefit of the
