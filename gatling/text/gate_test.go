@@ -224,3 +224,74 @@ func TestGateSurplusField(t *testing.T) {
 		}
 	})
 }
+
+// The version is judged before the rest of the RUN line, so a log naming a
+// version below the range is refused as such even when its run start is out of
+// bounds. The binary codec does the same, and simlog exists so a consumer
+// cannot tell the two apart; before this the start was validated first and the
+// same line was reported as damage.
+func TestAVersionBelowTheRangeIsJudgedBeforeTheRunStart(t *testing.T) {
+	t.Parallel()
+
+	line := func(version string) string {
+		return "RUN\tio.example.Sim\tsim\t9223372036854775807\t \t" + version + "\n"
+	}
+
+	_, err := text.NewReader(strings.NewReader(line("1.0.0")))
+	if !errors.As(err, new(*gatling.VersionError)) {
+		t.Fatalf("NewReader over 1.0.0 with a run start past the ceiling = _, %v; want a *gatling.VersionError", err)
+	}
+
+	_, err = text.NewReader(strings.NewReader(line("3.12.0")))
+	if !errors.As(err, new(*gatling.SyntaxError)) {
+		t.Fatalf("NewReader over 3.12.0 with a run start past the ceiling = _, %v; want the start's *gatling.SyntaxError", err)
+	}
+}
+
+// An ASSERTION line with too few fields waits for the version, as a surplus
+// field does, so a version the gate refuses outranks it — the answer the binary
+// codec gives for a damaged assertion table, whose version comes first. With no
+// version to rule on, the earliest fault in the file is the one reported.
+func TestAShortAssertionLineIsJudgedAfterTheVersion(t *testing.T) {
+	t.Parallel()
+
+	const short = "ASSERTION\n"
+
+	header := func(version string) string { return "RUN\tio.example.Sim\tsim\t1788670094356\t \t" + version + "\n" }
+	refused := func(err error) bool {
+		return errors.As(err, new(*gatling.VersionError)) || errors.As(err, new(*gatling.UnverifiedError))
+	}
+	lineOne := func(err error) bool {
+		var se *gatling.SyntaxError
+
+		return errors.As(err, &se) && se.Line == 1
+	}
+
+	tests := []struct {
+		name string
+		log  string
+		opts []gatling.Option
+		want func(error) bool
+		says string
+	}{
+		{name: "beside a version below the range", log: short + header("1.0.0"), want: refused, says: "the version refused"},
+		{
+			name: "beside a version above the range, strict", log: short + header("3.99.0"),
+			opts: []gatling.Option{gatling.WithStrict()}, want: refused, says: "the version refused",
+		},
+		{name: "beside a version in the range", log: short + header("3.12.0"), want: lineOne, says: "a *gatling.SyntaxError at line 1"},
+		{name: "before a line that is neither", log: short + "garbage\n", want: lineOne, says: "a *gatling.SyntaxError at line 1"},
+		{name: "before a run header with no version", log: short + "RUN\tio.example.Sim\n", want: lineOne, says: "a *gatling.SyntaxError at line 1"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			_, err := text.NewReader(strings.NewReader(tt.log), tt.opts...)
+			if !tt.want(err) {
+				t.Fatalf("NewReader = _, %v; want %s", err, tt.says)
+			}
+		})
+	}
+}

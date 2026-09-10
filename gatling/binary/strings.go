@@ -29,6 +29,13 @@ func (r *reader) str(expected string) (string, error) {
 		return "", err
 	}
 
+	return r.strOf(n, at, expected)
+}
+
+// strOf reads the rest of a string whose length has been read already: that
+// many bytes and, when the length is non-zero, the encoding marker. at is the
+// offset of the length, where a complaint about the string belongs.
+func (r *reader) strOf(n int32, at int64, expected string) (string, error) {
 	buf, err := r.sized(n, at, expected)
 	if err != nil {
 		return "", err

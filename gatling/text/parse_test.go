@@ -59,6 +59,9 @@ func TestParseHeader(t *testing.T) {
 		},
 		{name: "start one past the ceiling", line: "RUN\ta\tb\t9223372034707292161\t \t3.11.5", wantSyntax: true},
 		{name: "start at the largest int64", line: "RUN\ta\tb\t9223372036854775807\t \t3.11.5", wantSyntax: true},
+		// The version is judged before the start: a line wrong in both ways is
+		// a version error, as it is in the binary codec.
+		{name: "version judged before the start", line: "RUN\ta\tb\t9223372036854775807\t \tgarbage", wantVerErr: "garbage"},
 		{name: "snapshot version", line: "RUN\ta\tb\t1\t \t3.13.0-SNAPSHOT", wantVerErr: "3.13.0-SNAPSHOT"},
 		{name: "milestone version", line: "RUN\ta\tb\t1\t \t3.12.0-M1", wantVerErr: "3.12.0-M1"},
 		{name: "garbage version", line: "RUN\ta\tb\t1\t \tgarbage", wantVerErr: "garbage"},
@@ -68,7 +71,7 @@ func TestParseHeader(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			got, n, err := parseHeader([]byte(tt.line), 3)
+			got, n, err := parseHeaderWhole([]byte(tt.line), 3)
 
 			switch {
 			case tt.wantSyntax:
@@ -87,7 +90,7 @@ func TestParseHeader(t *testing.T) {
 				}
 			default:
 				if err != nil {
-					t.Fatalf("parseHeader: %v", err)
+					t.Fatalf("parseHeaderWhole: %v", err)
 				}
 
 				if got != tt.want || n != tt.wantFields {
@@ -321,4 +324,18 @@ func TestParseRecordErrors(t *testing.T) {
 			}
 		})
 	}
+}
+
+// parseHeaderWhole runs the two halves of the header parse back to back, the
+// way finishPreamble does with the gate between them, so the table above can
+// keep asserting on one call.
+func parseHeaderWhole(line []byte, lineNo int) (gatling.Header, int, error) {
+	fields, n, version, err := parseHeaderVersion(line, lineNo)
+	if err != nil {
+		return gatling.Header{}, n, err
+	}
+
+	hdr, err := parseHeaderRest(fields, version, lineNo)
+
+	return hdr, n, err
 }

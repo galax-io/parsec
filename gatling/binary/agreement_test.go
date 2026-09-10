@@ -171,3 +171,92 @@ func describe(it model.Item) string {
 
 	return fmt.Sprintf("%s; ", it.Kind)
 }
+
+func isVersionError(err error) bool { return errors.As(err, new(*gatling.VersionError)) }
+
+func isUnparsedVersionError(err error) bool {
+	var ve *gatling.VersionError
+
+	return errors.As(err, &ve) && !ve.Parsed
+}
+
+func isUnverifiedError(err error) bool { return errors.As(err, new(*gatling.UnverifiedError)) }
+
+func isSyntaxError(err error) bool { return errors.As(err, new(*gatling.SyntaxError)) }
+
+// The gate rules on the version before anything after it is judged, in both
+// codecs, so a log naming a version outside the range is refused as such
+// whatever else is wrong with it — with one exception the text format forces:
+// its assertions come before its version, so an assertion table past its 8 MiB
+// ceiling is refused there as damage before the gate can rule. Each row puts a
+// fault both formats can express beside a version the gate must rule on first,
+// once for each fault; the last row is the control, where the gate passes and
+// the fault is judged next. failuresDiffer would call two different refusals
+// agreement, so this table asserts the type.
+func TestCodecsGateBeforeTheRestOfTheRunRecord(t *testing.T) {
+	t.Parallel()
+
+	faults := []struct {
+		name     string
+		inText   func(version string) string
+		inBinary func(version string) []byte
+	}{
+		{
+			name:   "a run start past the ceiling",
+			inText: func(v string) string { return "RUN\tio.example.Sim\tsim\t9223372036854775807\t \t" + v + "\n" },
+			inBinary: func(v string) []byte {
+				return (&builder{}).u8(0).str(v).str("io.example.Sim").i64(math.MaxInt64).str("").i32(0).i32(0).bytes()
+			},
+		},
+		{
+			name: "an assertion that cannot be read",
+			inText: func(v string) string {
+				return "ASSERTION\n" + "RUN\tio.example.Sim\tsim\t1788670094356\t \t" + v + "\n"
+			},
+			inBinary: func(v string) []byte {
+				return (&builder{}).u8(0).str(v).str("io.example.Sim").i64(runStart).str("").i32(0).i32(-1).bytes()
+			},
+		},
+	}
+
+	tests := []struct {
+		name    string
+		version string
+		opts    []gatling.Option
+		want    func(error) bool
+		wants   string
+	}{
+		{name: "below the range", version: "1.0.0", want: isVersionError, wants: "a *gatling.VersionError"},
+		{name: "not a release", version: "3.x", want: isUnparsedVersionError, wants: "a *gatling.VersionError with Parsed false"},
+		{
+			name:    "above the range, strict",
+			version: "3.99.0",
+			opts:    []gatling.Option{gatling.WithStrict()},
+			want:    isUnverifiedError,
+			wants:   "a *gatling.UnverifiedError",
+		},
+		{
+			name:    "above the range, lenient: the gate passes and the fault is judged",
+			version: "3.99.0",
+			want:    isSyntaxError,
+			wants:   "the fault's *gatling.SyntaxError",
+		},
+	}
+
+	for _, f := range faults {
+		for _, tt := range tests {
+			t.Run(f.name+"/"+tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				_, fromText := text.NewReader(strings.NewReader(f.inText(tt.version)), tt.opts...)
+				_, fromBinary := binary.NewReader(bytes.NewReader(f.inBinary(tt.version)), tt.opts...)
+
+				for codec, err := range map[string]error{"text": fromText, "binary": fromBinary} {
+					if !tt.want(err) {
+						t.Errorf("%s: NewReader = _, %v; want %s", codec, err, tt.wants)
+					}
+				}
+			})
+		}
+	}
+}

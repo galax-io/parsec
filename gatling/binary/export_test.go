@@ -18,3 +18,8 @@ func EndsWithItsLastBytes(data []byte, err error) io.Reader {
 // against the old one with no compile error. This is the route MaxStringLen
 // already takes, minus the promise.
 const MaxAssertionBytes = maxAssertionBytes
+
+// ReadBufferSize re-exports the size of the codec's read buffer, for the same
+// reason and by the same route: a test bounds what a refusal may pull from the
+// source by it, and a copied literal would drift.
+const ReadBufferSize = readBufferSize

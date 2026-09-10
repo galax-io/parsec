@@ -10,9 +10,9 @@ import (
 // Reader decodes a Gatling 3.13.1 through 3.15.1 binary simulation.log from a
 // stream.
 //
-// NewReader consumes the run record and applies the version gate, so Header,
-// Assertions and Warnings are available before the first Next. Records then
-// arrive one at a time in file order. Peak memory does not grow with the log: it
+// NewReader gates on the version before it reads the rest of the run record, so
+// Header, Assertions and Warnings are available before the first Next and a
+// refused log costs one read. Records then arrive one at a time in file order. Peak memory does not grow with the log: it
 // is bounded by a fixed read buffer, the deepest group nesting, and the number
 // of distinct strings the log introduces — not by the number of records. The
 // string table is capped, so a log whose every failure message differs cannot
@@ -67,11 +67,14 @@ type Reader struct {
 // The constructor is NewReader rather than New, matching gatling/text and the
 // standard library's io-style readers.
 
-// NewReader reads the run record and gates on the version it names. It fails
-// when the record cannot be read, when the version is below the supported range,
-// and when the version is not a plain release. A version above the range
-// succeeds and records a warning — or, under [gatling.WithStrict], fails with a
-// *gatling.UnverifiedError instead.//
+// NewReader reads the version the run record names, gates on it, and then reads
+// the rest of the record. It fails when the record cannot be read, when the
+// version is below the supported range, and when the version is not a plain
+// release — and it fails that way whatever follows the version, since the gate
+// rules before anything after it is decoded. A version above the range succeeds
+// and records a warning — or, under [gatling.WithStrict], fails with a
+// *gatling.UnverifiedError instead.
+//
 // The source may still be being written. A Read that blocks is a wait, not an
 // end, and a record split across reads is delivered once, when its last byte
 // arrives; the [github.com/galax-io/parsec/gatling/simlog] package documentation
@@ -88,17 +91,28 @@ func NewReader(r io.Reader, opts ...gatling.Option) (*Reader, error) {
 		return nil, rd.rd.syntax(0, "the run record", describeByte(kind))
 	}
 
-	if rd.run, err = readRun(&rd.rd); err != nil {
+	// The gate rules on the version before anything after it is decoded: a
+	// refused log costs one buffer fill rather than its tables, and a corrupt
+	// field after an out-of-range version is reported as a version here, as the
+	// text codec reports it — simlog exists so a consumer cannot tell the two
+	// apart. The text codec's assertion ceiling is the one exception: it meets
+	// that ceiling before it reaches the version.
+	version, err := readVersion(&rd.rd)
+	if err != nil {
 		return nil, err
 	}
 
-	_, warning, err := versionPolicy.Apply(rd.run.header.Version, opts...)
+	_, warning, err := versionPolicy.Apply(version, opts...)
 	if err != nil {
 		return nil, err
 	}
 
 	if warning != (gatling.Warning{}) {
 		rd.warnings = append(rd.warnings, warning)
+	}
+
+	if rd.run, err = readRunRest(&rd.rd, version); err != nil {
+		return nil, err
 	}
 
 	return rd, nil

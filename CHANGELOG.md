@@ -5,6 +5,22 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Changed
+
+- Both codecs judge the version before the rest of the run header (constitution Principle II: the
+  gate before any record is decoded). A binary log naming a version below the range is refused with
+  a `*gatling.VersionError` whatever its scenario or assertion tables hold, and pulls at most one
+  read-buffer fill before refusing, where it previously read the whole run record first and reported
+  a corrupt count after an out-of-range version as damage. A text `RUN` line naming a version below
+  the range is refused the same way even when its run start is out of bounds, where the start was
+  previously validated first. A version above the range under `WithStrict` is refused before either.
+  A text `ASSERTION` line with too few fields is ruled on after the version, so beside a version
+  below the range it is refused as a version too; an assertion table past its 8 MiB ceiling is still
+  refused as damage by the text codec, which reads its assertions before the version. A binary
+  version string longer than 64 bytes is refused as damaged before its bytes are read.
+  What the gate decides is unchanged; only its place in the order moved, and it moved now because
+  from v0.1.0 the error a read returns is a contract. (#76)
+
 ### Fixed
 
 - `gatling/binary` reported a complete log as cut short — every byte counted as dropped, no record
