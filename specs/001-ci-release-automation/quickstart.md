@@ -255,6 +255,17 @@ Renovate would then find the updates, fail to push the branch, and look like it 
 Dependabot security updates in the repository's security settings — that is the half of FR-029 that
 `govulncheck` does not cover.
 
+### 4. Create the `breaking` label
+
+The compat gate reads it. Without the label an incompatible change to an exported identifier fails
+`verify`; with it, the change passes when `CHANGELOG.md` records it under `[Unreleased]` as Changed or
+Removed — the MINOR bump Principle V permits, made visible on the pull request rather than discovered
+at the next `go get`.
+
+```bash
+gh label create breaking --repo galax-io/parsec --color b60205 --description "A deliberate incompatible change to the public API: MINOR bump, changelog entry required"
+```
+
 ---
 
 ## Definition of done
