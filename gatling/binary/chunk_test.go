@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"testing"
+	"testing/iotest"
 
 	"github.com/galax-io/parsec/gatling"
 	"github.com/galax-io/parsec/gatling/binary"
@@ -63,6 +64,17 @@ func TestChunkedReadsMatchWholeFile(t *testing.T) {
 							size, i, got[i], want[i])
 					}
 				}
+			}
+
+			// A source that returns its final bytes together with io.EOF,
+			// which the text codec's matrix reads through and this one did
+			// not. The corpus fields are small, so this shape cannot trip the
+			// read-buffer path on its own; it is here so the recordings are
+			// read through it from now on.
+			got := records(t, iotest.DataErrReader(bytes.NewReader(raw)))
+			if !reflect.DeepEqual(got, want) {
+				t.Fatalf("a source ending with its last bytes yields %d records; the whole file yields %d",
+					len(got), len(want))
 			}
 		})
 	}
