@@ -70,18 +70,21 @@ func NewReader(r io.Reader, opts ...gatling.Option) (*Reader, error) {
 
 	// Assertion records precede the header, one per declared assertion. Their
 	// field count cannot be judged until the header names the version, so a
-	// surplus is remembered — with the count that made it one — and ruled on
-	// afterwards.
+	// line with too few fields, or a surplus, is remembered — with the count
+	// that made it one — and ruled on afterwards: a version the gate refuses
+	// outranks it, as it does in the binary codec, where the version comes
+	// first.
+	shortLine, shortFields := 0, 0
 	surplusLine, surplusFields := 0, 0
 
 	for {
 		line, isTerminated, err := rd.sc.next()
 		if err != nil {
-			return nil, rd.preambleError(err)
+			return nil, preambleFault(rd.preambleError(err), shortLine, shortFields)
 		}
 
 		if !isTerminated {
-			return nil, unterminated(rd.sc.lineNo, len(line))
+			return nil, preambleFault(unterminated(rd.sc.lineNo, len(line)), shortLine, shortFields)
 		}
 
 		kind := kindOf(line)
@@ -90,34 +93,40 @@ func NewReader(r io.Reader, opts ...gatling.Option) (*Reader, error) {
 		case kindAssertion:
 			fields, n := split(nil, line, assertionFields)
 			if n < assertionFields {
-				return nil, fieldCountError(rd.sc.lineNo, kindAssertion, assertionFields, n)
+				if shortLine == 0 {
+					shortLine, shortFields = rd.sc.lineNo, n
+				}
+
+				continue
 			}
 
 			if n > assertionFields && surplusLine == 0 {
 				surplusLine, surplusFields = rd.sc.lineNo, n
 			}
 
+			// The one fault that cannot wait for the version: waiting is what
+			// this ceiling exists to prevent.
 			if rd.assertsN += len(fields[1]); rd.assertsN > maxAssertionBytes {
-				return nil, &gatling.SyntaxError{
+				return nil, preambleFault(&gatling.SyntaxError{
 					Format:   gatling.FormatText,
 					Line:     rd.sc.lineNo,
 					Expected: "a run header within " + strconv.Itoa(maxAssertionBytes) + " bytes of assertions",
 					Found:    "assertions still",
-				}
+				}, shortLine, shortFields)
 			}
 
 			rd.asserts = append(rd.asserts, string(fields[1]))
 
 		case kindRun:
-			return rd.finishPreamble(line, surplusLine, surplusFields, opts)
+			return rd.finishPreamble(line, shortLine, shortFields, surplusLine, surplusFields, opts)
 
 		default:
-			return nil, &gatling.SyntaxError{
+			return nil, preambleFault(&gatling.SyntaxError{
 				Format:   gatling.FormatText,
 				Line:     rd.sc.lineNo,
 				Expected: "ASSERTION or RUN before the run header",
 				Found:    quote(kind),
-			}
+			}, shortLine, shortFields)
 		}
 	}
 }
@@ -134,6 +143,24 @@ func (r *Reader) preambleError(err error) error {
 	}
 
 	return readError(r.sc.lineNo+1, err)
+}
+
+// preambleFault is err, unless an assertion line before it had too few fields:
+// with no version to rule on, the earliest fault in the file is the one
+// reported.
+func preambleFault(err error, shortLine, shortFields int) error {
+	if shortLine != 0 {
+		return fieldCountError(shortLine, kindAssertion, assertionFields, shortFields)
+	}
+
+	return err
+}
+
+// refusedVersion reports whether err is the version's own refusal — a release
+// outside the range, or a string that is not a release — which outranks every
+// other fault in the preamble.
+func refusedVersion(err error) bool {
+	return errors.As(err, new(*gatling.VersionError)) || errors.As(err, new(*gatling.UnverifiedError))
 }
 
 // readError adds the line being read to an error from the underlying stream.
@@ -169,18 +196,35 @@ func unterminated(lineNo, dropped int) error {
 	}
 }
 
-// finishPreamble decodes the header, applies the gate and settles the field
-// count rule for everything read so far.
-func (r *Reader) finishPreamble(line []byte, surplusLine, surplusFields int, opts []gatling.Option) (*Reader, error) {
-	hdr, n, err := parseHeader(line, r.sc.lineNo)
-	if err != nil {
+// finishPreamble reads the version off the header line, applies the gate,
+// decodes the rest of the header and settles the field count rule for
+// everything read so far — in that order, so that the gate rules before any
+// other field is judged. A version the gate refuses outranks every earlier
+// fault in the preamble; any other fault is reported in file order.
+func (r *Reader) finishPreamble(line []byte, shortLine, shortFields, surplusLine, surplusFields int, opts []gatling.Option) (*Reader, error) {
+	fields, n, version, err := parseHeaderVersion(line, r.sc.lineNo)
+
+	var (
+		verdict gatling.Verdict
+		warning gatling.Warning
+	)
+
+	if err == nil {
+		// The decision is not made here. versionPolicy holds this codec's
+		// range and gatling.Policy holds the rule, so a second codec cannot
+		// disagree with this one about what a version means.
+		verdict, warning, err = versionPolicy.Apply(version, opts...)
+	}
+
+	if refusedVersion(err) {
 		return nil, err
 	}
 
-	// The decision is not made here. versionPolicy holds this codec's range and
-	// gatling.Policy holds the rule, so a second codec cannot disagree with this
-	// one about what a version means.
-	verdict, warning, err := versionPolicy.Apply(hdr.Version, opts...)
+	if fault := preambleFault(err, shortLine, shortFields); fault != nil {
+		return nil, fault
+	}
+
+	hdr, err := parseHeaderRest(fields, version, r.sc.lineNo)
 	if err != nil {
 		return nil, err
 	}

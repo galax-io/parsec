@@ -59,19 +59,59 @@ type runHeader struct {
 	assertions []string
 }
 
-// readRun decodes the run record, which is the first record of the log and
-// occurs exactly once.
+// maxVersionLen caps the version string the run record opens with. A release
+// is a handful of characters — "3.15.1" — so this is generous; it exists so
+// that the one field read before the gate cannot make a refusal cost more than
+// a buffer fill, or quote a megabyte back.
+const maxVersionLen = 64
+
+// readVersion reads the first field of the run record — the Gatling version —
+// and parses it. It is read alone, ahead of the rest of the record, because the
+// gate rules on it before anything after it is decoded: a version below the
+// range is refused as such whatever the scenario and assertion tables hold, and
+// a refused log costs one buffer fill rather than everything its tables claim.
+// A length past maxVersionLen is refused before the bytes behind it are read.
+//
+// The version is parsed here rather than by the gate so that a string which is
+// not a release is refused with what was actually written, quoted.
+func readVersion(r *reader) (gatling.Version, error) {
+	const expected = "the Gatling version"
+
+	at := r.off
+
+	n, err := r.i32(expected)
+	if err != nil {
+		return gatling.Version{}, err
+	}
+
+	if n > maxVersionLen {
+		return gatling.Version{}, r.syntax(at, expected,
+			"a length of "+strconv.Itoa(int(n))+", past the ceiling of "+strconv.Itoa(maxVersionLen))
+	}
+
+	version, err := r.strOf(n, at, expected)
+	if err != nil {
+		return gatling.Version{}, err
+	}
+
+	parsed, err := gatling.ParseVersion(version)
+	if err != nil {
+		return gatling.Version{}, &gatling.VersionError{Found: version, Min: minVersion, Max: maxVersion}
+	}
+
+	return parsed, nil
+}
+
+// readRunRest decodes the run record after its version — the simulation class,
+// the run start, the description, the scenario names and the assertion
+// payloads — once the gate has ruled. The run record is the first record of the
+// log and occurs exactly once.
 //
 // The scenario names are written as plain strings and not through the cache,
 // which matters: reading them as cached would introduce entries the writer never
 // made and shift every later index by as many.
-func readRun(r *reader) (runHeader, error) {
+func readRunRest(r *reader, version gatling.Version) (runHeader, error) {
 	var out runHeader
-
-	version, err := r.str("the Gatling version")
-	if err != nil {
-		return out, err
-	}
 
 	simulation, err := r.str("the simulation class")
 	if err != nil {
@@ -108,13 +148,6 @@ func readRun(r *reader) (runHeader, error) {
 		return out, err
 	}
 
-	// The version is parsed here rather than by the gate so that a string which
-	// is not a release is refused with what was actually written, quoted.
-	parsed, err := gatling.ParseVersion(version)
-	if err != nil {
-		return out, &gatling.VersionError{Found: version, Min: minVersion, Max: maxVersion}
-	}
-
 	out.header = gatling.Header{
 		SimulationClass: simulation,
 		// The binary run record carries no separate run identifier. The text
@@ -128,7 +161,7 @@ func readRun(r *reader) (runHeader, error) {
 		RunID:       simulation,
 		Start:       start,
 		Description: description,
-		Version:     parsed,
+		Version:     version,
 	}
 
 	return out, nil
@@ -416,7 +449,7 @@ func (r *Reader) readError(rec *gatling.Record) error {
 // ten-million-record log should not end the read.
 //
 // The value reported is gatling.AbsentTimestamp, the one sentinel both codecs
-// write, so a consumer has one thing to check rather than two. readRun's bound on
+// write, so a consumer has one thing to check rather than two. readRunRest's bound on
 // the run start is what keeps a resolved time from colliding with it: a
 // non-negative start plus a non-negative offset is never negative, and the
 // addition cannot overflow because that bound keeps start plus any int32 offset

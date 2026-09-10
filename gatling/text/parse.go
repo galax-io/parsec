@@ -142,27 +142,39 @@ func fieldCountError(lineNo int, kind string, want, got int) error {
 	}
 }
 
-// parseHeader decodes a RUN line. It returns the number of fields the line
-// carried so the caller can apply the exact-count rule once the version, and
-// therefore the verdict, is known. A version that is not a plain release is a
-// *gatling.VersionError quoting it.
-func parseHeader(line []byte, lineNo int) (gatling.Header, int, error) {
+// parseHeaderVersion splits a RUN line and parses the one field the gate rules
+// on: the Gatling version. It returns the fields and their count so the caller
+// can apply the gate, decode the rest with parseHeaderRest, and apply the
+// exact-count rule once the verdict is known. A version that is not a plain
+// release is a *gatling.VersionError quoting it.
+//
+// The version is judged ahead of the run start deliberately: the gate rules on
+// it before anything else on the line is validated, so a version below the
+// range is refused as such whatever the start holds. That is the order the
+// binary codec keeps, and simlog exists so a consumer cannot tell the two apart.
+func parseHeaderVersion(line []byte, lineNo int) ([][]byte, int, gatling.Version, error) {
 	fields, n := split(make([][]byte, 0, runFields), line, runFields)
 	if n < runFields {
-		return gatling.Header{}, n, fieldCountError(lineNo, kindRun, runFields, n)
+		return nil, n, gatling.Version{}, fieldCountError(lineNo, kindRun, runFields, n)
 	}
 
+	version, err := gatling.ParseVersion(string(fields[5]))
+	if err != nil {
+		return nil, n, gatling.Version{}, &gatling.VersionError{Found: string(fields[5]), Min: minVersion, Max: maxVersion}
+	}
+
+	return fields, n, version, nil
+}
+
+// parseHeaderRest decodes the rest of a RUN line once the gate has ruled on its
+// version: the simulation class, the run id, the run start and the description.
+func parseHeaderRest(fields [][]byte, version gatling.Version, lineNo int) (gatling.Header, error) {
 	// The run start is the one time a log may not leave absent: every later
 	// instant is read against it, so it is refused here, once, against the same
 	// bounds the binary codec applies.
 	start, err := parseRunStart(fields[3], lineNo, "start")
 	if err != nil {
-		return gatling.Header{}, n, err
-	}
-
-	version, err := gatling.ParseVersion(string(fields[5]))
-	if err != nil {
-		return gatling.Header{}, n, &gatling.VersionError{Found: string(fields[5]), Min: minVersion, Max: maxVersion}
+		return gatling.Header{}, err
 	}
 
 	return gatling.Header{
@@ -171,7 +183,7 @@ func parseHeader(line []byte, lineNo int) (gatling.Header, int, error) {
 		Start:           start,
 		Description:     text(fields[4]),
 		Version:         version,
-	}, n, nil
+	}, nil
 }
 
 // parse decodes one event line.
