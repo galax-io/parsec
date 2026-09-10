@@ -2,12 +2,12 @@ package simlog
 
 import (
 	"bytes"
-	"fmt"
 	"io"
 
 	"github.com/galax-io/parsec/gatling"
 	"github.com/galax-io/parsec/gatling/binary"
 	"github.com/galax-io/parsec/gatling/text"
+	"github.com/galax-io/parsec/internal/source"
 	"github.com/galax-io/parsec/model"
 )
 
@@ -222,7 +222,7 @@ func identify(r io.Reader) (gatling.Format, []byte, io.Reader, error) {
 	// truncated decompressor, a closed transport — and reporting that as bytes
 	// we did not recognise would send a user to inspect a file that is fine.
 	if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF { //nolint:errorlint // deliberate: ReadFull's contract is identity, not wrapping
-		return gatling.FormatUnknown, nil, nil, fmt.Errorf("gatling: reading the start of the stream: %w", err)
+		return gatling.FormatUnknown, nil, nil, sourceFailed(err)
 	}
 
 	head := bytes.Clone(buf[:n])
@@ -233,6 +233,20 @@ func identify(r io.Reader) (gatling.Format, []byte, io.Reader, error) {
 	}
 
 	return format, head, io.MultiReader(bytes.NewReader(head), r), nil
+}
+
+// sourceFailed reports a stream that broke before it could be identified. The
+// cause is kept: a caller told its bytes were not a Gatling log would go and
+// inspect a file that is fine, when the pipe was the problem.
+//
+// A cause whose chain holds io.EOF must not satisfy errors.Is(err, io.EOF): a
+// caller whose loop breaks on the clean end of a log — an ingest handler does —
+// would book a torn upload as an empty run, with nothing decoded yet to
+// contradict it. source.Failed hides io.EOF and keeps every other cause
+// reachable, as gatling/binary's sourceFailed and gatling/text's readError do,
+// and the package documentation promises it to a follower.
+func sourceFailed(err error) error {
+	return source.Failed("gatling: reading the start of the stream", err)
 }
 
 // maxEmptyReads is how many times a stalled reader is given the benefit of the
