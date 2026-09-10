@@ -32,6 +32,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   of live heap. No log Gatling writes for an ordinary simulation approaches a ceiling; one whose
   checks put a per-session value into every failure message can, over a long run, and is now
   refused where it was previously accepted at a cost the documentation denied. (#75)
+- `run.Find` orders candidates by one key — the log's modification time, then the UTC stamp the run
+  id ends with, then the name — so the run it returns no longer depends on the order the results
+  root was listed in. A name without a stamp now ranks below every name with one at the same
+  modification time, where the pair was previously compared by whole name; only a root mixing
+  stamped and renamed directories can see a different answer, and on such a root the previous
+  answer could change when an unrelated directory was added — from the run stamped 2099 to the run
+  stamped 2020, with `Found` still reporting the ordinary rule. (#88)
 
 ### Fixed
 

@@ -1071,3 +1071,35 @@ func TestFindDirectoryNamedLikeTheLog(t *testing.T) {
 		t.Errorf("got %+v, want the directory itself (%s) found by path", loc, odd)
 	}
 }
+
+// A root that mixes Gatling-stamped names with a renamed directory is where a
+// pairwise tie-break broke. It compared stamps when both names carried one and
+// whole names otherwise, and switching rule per pair made the order cyclic —
+// A beats B by stamp, B beats C by name, C beats A by name — so the run
+// returned depended on which candidate the scan reached last, which
+// os.ReadDir's name order decided: adding the renamed directory changed the
+// answer from the run stamped 2099 to the run stamped 2020, while Found still
+// said the ordinary rule had applied.
+func TestFindMixedStampedAndUnstampedNames(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	same := time.Date(2026, time.September, 10, 0, 0, 0, 0, time.UTC)
+
+	for _, name := range []string{"simA-20990101000000000", "simB-20200101000000000", "simAA"} {
+		touchLog(t, mkRun(t, root, name), same)
+	}
+
+	loc, err := run.Find(root)
+	if err != nil {
+		t.Fatalf("Find: %v", err)
+	}
+
+	if want := filepath.Join(root, "simA-20990101000000000"); loc.Dir != want {
+		t.Errorf("Dir = %s, want %s — the run with the latest stamp", loc.Dir, want)
+	}
+
+	if loc.Found != run.FoundByNewest {
+		t.Errorf("Found = %s, want %s", loc.Found, run.FoundByNewest)
+	}
+}
