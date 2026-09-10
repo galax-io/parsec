@@ -88,19 +88,46 @@ const maxEmptyReads = 100
 // in decompressed coordinates that match no byte of the file on disk.
 var errCutShort = errors.New("the stream ended inside a value")
 
-// readFull fills buf, and differs from io.ReadFull in the two ways this package
-// needs. An end of stream becomes errCutShort rather than io.EOF or
-// io.ErrUnexpectedEOF, so only this loop can claim the log ran out; and a source
-// that keeps returning (0, nil) ends the read with io.ErrNoProgress rather than
-// spinning. io.ReadFull loops on an empty read forever, and bufio's own guard
-// lives in fill(), which its Read does not use — so nothing below this line
-// would have caught it.
+// readFull fills buf, and differs from io.ReadFull in three ways this package
+// needs. An end of stream that leaves buf short becomes errCutShort rather than
+// io.EOF or io.ErrUnexpectedEOF, so only this loop can claim the log ran out;
+// and a source that keeps returning (0, nil) ends the read with io.ErrNoProgress
+// rather than spinning. io.ReadFull loops on an empty read forever, and bufio's
+// own guard lives in fill(), which its Read does not use — so nothing below this
+// line would have caught it.
+//
+// Where the two agree is the read that fills buf and ends the stream in the
+// same call: it succeeds. A source may return its final bytes together with
+// io.EOF — an http.Response.Body ends a sized body that way — and bufio hands
+// the pair through unchanged whenever a value is read straight from the source,
+// which is every value of at least readBufferSize. Judging the error before the
+// count reported every such value as a log cut short, with every byte of it
+// counted as dropped.
+//
+// The third difference is any other error beside the last bytes. io.ReadFull
+// drops it and relies on the source to report it again; here it is returned,
+// because on that same direct path bufio hands the error over once and forgets
+// it, so a source that does not repeat itself would have a broken read taken
+// for a complete value.
 func readFull(r io.Reader, buf []byte) (int, error) {
 	n, empty := 0, 0
 
 	for n < len(buf) {
 		read, err := r.Read(buf[n:])
 		n += read
+
+		// The count says whether the value is complete, and the stream ending
+		// beside its last bytes does not make it less so; any other error is
+		// the source's failure and is returned, whole value or not. Tested
+		// first, and the nil error first, because a filled value with no error
+		// is nearly every call this loop makes.
+		if n == len(buf) {
+			if err == nil || err == io.EOF {
+				return n, nil
+			}
+
+			return n, err
+		}
 
 		switch {
 		// Identity: only the stream itself ending, never a source wrapping io.EOF.

@@ -3,11 +3,14 @@ package binary_test
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
+	"testing/iotest"
 
 	"github.com/galax-io/parsec/gatling"
 	"github.com/galax-io/parsec/gatling/binary"
@@ -53,25 +56,9 @@ func endingOf(err error) cutEnding {
 // how it ended. A constructor failure is an ending too: a log cut inside its run
 // record yields no reader and no records.
 func readCut(log []byte) ([]gatling.Record, cutEnding, error) {
-	rd, err := binary.NewReader(bytes.NewReader(log))
-	if err != nil {
-		return nil, endingOf(err), err
-	}
+	recs, _, ending, err := readThrough(bytes.NewReader(log))
 
-	var recs []gatling.Record
-
-	for {
-		rec, err := rd.Next()
-		if err != nil {
-			return recs, endingOf(err), err
-		}
-
-		if rec.Groups != nil {
-			rec.Groups = append(make([]string, 0, len(rec.Groups)), rec.Groups...)
-		}
-
-		recs = append(recs, rec)
-	}
+	return recs, ending, err
 }
 
 func corpusLog(t *testing.T, dir string) []byte {
@@ -386,5 +373,103 @@ func TestAStalledSourceEndsTheConstructorRatherThanHanging(t *testing.T) {
 
 	if _, err := binary.NewReader(&stalledAfter{data: raw[:4]}); !errors.Is(err, io.ErrNoProgress) {
 		t.Fatalf("NewReader over a stalled source = %v; want io.ErrNoProgress", err)
+	}
+}
+
+// readThrough reads a log from any source and reports the records, the
+// assertion payloads and how the read ended, copying what the reader reuses.
+func readThrough(r io.Reader) ([]gatling.Record, []string, cutEnding, error) {
+	rd, err := binary.NewReader(r)
+	if err != nil {
+		return nil, nil, endingOf(err), err
+	}
+
+	var recs []gatling.Record
+
+	for {
+		rec, err := rd.Next()
+		if err != nil {
+			return recs, rd.Assertions(), endingOf(err), err
+		}
+
+		if rec.Groups != nil {
+			rec.Groups = append(make([]string, 0, len(rec.Groups)), rec.Groups...)
+		}
+
+		recs = append(recs, rec)
+	}
+}
+
+// A complete log is complete however its source announces the end. A Read may
+// return the final bytes together with io.EOF — the io.Reader contract permits
+// it, and an HTTP body does it — and bufio hands that through unchanged whenever
+// a value of at least the read-buffer size is read straight from the source.
+// The value that sees it is the one whose bytes are the file's last, and an
+// assertion payload is the only field the format writes without a byte after
+// it, so a run record ending in a 200,000-byte payload is the shape; the
+// 1,000-byte case is the same log below the trigger, so the two together say
+// the fix does not depend on where a field falls against the buffer.
+//
+// Every earlier truncation test used a source that reports io.EOF on a call of
+// its own, which is why the corpus never caught a complete log being reported
+// as cut short with every byte counted as dropped and no record delivered.
+func TestACompleteLogIsNotCutShortWhenTheSourceEndsWithItsLastBytes(t *testing.T) {
+	t.Parallel()
+
+	sources := map[string]func([]byte) io.Reader{
+		"iotest.DataErrReader":   func(b []byte) io.Reader { return iotest.DataErrReader(bytes.NewReader(b)) },
+		"everything in one call": func(b []byte) io.Reader { return binary.EndsWithItsLastBytes(b, nil) },
+	}
+
+	for _, size := range []int{200_000, 1_000} {
+		raw := (&builder{}).runRecord("3.15.1", []string{"s"}, []string{strings.Repeat("a", size)}).bytes()
+
+		t.Run(fmt.Sprintf("a %d-byte payload, intact", size), func(t *testing.T) {
+			t.Parallel()
+
+			wantRecs, wantAsserts, wantEnding, err := readThrough(bytes.NewReader(raw))
+			if wantEnding != endedClean {
+				t.Fatalf("the reference read of an intact log ended in %s: %v", wantEnding, err)
+			}
+
+			for name, open := range sources {
+				recs, asserts, ending, err := readThrough(open(bytes.Clone(raw)))
+				if ending != endedClean {
+					t.Fatalf("%s: an intact log ended in %s: %v", name, ending, err)
+				}
+
+				if !reflect.DeepEqual(recs, wantRecs) || !reflect.DeepEqual(asserts, wantAsserts) {
+					t.Fatalf("%s: %d records and %d payloads differ from the whole-file read's %d and %d",
+						name, len(recs), len(asserts), len(wantRecs), len(wantAsserts))
+				}
+			}
+		})
+
+		t.Run(fmt.Sprintf("a %d-byte payload, cut for real", size), func(t *testing.T) {
+			t.Parallel()
+
+			cut := raw[:len(raw)-7]
+
+			for name, open := range sources {
+				_, _, ending, err := readThrough(open(bytes.Clone(cut)))
+				if ending != endedCut {
+					t.Fatalf("%s: a log cut inside its last record ended in %s: %v", name, ending, err)
+				}
+			}
+		})
+
+		t.Run(fmt.Sprintf("a %d-byte payload, failing with its last bytes", size), func(t *testing.T) {
+			t.Parallel()
+
+			// A failure the source returns beside the last bytes is a failure,
+			// whichever path bufio took: on the direct one it hands the error
+			// over once and forgets it, so dropping it would lose it for good.
+			failed := errors.New("transport reset")
+
+			_, _, ending, err := readThrough(binary.EndsWithItsLastBytes(bytes.Clone(raw), failed))
+			if ending != endedFailed || !errors.Is(err, failed) {
+				t.Fatalf("a source failing with its last bytes ended in %s: %v; want its failure", ending, err)
+			}
+		})
 	}
 }

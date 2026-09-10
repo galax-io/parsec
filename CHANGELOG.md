@@ -5,6 +5,18 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- `gatling/binary` reported a complete log as cut short — every byte counted as dropped, no record
+  delivered — when the source returned the file's last bytes together with `io.EOF` in one call and
+  the value being read was at least the 64 KiB read buffer, which only a trailing assertion payload
+  is. An `http.Response.Body` ends a sized body exactly that way and the `io.Reader` contract
+  permits it; `io.ReadFull`, whose contract the fill loop claims, clears the error in that case, and
+  the loop judged the error before the count. A read that fills its value and ends the stream in the
+  same call now succeeds, a failure that arrives with the last bytes is still reported as the
+  source's failure, and a stream that leaves the value short is still a
+  `*gatling.TruncationError`. (#82)
+
 ## [0.0.9] - 2026-09-09
 
 Finding the run: which `simulation.log` to open, answered once instead of three times.

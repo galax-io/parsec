@@ -575,3 +575,75 @@ func TestASourceReturningUnexpectedEOFIsNotATruncation(t *testing.T) {
 		t.Fatalf("the source's own failure is not reachable through the error: %v", err)
 	}
 }
+
+// endsWithItsLastBytes returns its final bytes together with the error that ends
+// it — io.EOF unless another is given — in one call. The io.Reader contract
+// permits that, an http.Response.Body does it, and bufio hands it through
+// unchanged whenever a value is read straight from the source.
+type endsWithItsLastBytes struct {
+	data []byte
+	err  error
+}
+
+func (s *endsWithItsLastBytes) Read(p []byte) (int, error) {
+	if len(s.data) == 0 {
+		return 0, io.EOF
+	}
+
+	n := copy(p, s.data)
+	s.data = s.data[n:]
+
+	if len(s.data) > 0 {
+		return n, nil
+	}
+
+	if s.err != nil {
+		return n, s.err
+	}
+
+	return n, io.EOF
+}
+
+// A Read that fills the value and reports its end in the same call is a
+// complete read. io.ReadFull clears the error in exactly that case; only a
+// buffer the stream leaves short is a cut. A failure that arrives with the
+// last bytes is another matter and is returned: bufio forgets such an error
+// once it has handed it over, so dropping it here would lose it for good.
+func TestReadFullAcceptsAFillThatArrivesWithEOF(t *testing.T) {
+	t.Parallel()
+
+	value := []byte("the whole value")
+	errTransport := errors.New("the transport failed")
+
+	tests := []struct {
+		name    string
+		src     *endsWithItsLastBytes
+		size    int
+		wantErr error
+	}{
+		{name: "filled, with io.EOF", src: &endsWithItsLastBytes{data: bytes.Clone(value)}, size: len(value)},
+		{
+			name:    "filled, with a failure of the source",
+			src:     &endsWithItsLastBytes{data: bytes.Clone(value), err: errTransport},
+			size:    len(value),
+			wantErr: errTransport,
+		},
+		{name: "one byte short", src: &endsWithItsLastBytes{data: bytes.Clone(value)}, size: len(value) + 1, wantErr: errCutShort},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			n, err := readFull(tt.src, make([]byte, tt.size))
+
+			if !errors.Is(err, tt.wantErr) {
+				t.Fatalf("readFull = %d, %v; want %d, %v", n, err, len(value), tt.wantErr)
+			}
+
+			if n != len(value) {
+				t.Fatalf("readFull read %d bytes; the source held %d", n, len(value))
+			}
+		})
+	}
+}
