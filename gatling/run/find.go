@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -40,7 +41,7 @@ const (
 	// treated as no pointer at all rather than loaded into memory.
 	maxLastRunSize = 64 << 10
 	// runIDTimeLen is the length of the yyyyMMddHHmmssSSS stamp Gatling ends a
-	// run id with. See later for what it is used for and what it is not.
+	// run id with. See compareRuns for what it is used for and what it is not.
 	runIDTimeLen = 17
 )
 
@@ -95,7 +96,9 @@ const (
 	// FoundByNewest uses.
 	FoundByLastRun
 	// FoundByNewest means it was the most recently modified run in the results
-	// root. This is a guess: see later for what the ordering can and cannot say.
+	// root, ties broken by the UTC stamp the run id ends with and then by name,
+	// a name without a stamp ranking below every name with one. This is a
+	// guess: see compareRuns for what the ordering can and cannot say.
 	FoundByNewest
 )
 
@@ -405,20 +408,13 @@ func isBareName(line string) bool {
 }
 
 // newest names the most recently modified run, breaking ties on the run's own
-// recorded start and then on the directory name, both descending.
+// recorded start and then on the directory name, all descending: the maximum
+// under compareRuns.
 func newest(runs []runDir) string {
-	best := runs[0]
-
-	for _, run := range runs[1:] {
-		if later(run, best) {
-			best = run
-		}
-	}
-
-	return best.name
+	return slices.MaxFunc(runs, compareRuns).name
 }
 
-// later orders two candidates. It is a heuristic, and the order it imposes is
+// compareRuns orders two candidates by one key, and the order it imposes is
 // worth stating exactly.
 //
 // The modification time of the log comes first, which is #11's rule. It is a
@@ -433,20 +429,30 @@ func newest(runs []runDir) string {
 // rather than the whole name matters as soon as a root holds two simulations —
 // which is what Maven's runMultipleSimulations produces — because whole-name
 // order is alphabetical by simulation id first, and would hand back a run that
-// started months earlier. A name without the stamp falls back to itself, so an
-// archive that renamed its directories still resolves deterministically.
-func later(a, b runDir) bool {
-	if !a.mod.Equal(b.mod) {
-		return a.mod.After(b.mod)
+// started months earlier.
+//
+// A name without the stamp compares as an empty stamp, so it ranks below every
+// name that carries one, and among its own kind by name. That is what makes
+// the order total: a rule that compared stamps for one pair and whole names for
+// the next was cyclic on a root mixing the two, and a linear maximum over a
+// cycle returns whichever candidate the scan reached last — os.ReadDir's name
+// order, in practice. It is also the right answer: the stamp is the only
+// evidence in a name about when a run started, and a name without one says
+// nothing about time. An archive that renamed every directory still resolves
+// deterministically, by name.
+func compareRuns(a, b runDir) int {
+	if c := a.mod.Compare(b.mod); c != 0 {
+		return c
 	}
 
-	if as, ok := runStart(a.name); ok {
-		if bs, ok := runStart(b.name); ok && as != bs {
-			return as > bs
-		}
+	as, _ := runStart(a.name)
+	bs, _ := runStart(b.name)
+
+	if c := strings.Compare(as, bs); c != 0 {
+		return c
 	}
 
-	return a.name > b.name
+	return strings.Compare(a.name, b.name)
 }
 
 // runStart returns the yyyyMMddHHmmssSSS stamp a Gatling run id ends with, and
