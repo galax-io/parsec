@@ -205,16 +205,30 @@ gh workflow run renovate.yml --repo galax-io/parsec
 These three are what turn the reports into enforcement. They change repository configuration, so they
 are listed rather than run.
 
-### 1. Require the `verify` check on `main`
+### 1. Apply the rulesets
 
-Without this, the pipeline reports honestly and nothing acts on the report — SC-010 is not met.
+Without this, the pipeline reports honestly and nothing acts on the report — SC-010 is not met. Three
+files under `.github/` declare what GitHub applies, so what is applied can be diffed against what is
+intended; they are the source of truth, and the settings page is where they are mirrored.
 
 ```bash
-gh api -X POST repos/galax-io/parsec/rulesets --input .github/ruleset-main.json
+for f in .github/ruleset-*.json; do
+  name=$(jq -r .name "$f")
+  id=$(gh api repos/galax-io/parsec/rulesets --jq ".[] | select(.name == \"$name\") | .id")
+  if [ -n "$id" ]; then gh api -X PUT "repos/galax-io/parsec/rulesets/$id" --input "$f" >/dev/null
+  else gh api -X POST repos/galax-io/parsec/rulesets --input "$f" >/dev/null; fi
+done
 ```
 
-The ruleset must require the `verify` status check and disable bypass. `verify` is the only check to
-require: it aggregates the rest, so new gates need no branch-protection edit.
+- `ruleset-main.json` — `main`: no deletion, no force-push, changes arrive by pull request (squash or
+  rebase), and the `verify` check must pass. `verify` is the only check to require: it aggregates the
+  rest, so a new gate needs no ruleset edit. No bypass, for anyone: an emergency is handled by
+  disabling the ruleset in settings, which is a visible act rather than a silent one.
+- `ruleset-release.json` — `release/*`: no deletion, no force-push. **No required check**, deliberately:
+  a patch is a cherry-pick pushed straight to the branch, and a required status check would refuse the
+  push before any check had run. The gate for a release is the tag — `release.yml` runs `verify` on it.
+- `ruleset-tags.json` — `v*`: a release tag is never deleted and never moved, which is what the proxy's
+  permanent record of the tag requires.
 
 ### 2. Create the `tooling` label
 
