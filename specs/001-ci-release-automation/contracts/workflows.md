@@ -31,7 +31,7 @@ changes ──→ gates (uses: ./.github/workflows/verify.yml)
 ```
 
 Inside `gates`, `verify.yml` runs its own graph: `quick` first, then `lint`, `test`,
-`e2e`, `deps`, `vuln` and `coverage` in parallel behind it.
+`e2e`, `deps`, `vuln`, `compat` and `coverage` in parallel behind it.
 
 - `changes` checks out with `fetch-depth: 0` — the base commit is not in a default
   depth-1 clone, and `git diff` against a missing object exits 128 — then computes the
@@ -81,6 +81,7 @@ required check never reports and a documentation-only pull request is blocked fo
 | `vuln` | `go run golang.org/x/vuln/cmd/govulncheck@<pinned> ./...` | yes |
 | `coverage` | `go test -coverprofile` ▸ `scripts/check-coverage.sh --enforce` | yes |
 | `nfr` | the corpus probe's OpenNFR document against the published schema, validator and schema ref both pinned | yes |
+| `compat` | `go run golang.org/x/exp/cmd/gorelease@<pinned> -base=<last tag>` ▸ `scripts/check-compat.sh`; pull requests only, and `--allow-breaking` when the pull request carries the `breaking` label | yes |
 
 `nfr` arrives with [spec 003](../../003-canonical-model/plan.md), not with this feature; it is listed
 here because this table is where a reviewer looks to learn which gates exist, and a table that omits
