@@ -83,6 +83,10 @@ jobs:
       # cheap way out of. A push to main does not fuzz either: the pull request that
       # produced it did.
       fuzz: ${{ github.event_name == 'pull_request' }}
+      # The compat gate runs where a change can be labelled deliberate — a pull
+      # request — and nowhere else; verify.yml says why.
+      compat: ${{ github.event_name == 'pull_request' }}
+      allow-breaking: ${{ contains(github.event.pull_request.labels.*.name, 'breaking') }}
 
   # The single required status check. One entry carries the whole gate set, so
   # adding a gate is an edit to verify.yml alone.

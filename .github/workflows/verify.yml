@@ -19,6 +19,22 @@ on:
           request, release.yml leaves it off by taking the default.
         type: boolean
         default: false
+      compat:
+        description: >-
+          Run the API compatibility leg. Pull requests only: the gate reads the `breaking`
+          label to tell a deliberate MINOR bump from an accident, and only a pull request
+          carries one. A push to main was gated by the pull request that produced it; a
+          tag is gated by release.yml's own checks.
+        type: boolean
+        default: false
+      allow-breaking:
+        description: >-
+          The pull request is labelled `breaking`: an incompatible change to an exported
+          identifier is deliberate, and CHANGELOG.md records it under [Unreleased] as
+          Changed or Removed. Without the label the compat gate fails on any incompatible
+          change (constitution Principle V).
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -53,6 +69,7 @@ jobs:
         run: |
           set -euo pipefail
           for t in scripts/check-linkage_test.sh scripts/check-coverage_test.sh \
+                   scripts/check-compat_test.sh \
                    .claude/hooks/linkage-guard_test.sh .githooks/pre-push_test.sh; do
             echo "--- $t"
             bash "$t"
@@ -315,6 +332,57 @@ jobs:
         # Run through go run at a pinned version so the tool never reaches go.mod.
         # renovate: datasource=go depName=golang.org/x/vuln
         run: go run golang.org/x/vuln/cmd/govulncheck@v1.7.0 ./...
+
+  # compat is the freeze. From v0.1.0 an exported identifier's signature is a
+  # contract (constitution Principle V), and no other gate would notice one
+  # changing: a rename with its tests updated is green on every one of them.
+  # gorelease reports the difference against the last tag; below major version 1
+  # its exit status ignores incompatible changes by design, so the report is read
+  # by scripts/check-compat.sh, which is the gate. Pull requests only, like fuzz:
+  # a push to main carries no label to say a change was deliberate, and the pull
+  # request that produced it already ran this.
+  compat:
+    needs: quick
+    if: inputs.compat
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # The base is the last tag reachable from this commit, and a shallow
+          # clone has no tags to reach.
+          fetch-depth: 0
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - name: gorelease against the last tag
+        # Run through go run at a pinned version so the tool never reaches go.mod.
+        # gorelease refuses a tree with uncommitted changes, and an untracked file
+        # is one — so the report goes to $RUNNER_TEMP, outside the tree, or the
+        # report file itself would be the dirt. Locally the same message means
+        # commit first. The report is stdout.
+        #
+        # GOTOOLCHAIN=auto, overriding setup-go's `local`: the pinned tool names
+        # the Go it needs, and that is its own to name — the module's toolchain
+        # need not track a tool's requirement, and a bump of the pin must not
+        # break the gate. The toolchain lands in the module cache, not the tree.
+        # renovate: datasource=go depName=golang.org/x/exp
+        env:
+          GOTOOLCHAIN: auto
+        run: |
+          set -euo pipefail
+          base="$(git describe --tags --abbrev=0 --match 'v*')"
+          echo "base: $base"
+          go run golang.org/x/exp/cmd/gorelease@v0.0.0-20260908205506-85c1c2202aba -base="$base" | tee "$RUNNER_TEMP/compat.txt"
+      - name: the report is the gate
+        env:
+          ALLOW: ${{ inputs.allow-breaking }}
+        run: |
+          set -euo pipefail
+          args=()
+          if [ "$ALLOW" = "true" ]; then args+=(--allow-breaking); fi
+          scripts/check-compat.sh "${args[@]}" "$RUNNER_TEMP/compat.txt"
+      - name: the tool reached nothing in the tree
+        run: test -z "$(git status --porcelain)" || { git status --porcelain; exit 1; }
 
   coverage:
     needs: quick
