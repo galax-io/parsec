@@ -95,6 +95,23 @@ sample — so that consumers computing differently still compute the same thing.
 
 The public API becomes stable at v0.1.0; until then it may change between releases.
 
+## Enforcement that lives in repository settings
+
+Part of what keeps `main` green is repository configuration, not a file a clone can show. It is
+declared as files anyway, so what is applied can be diffed against what is intended:
+
+- [`.github/ruleset-main.json`](.github/ruleset-main.json) — `main`: no deletion, no force-push,
+  changes arrive by pull request, and the `verify` check must pass. No bypass.
+- [`.github/ruleset-release.json`](.github/ruleset-release.json) — `release/*`: no deletion, no
+  force-push. No required check: a patch is a cherry-pick pushed directly, and the gate for a release
+  is the tag.
+- [`.github/ruleset-tags.json`](.github/ruleset-tags.json) — `v*`: a release tag is never deleted or
+  moved.
+
+How to apply or re-apply them is in
+[specs/001-ci-release-automation/quickstart.md](specs/001-ci-release-automation/quickstart.md), under
+*Maintainer actions*.
+
 ## Licence
 
 MIT.
