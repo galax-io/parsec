@@ -65,6 +65,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   decompressor inside the first ten bytes was retried rather than reported. Only the end of the
   stream itself now produces that answer: the head loop keeps a sentinel of its own for a head that
   ran short, as the binary codec's record loop already did. (#102)
+- `gatling/binary` adopted a caller's `*bufio.Reader` as its own read buffer whenever that buffer
+  was at least 64 KiB, because `bufio.NewReaderSize` hands such an argument back unchanged, so the
+  fixed buffer `Reader` documents as its memory bound was whatever the caller had: a 64 MiB one for
+  a caller buffering a large file, chosen by nobody. The codec now reads through a buffer of its
+  own whatever it is handed, as the text codec already did. (#87)
 
 ## [0.0.9] - 2026-09-09
 
