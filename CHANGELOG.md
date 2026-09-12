@@ -82,6 +82,15 @@ MINOR release like any other addition.
 
 ### Fixed
 
+- Every exported reader, and both `gatling/simlog` interfaces, now state that a value may be used by
+  one goroutine at a time, beside the aliasing rule they already carried. Nothing said so before: the
+  word *concurrent* appeared once in non-test code, about something else. Sharing a reader is not a
+  race that produces a wrong number — the text codec interns the names a log repeats in a map, so a
+  concurrent `Next` ends the process with `fatal error: concurrent map read and map write`, which
+  `recover` cannot catch. The `simlog` follower contract says it too, because a sidecar serving
+  progress while it reads is the consumer most likely to reach for a second goroutine and it holds
+  only the interface, where the concrete type carrying the map is invisible. The readers are not made
+  safe for concurrent use; a decoder over a single stream has no reason to be (#85).
 - `gatling.SyntaxError.Error`'s documentation said it *"names the line"*, above a method that renders
   a byte offset for a binary log. A consumer that believed it and wrote `line %d` into its own
   message reported byte 42 of a binary log as line 42, which no reader can act on — the type's own

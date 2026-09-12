@@ -18,6 +18,13 @@ import (
 //
 // The whole run is never resident. [RunReader.Run] is complete as soon as
 // NewRunReader returns, and items arrive one at a time in file order.
+//
+// A value may be used by one goroutine at a time. Every call mutates state the
+// reader does not synchronise, and the text codec interns the names a log
+// repeats in a map — so two goroutines calling Next on one reader do not risk a
+// wrong number, they risk "fatal error: concurrent map read and map write",
+// which is a runtime throw recover cannot catch. Give each goroutine its own
+// reader over its own stream.
 type RunReader struct {
 	rd  *Reader
 	run model.Run

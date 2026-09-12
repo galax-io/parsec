@@ -37,6 +37,14 @@
 //   - Read from the first byte of the file. The binary codec rebuilds its string
 //     cache as it goes, and a record can name a string introduced megabytes
 //     earlier, so starting anywhere else is silently wrong.
+//   - Call Next from one goroutine at a time. A follower serving progress while
+//     it reads is the shape this was written for, and two handler goroutines on
+//     one shared reader is the obvious way to write it — but every call mutates
+//     state the reader does not synchronise, and the text codec interns the
+//     names a log repeats in a map. That is not a race that returns a wrong
+//     number: it is "fatal error: concurrent map read and map write", a runtime
+//     throw recover cannot catch, and the process dies. Read on one goroutine
+//     and hand the records to the others.
 //   - Block when there are no new bytes rather than returning (0, nil) in a
 //     loop. That return is legal and must not be read as an end, so a spinning
 //     source would wedge a reader; it is caught and ended with io.ErrNoProgress

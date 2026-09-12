@@ -30,6 +30,13 @@ import (
 //   - Any other error is a failed read — a *gatling.SyntaxError naming the line
 //     that could not be decoded, or a failure of the source. Nothing may be
 //     derived from what was delivered.
+//
+// A value may be used by one goroutine at a time. Every call mutates state the
+// reader does not synchronise, and the text codec interns the names a log
+// repeats in a map — so two goroutines calling Next on one reader do not risk a
+// wrong number, they risk "fatal error: concurrent map read and map write",
+// which is a runtime throw recover cannot catch. Give each goroutine its own
+// reader over its own stream.
 type Reader struct {
 	sc       *scanner
 	p        *parser

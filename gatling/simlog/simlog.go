@@ -22,6 +22,14 @@ import (
 // implements this interface, so adding a method breaks the implementer and not
 // only the caller — which makes an addition a breaking change with no
 // deprecation path, and is why the set is final rather than merely stable.
+//
+// A value may be used by one goroutine at a time. The concrete reader behind
+// this interface mutates state it does not synchronise, and one of the two
+// interns the names a log repeats in a map — so two goroutines calling Next on
+// one value do not risk a wrong number, they risk "fatal error: concurrent map
+// read and map write", a runtime throw recover cannot catch. Holding the
+// interface is what hides which reader you have; the constraint holds for
+// either. Give each goroutine its own reader over its own stream.
 type RecordReader interface {
 	// Header is the run header, available before the first record.
 	Header() gatling.Header
@@ -53,6 +61,14 @@ type RecordReader interface {
 //
 // Its method set is frozen at v0.1.0 on both sides, for the reason
 // [RecordReader] gives.
+//
+// A value may be used by one goroutine at a time. The concrete reader behind
+// this interface mutates state it does not synchronise, and one of the two
+// interns the names a log repeats in a map — so two goroutines calling Next on
+// one value do not risk a wrong number, they risk "fatal error: concurrent map
+// read and map write", a runtime throw recover cannot catch. Holding the
+// interface is what hides which reader you have; the constraint holds for
+// either. Give each goroutine its own reader over its own stream.
 type RunReader interface {
 	// Run is everything about the run that does not grow with its length,
 	// including what the source cannot record and any version warning.
