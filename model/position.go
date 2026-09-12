@@ -2,6 +2,7 @@ package model
 
 import (
 	"encoding/binary"
+	"strconv"
 	"strings"
 )
 
@@ -19,17 +20,16 @@ const (
 	PositionGroup
 )
 
-// String returns "sample", "group" or "unknown".
+var positionKindNames = [...]string{unknownName, "sample", "group"}
+
+// String returns "sample", "group", or "unknown" for the zero value. A value
+// outside the set renders as the type name and the number.
 func (k PositionKind) String() string {
-	switch k {
-	case PositionSample:
-		return "sample"
-	case PositionGroup:
-		return "group"
-	case PositionUnknown:
+	if int(k) < len(positionKindNames) {
+		return positionKindNames[k]
 	}
 
-	return unknownName
+	return "PositionKind(" + strconv.Itoa(int(k)) + ")"
 }
 
 // Position is where in a run something was recorded: the ordered path of

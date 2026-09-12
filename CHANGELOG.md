@@ -34,6 +34,14 @@ MINOR release like any other addition.
 
 ### Changed
 
+- An out-of-range value of an exported enum renders as the type name and the number — `Outcome(200)`,
+  `Field(60000)` — on all eleven of them. Five `model` enums rendered `"unknown"`, which is what their
+  zero value renders as, and the zero value means something: `model.Outcome`'s documentation says it
+  marks a sample that *"lost its outcome on the way rather than succeeding quietly"*, a distinction
+  the old rendering discarded for anything out of range. The six `gatling`-side enums already did
+  this. Three implementations — a bounds-checked table, a `switch` with a `default`, and a `switch`
+  falling through — collapse to the table four of the eleven already used. No in-range rendering
+  changes, and every zero value still reads `"unknown"` (#78).
 - The version warning a consumer reads is built in one place. The `carried` loop, its comments and
   the sentence *"no recording covers it — the verified range is … through …, so the records decode
   unverified"* were byte-identical in both codecs' `NewRunReader`, one function short of where the
