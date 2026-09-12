@@ -8,8 +8,21 @@
 // reads it, so a caller holding an archived run does not have to know in
 // advance which Gatling produced it.
 //
-// Reach for it where the version is unknown. Where it is known, the codec
-// package is one call shorter and one interface plainer.
+// Reach for [NewRunReader] unless you need to see what the log actually held:
+// it yields the canonical results of [github.com/galax-io/parsec/model], the
+// same values whichever Gatling wrote the file, and it is what a report is
+// written against. [NewReader] is the wire-facing counterpart, yielding the
+// log's own records.
+//
+// This is the entry point for a run of unknown provenance, which is what an
+// archived run is. Where the version is already known,
+// [github.com/galax-io/parsec/gatling/text] and
+// [github.com/galax-io/parsec/gatling/binary] are one call shorter and one
+// interface plainer, and yield the same values.
+//
+// Finding the run comes first and is
+// [github.com/galax-io/parsec/gatling/run].Find: the whole path is run.Find,
+// then simlog.NewRunReader, then a fold over Next.
 //
 // # Following a log that is still being written
 //

@@ -82,6 +82,16 @@ MINOR release like any other addition.
 
 ### Fixed
 
+- The package overviews route to the entry point instead of away from it. `gatling`'s said the
+  canonical model and the conversion into it *"arrive in a later milestone"* — they arrived in v0.0.3
+  and v0.0.5, and it is the first Gatling page a symbol search lands on, so it sent readers to build
+  against `gatling.Record` and write the conversion `RunReader` exists to remove. The root overview
+  listed five packages and omitted `gatling/run`, the headline package of v0.0.9, which runs before
+  all of them. `gatling/text`'s never mentioned its own `RunReader`, while `gatling/binary`'s asserted
+  that counterpart exists. And `simlog`'s pointed readers at the codec packages, whose overviews did
+  not point back, while the actual recommendation sat on a type comment a reader reaches only after
+  choosing the wrong path. All six now name the three-call path — `run.Find`, then
+  `simlog.NewRunReader`, then a fold over `Next` — and doc-link the identifiers they mention (#96).
 - `gatling.Warning` and `model.Warning` now name each other. They are exported types in two packages
   with incompatible shapes, reachable one `simlog` call apart — and `simlog` documents that move as
   the recommended direction. `Version` goes from an ordered comparable struct to a string across it,

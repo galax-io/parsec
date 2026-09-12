@@ -17,6 +17,14 @@
 // large enough to matter is larger than the memory available to hold it, and a
 // consumer that needs all of one kind at once collects it and owns that memory.
 //
+// For a Gatling run the whole path is three calls:
+// [github.com/galax-io/parsec/gatling/run].Find locates the run,
+// [github.com/galax-io/parsec/gatling/simlog].NewRunReader opens its log without
+// being told which Gatling wrote it, and a fold over Next yields the [Item]
+// values this package describes — run.Find, then simlog.NewRunReader, then a
+// fold over Next. Nothing in that path names a format, and nothing in these
+// types names a tool.
+//
 // # Absence
 //
 // Two questions about a missing value have two different answers, and neither
