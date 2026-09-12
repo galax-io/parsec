@@ -93,25 +93,55 @@ func Render(dirs []string) (string, error) {
 
 // Diff names the lines that are in one rendering and not the other, so a
 // failure reads as what moved rather than as two walls of text.
+//
+// Each identifier is qualified by the package it was listed under before the
+// comparison. Without that, an identifier moved from one package to another is
+// the same line in both renderings and shows only as two counts changing, which
+// is the shape of the very change this file exists to make visible.
 func Diff(got, want string) string {
-	gotLines := strings.Split(strings.TrimSpace(got), "\n")
-	wantLines := strings.Split(strings.TrimSpace(want), "\n")
+	gotLines := qualify(got)
+	wantLines := qualify(want)
 
 	var b strings.Builder
 
 	for _, l := range gotLines {
 		if !slices.Contains(wantLines, l) {
-			b.WriteString("+ " + strings.TrimSpace(l) + "\n")
+			b.WriteString("+ " + l + "\n")
 		}
 	}
 
 	for _, l := range wantLines {
 		if !slices.Contains(gotLines, l) {
-			b.WriteString("- " + strings.TrimSpace(l) + "\n")
+			b.WriteString("- " + l + "\n")
 		}
 	}
 
 	return b.String()
+}
+
+// qualify prefixes every identifier with the package header it sits under, and
+// leaves the headers and the total as they are.
+func qualify(rendered string) []string {
+	var (
+		out []string
+		pkg string
+	)
+
+	for line := range strings.SplitSeq(strings.TrimSpace(rendered), "\n") {
+		switch {
+		case strings.HasPrefix(line, "## "):
+			pkg, _, _ = strings.Cut(strings.TrimPrefix(line, "## "), "  (")
+
+			out = append(out, line)
+		case strings.HasPrefix(line, "    "):
+			kind, name, _ := strings.Cut(strings.TrimSpace(line), " ")
+			out = append(out, kind+" "+pkg+"."+name)
+		default:
+			out = append(out, line)
+		}
+	}
+
+	return out
 }
 
 // Write rewrites the golden file at path with the given rendering.

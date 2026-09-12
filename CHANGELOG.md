@@ -40,8 +40,18 @@ MINOR release like any other addition.
   also answers a codec handed the other format's log — where the module does read the file, just not
   in that package (#107).
 
+### Added
+
+- `gatling.Tool` — the string a Gatling source is called in `model.Run.Tool`, declared once. A
+  consumer that wants to branch on the tool can now name it without importing a codec (#77).
+
 ### Removed
 
+- `gatling/text.Tool` and `gatling/binary.Tool` are gone, replaced by `gatling.Tool`. One value had
+  two exported names, in two files that were not even the same kind of file, and they were equal only
+  because the same string had been typed twice. A consumer comparing `run.Tool` against either was
+  writing a comparison that silently meant "that codec's spelling of gatling". From v0.1.0 both would
+  have been frozen, and removing one would have cost a deprecation window (#77).
 - `gatling.Gate` is unexported. Its only caller was `Policy.Apply`, whose own documentation calls
   itself *"the single place the outcomes are decided"*; a second exported entrance to one rule
   contradicted that, and nothing outside this module called it. What it decides is unchanged and is
