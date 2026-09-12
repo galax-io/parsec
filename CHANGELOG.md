@@ -82,6 +82,15 @@ MINOR release like any other addition.
 
 ### Fixed
 
+- `gatling.Warning` and `model.Warning` now name each other. They are exported types in two packages
+  with incompatible shapes, reachable one `simlog` call apart — and `simlog` documents that move as
+  the recommended direction. `Version` goes from an ordered comparable struct to a string across it,
+  so code written against `Version.Compare`, `Min` or `Max` does not survive; the compile error reads
+  like a rename rather than like a different type in a different package. `model.Warning.Version` now
+  says why it is text — the model is tool-agnostic and other tools do not number like Gatling — and
+  warns against comparing two of them as strings, which puts `"3.11.0"` before `"3.9.0"`: the
+  ordering bug `gatling.Version` exists to prevent. Neither shape changes and neither is renamed
+  (#86).
 - Every exported reader, and both `gatling/simlog` interfaces, now state that a value may be used by
   one goroutine at a time, beside the aliasing rule they already carried. Nothing said so before: the
   word *concurrent* appeared once in non-test code, about something else. Sharing a reader is not a

@@ -11,8 +11,22 @@ import (
 // It travels on the [Run] so that a result decoded from an unverified version
 // stays identifiable as one. A conversion that dropped it would launder an
 // unverified result into one that looks verified.
+//
+// A Gatling source builds it from [github.com/galax-io/parsec/gatling.Warning],
+// which is the wire form and carries an ordered Version and the range it fell
+// outside. The two are one call apart: gatling/simlog.NewReader hands back the
+// wire form, gatling/simlog.NewRunReader hands back this one, and that package
+// documents the second as the direction to reach for.
 type Warning struct {
-	// Version is the version the source named.
+	// Version is the release the source named, as text.
+	//
+	// It is a string and not a version type because this model is
+	// tool-agnostic, and other tools do not number like Gatling: k6 and Locust
+	// do not promise three dot-separated numbers, and a type that assumed them
+	// would have to lie about the rest. Do not order two of these as text —
+	// strings.Compare puts "3.11.0" before "3.9.0", which is the ordering bug
+	// gatling.Version exists to prevent. Parse them with that type, or compare
+	// for equality only.
 	Version string
 	// Reason says why the run is unverified, in a sentence a report can print.
 	Reason string
