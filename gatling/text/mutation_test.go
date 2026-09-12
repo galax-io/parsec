@@ -60,10 +60,15 @@ func assertTyped(t *testing.T, what string, err error) {
 		se *gatling.SyntaxError
 		ve *gatling.VersionError
 		te *gatling.TruncationError
+		// A mutation that happens to open like a binary log is one, and this
+		// codec now says so rather than calling it damaged: a stated answer
+		// with a stated remedy, which is what a caller can act on.
+		ue *gatling.UnsupportedFormatError
 	)
 
-	if !errors.As(err, &se) && !errors.As(err, &ve) && !errors.As(err, &te) {
-		t.Fatalf("%s: read ended with %T (%v), want *gatling.SyntaxError, *gatling.VersionError or *gatling.TruncationError",
+	if !errors.As(err, &se) && !errors.As(err, &ve) && !errors.As(err, &te) && !errors.As(err, &ue) {
+		t.Fatalf("%s: read ended with %T (%v), want *gatling.SyntaxError, *gatling.VersionError, "+
+			"*gatling.TruncationError or *gatling.UnsupportedFormatError",
 			what, err, err)
 	}
 }

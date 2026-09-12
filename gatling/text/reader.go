@@ -1,6 +1,7 @@
 package text
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -121,6 +122,15 @@ func NewReader(r io.Reader, opts ...gatling.Option) (*Reader, error) {
 			return rd.finishPreamble(line, shortLine, shortFields, surplusLine, surplusFields, opts)
 
 		default:
+			// Only line 1 is the head of the stream, and only there can the
+			// bytes say what format this is. Further in, an unknown kind is a
+			// damaged text log and nothing else.
+			if rd.sc.lineNo == 1 {
+				if wrong := wrongFormat(line); wrong != nil {
+					return nil, wrong
+				}
+			}
+
 			return nil, preambleFault(&gatling.SyntaxError{
 				Format:   gatling.FormatText,
 				Line:     rd.sc.lineNo,
@@ -318,4 +328,36 @@ func (r *Reader) Next() (gatling.Record, error) {
 	}
 
 	return rec, nil
+}
+
+// wrongFormat answers a log of the other format, from bytes this reader has
+// already consumed.
+//
+// A *gatling.SyntaxError says the position it names could not be decoded — a
+// damaged log. A log Gatling wrote in its other format is not damaged, and a
+// caller with a mixed archive that catches that error and quarantines the file
+// would quarantine every binary log it holds. It returns nil unless the head
+// names the binary format, so a genuinely damaged text log still reaches the
+// syntax error it deserves.
+//
+// line is the scanner's buffer and is refilled in place, so the head is copied
+// before it travels in an error a caller keeps.
+func wrongFormat(line []byte) error {
+	head := line
+	if len(head) > gatling.DetectSize {
+		head = head[:gatling.DetectSize]
+	}
+
+	// Detect names a format only when it is sure, and answers FormatUnknown with
+	// an error otherwise. The error says the bytes are not conclusively any
+	// Gatling log, which is not this function's business to report: the caller's
+	// own answer stands. The format alone decides.
+	format, _ := gatling.Detect(head)
+	if format != gatling.FormatBinary {
+		return nil
+	}
+
+	return fmt.Errorf("%w; gatling/binary reads this format, and gatling/simlog reads either "+
+		"without being told which",
+		&gatling.UnsupportedFormatError{Format: format, Head: bytes.Clone(head)})
 }

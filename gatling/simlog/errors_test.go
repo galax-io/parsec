@@ -29,24 +29,35 @@ func textLog(version string) string {
 
 var errStream = errors.New("the stream broke")
 
-// The whole milestone is here. A binary log handed to the text codec fails on
-// its first line with a message about a missing separator, which sends a user
-// looking for corruption that is not there. Handed to this package it is read.
+// The whole milestone is here. A binary log handed to the text codec is refused;
+// handed to this package it is read.
 //
 // The text half is kept: it records what a consumer gets without this package,
-// and it is what makes the other half mean something.
+// and it is what makes the other half mean something. What it records changed
+// with #84 — the refusal used to be a *gatling.SyntaxError, which says the log
+// is damaged and sent a user looking for corruption that is not there. It now
+// names the format found and the package that reads it, which is a better
+// failure and still a failure: the one-call answer is still this package.
 func TestBinaryIsReadWhereTheTextCodecOnlyFails(t *testing.T) {
 	t.Parallel()
 
-	t.Run("through the text codec, a syntax error", func(t *testing.T) {
+	t.Run("through the text codec, the wrong format", func(t *testing.T) {
 		t.Parallel()
 
 		_, err := text.NewReader(open(t, binaryLog()))
 
-		var syntaxErr *gatling.SyntaxError
-		if !errors.As(err, &syntaxErr) {
-			t.Fatalf("text.NewReader on a binary log = %v; want a *gatling.SyntaxError — "+
+		var unsupported *gatling.UnsupportedFormatError
+		if !errors.As(err, &unsupported) {
+			t.Fatalf("text.NewReader on a binary log = %v; want a *gatling.UnsupportedFormatError — "+
 				"this half of the test records the outcome the milestone exists to replace", err)
+		}
+
+		if unsupported.Format != gatling.FormatBinary {
+			t.Errorf("Format = %v, want %v", unsupported.Format, gatling.FormatBinary)
+		}
+
+		if errors.As(err, new(*gatling.SyntaxError)) {
+			t.Error("the refusal still reads as a damaged log")
 		}
 	})
 
