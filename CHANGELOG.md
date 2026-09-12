@@ -5,7 +5,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
-### The v0.1.0 compatibility promise
+**The v0.1.0 compatibility promise.**
 
 From the `v0.1.0` tag this module has a public API you may pin.
 
@@ -31,6 +31,13 @@ this paragraph — a hard-coded range goes stale the first time one is recorded.
 
 **What is not promised.** A v1.0.0 commitment. The surface may still grow, and a new identifier is a
 MINOR release like any other addition.
+
+The promise is issue #13; what it covers, identifier by identifier, is #107.
+
+### Added
+
+- `gatling.Tool` — the string a Gatling source is called in `model.Run.Tool`, declared once. A
+  consumer that wants to branch on the tool can now name it without importing a codec (#77).
 
 ### Changed
 
@@ -75,10 +82,24 @@ MINOR release like any other addition.
   also answers a codec handed the other format's log — where the module does read the file, just not
   in that package (#107).
 
-### Added
+### Removed
 
-- `gatling.Tool` — the string a Gatling source is called in `model.Run.Tool`, declared once. A
-  consumer that wants to branch on the tool can now name it without importing a codec (#77).
+- `gatling/text.Tool` and `gatling/binary.Tool` are gone, replaced by `gatling.Tool`. One value had
+  two exported names, in two files that were not even the same kind of file, and they were equal only
+  because the same string had been typed twice. A consumer comparing `run.Tool` against either was
+  writing a comparison that silently meant "that codec's spelling of gatling". From v0.1.0 both would
+  have been frozen, and removing one would have cost a deprecation window (#77).
+- `gatling.Gate` is unexported. Its only caller was `Policy.Apply`, whose own documentation calls
+  itself *"the single place the outcomes are decided"*; a second exported entrance to one rule
+  contradicted that, and nothing outside this module called it. What it decides is unchanged and is
+  reached through `Policy.Apply`, which the version tests now drive (#107).
+- `gatling.MaxRunStart` is no longer exported; it moved to `internal/wire`. The two codecs read it
+  and no consumer computes with it. The refusal it implements — a run start later than the ceiling is
+  refused rather than decoded into instants that would wrap — stays documented on the readers that
+  refuse it (#107).
+
+Principle V allows both removals without a deprecation window only while the module is below v0.1.0.
+That window closes at the tag.
 
 ### Fixed
 
@@ -154,25 +175,10 @@ MINOR release like any other addition.
   message reported byte 42 of a binary log as line 42, which no reader can act on — the type's own
   comment six lines above had it right the whole time. `gatling.TruncationError` stated the
   boundary-cut fact twice inside one comment; it is true, important, and now stated once (#79).
-
-### Removed
-
-- `gatling/text.Tool` and `gatling/binary.Tool` are gone, replaced by `gatling.Tool`. One value had
-  two exported names, in two files that were not even the same kind of file, and they were equal only
-  because the same string had been typed twice. A consumer comparing `run.Tool` against either was
-  writing a comparison that silently meant "that codec's spelling of gatling". From v0.1.0 both would
-  have been frozen, and removing one would have cost a deprecation window (#77).
-- `gatling.Gate` is unexported. Its only caller was `Policy.Apply`, whose own documentation calls
-  itself *"the single place the outcomes are decided"*; a second exported entrance to one rule
-  contradicted that, and nothing outside this module called it. What it decides is unchanged and is
-  reached through `Policy.Apply`, which the version tests now drive (#107).
-- `gatling.MaxRunStart` is no longer exported; it moved to `internal/wire`. The two codecs read it
-  and no consumer computes with it. The refusal it implements — a run start later than the ceiling is
-  refused rather than decoded into instants that would wrap — stays documented on the readers that
-  refuse it (#107).
-
-Principle V allows both removals without a deprecation window only while the module is below v0.1.0.
-That window closes at the tag.
+- The 0.0.9 entry below stated the run-ordering rule twice: once contradicting the code, and once
+  contradicting itself. It now states the three levels `gatling/run.Find` actually compares — the
+  log's modification time, then the run id's own UTC stamp, then the whole directory name — once
+  (#97).
 
 ## [0.0.10] - 2026-09-12
 
