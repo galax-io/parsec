@@ -282,10 +282,13 @@ what makes the ordering's tie-break an ordering by time at all.
   parameter was turned off against its default, and `gatling:verify` has not run since — that goal
   reads the file and deletes it. Neither the Gradle plugin nor Gatling itself writes one at all. So for most callers the
   rule the issue framed as a fallback is the only rule there is, which is why the ordering is total —
-  modification time first, then the directory name, both descending. The tie-break is not a
-  formality: a `git clone`, an `rsync` without `-t`, a CI cache restore and a container image build
-  each give every run in a root one modification time, and a Gatling run directory is
-  `<simulationId>-<yyyyMMddHHmmssSSS>`, so descending name is descending run start.
+  the log's modification time first, then the run id's own UTC stamp, then the whole directory name,
+  all descending. The tie-break is not a formality: a `git clone`, an `rsync` without `-t`, a CI
+  cache restore and a container image build each give every run in a root one modification time, and
+  a Gatling run directory is `<simulationId>-<yyyyMMddHHmmssSSS>`, so the stamp inside the name is
+  the only evidence there about when a run started. Comparing the whole name instead would order by
+  simulation id first and hand back a run that started months earlier; a name carrying no stamp
+  ranks below every name that carries one, and among its own kind by name.
 
   `NotFoundError` names the directory that was searched, which is always one the caller gave. A
   path that exists but is not a directory — an archive, a mistyped filename — reaches it too, rather
