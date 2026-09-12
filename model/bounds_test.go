@@ -177,10 +177,11 @@ func TestBoundsIgnoreWhatWasNeverRecorded(t *testing.T) {
 	}
 }
 
-// A run can have a start and no end — samples whose ends the source did not
-// record, and no virtual-user event — and the bounds say so rather than invent
-// an end.
-func TestBoundsCanBeHalfSet(t *testing.T) {
+// A run whose samples all lack a recorded end still has a span: each of them was
+// running at its own start, and the latest of those starts is the last instant
+// the run is known to have been going. Reporting no end at all would have been a
+// second kind of silence about the same items the fold counted.
+func TestARunOfEndlessSamplesEndsAtTheLatestStart(t *testing.T) {
 	t.Parallel()
 
 	b := fold([]model.Item{
@@ -192,8 +193,8 @@ func TestBoundsCanBeHalfSet(t *testing.T) {
 		t.Errorf("Start() = %v, %t; want %v", start, ok, ms(40))
 	}
 
-	if end, ok := b.End(); ok {
-		t.Errorf("End() = %v, set; want absent when no end was ever recorded", end)
+	if end, ok := b.End(); !ok || !end.Equal(ms(100)) {
+		t.Errorf("End() = %v, %t; want %v", end, ok, ms(100))
 	}
 }
 
@@ -301,11 +302,11 @@ func TestBoundsRefuseASpanTheyCannotVouchFor(t *testing.T) {
 	}
 }
 
-// A virtual-user END extends only the end and a sample with no recorded end
-// extends only the start, so the two can cross. A consumer that honoured both
-// flags would then divide a count by a negative span and print a negative rate
-// for every row.
-func TestBoundsNeverReportAnEndBeforeTheStart(t *testing.T) {
+// A virtual-user END earlier than every sample start used to leave the two
+// bounds crossed, and both were then reported as absent. Now each end-less
+// sample carries the end to its own start, so the span covers every item the
+// fold counted and there is nothing to cross.
+func TestAnEarlyUserEndDoesNotShortenTheSpan(t *testing.T) {
 	t.Parallel()
 
 	// A run cut short: every request carries the never-completed sentinel, and
@@ -321,14 +322,17 @@ func TestBoundsNeverReportAnEndBeforeTheStart(t *testing.T) {
 		t.Errorf("Start() = %v, %t; want %v — the earliest start is still known", start, ok, ms(5000))
 	}
 
-	if end, ok := b.End(); ok {
-		t.Errorf("End() = %v, set; it precedes the start, so there is no span to report", end)
+	if end, ok := b.End(); !ok || !end.Equal(ms(9000)) {
+		t.Errorf("End() = %v, %t; want %v — the latest instant the run is known to have been going",
+			end, ok, ms(9000))
 	}
 }
 
 // Every source this package documents promises a non-negative Duration, and the
 // Gatling path keeps that promise. Bounds is exported, so an adapter that broke
-// it must not be able to drag the end behind the start.
+// it must not be able to drag the end behind the start: a negative duration
+// gives no end past the item's own start, which is where an item with no
+// recorded end leaves it too.
 func TestBoundsIgnoreANegativeDuration(t *testing.T) {
 	t.Parallel()
 
@@ -339,8 +343,10 @@ func TestBoundsIgnoreANegativeDuration(t *testing.T) {
 		t.Errorf("Start() = %v, %t; want %v", start, ok, ms(10000))
 	}
 
-	if end, ok := b.End(); ok {
-		t.Errorf("End() = %v, set; a duration that is not positive time gives no end", end)
+	end, ok := b.End()
+	if !ok || !end.Equal(ms(10000)) {
+		t.Errorf("End() = %v, %t; want %v — never behind the start it was folded from",
+			end, ok, ms(10000))
 	}
 }
 
@@ -364,5 +370,148 @@ func TestBoundsAreReadableWhereTheyAreNotAddressable(t *testing.T) {
 	start, ok := byPosition[model.NewSamplePosition(nil, "r")].Start()
 	if !ok || !start.Equal(ms(100)) {
 		t.Errorf("Start() read from a map = %v, %t; want %v", start, ok, ms(100))
+	}
+}
+
+// An item the fold counted whose end the source did not record is known to have
+// been running at its own start instant, so it extends the end there.
+//
+// It used to extend only the start, which let End report an instant earlier than
+// the start of an item the same fold had counted: a consumer divided a count
+// that included the later sample by a span that ended before it began. That is
+// the shape this type's own rationale calls dishonest — "a span too short and a
+// rate too high, with nothing to say so" — one step removed from the case it was
+// written for. Gatling's own arithmetic treats a request that never completed as
+// occupying its start instant, and coverUser's virtual-user START already did.
+func TestAnItemWithNoRecordedEndExtendsTheEnd(t *testing.T) {
+	t.Parallel()
+
+	b := fold([]model.Item{
+		sampleAt(ms(10_000), model.Some(5*time.Second)),
+		sampleAt(ms(20_000), model.Opt[time.Duration]{}),
+	})
+
+	start, ok := b.Start()
+	if !ok || !start.Equal(ms(10_000)) {
+		t.Errorf("Start() = %v, %v; want %v, true", start, ok, ms(10_000))
+	}
+
+	end, ok := b.End()
+	if !ok || !end.Equal(ms(20_000)) {
+		t.Errorf("End() = %v, %v; want %v, true", end, ok, ms(20_000))
+	}
+}
+
+// The invariant the change buys, stated as a property rather than as one case:
+// End, when it reports a value, is never earlier than the start of any item the
+// fold counted. Every path that begins the bounds now also finishes them at or
+// after that instant, and finish only ever raises.
+func TestEndIsNeverBeforeACountedStart(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		items []model.Item
+	}{
+		{
+			name: "an end-less item last",
+			items: []model.Item{
+				sampleAt(ms(10_000), model.Some(5*time.Second)),
+				sampleAt(ms(20_000), model.Opt[time.Duration]{}),
+			},
+		},
+		{
+			name: "an end-less item first",
+			items: []model.Item{
+				sampleAt(ms(20_000), model.Opt[time.Duration]{}),
+				sampleAt(ms(10_000), model.Some(5*time.Second)),
+			},
+		},
+		{
+			name: "only end-less items",
+			items: []model.Item{
+				sampleAt(ms(10_000), model.Opt[time.Duration]{}),
+				sampleAt(ms(30_000), model.Opt[time.Duration]{}),
+			},
+		},
+		{
+			name: "a virtual-user END earlier than every sample start",
+			items: []model.Item{
+				userAt(model.UserEnd, ms(1_000)),
+				sampleAt(ms(10_000), model.Opt[time.Duration]{}),
+			},
+		},
+		{
+			name: "a group with no recorded duration",
+			items: []model.Item{
+				{Kind: model.ItemGroup, Group: model.GroupSample{Start: ms(40_000)}},
+				sampleAt(ms(10_000), model.Some(time.Second)),
+			},
+		},
+		{
+			name: "a negative duration contributes no end past its start",
+			items: []model.Item{
+				sampleAt(ms(10_000), model.Some(-5*time.Second)),
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			b := fold(tt.items)
+
+			end, ok := b.End()
+			if !ok {
+				t.Fatalf("End() reported nothing for a fold that counted %d items", len(tt.items))
+			}
+
+			for i := range tt.items {
+				var began time.Time
+
+				switch tt.items[i].Kind {
+				case model.ItemSample:
+					began = tt.items[i].Sample.Start
+				case model.ItemGroup:
+					began = tt.items[i].Group.Start
+				case model.ItemUser, model.ItemError, model.ItemAssertion, model.ItemUnknown:
+					continue
+				}
+
+				if end.Before(began) {
+					t.Errorf("End() = %v, before the start of a counted item at %v", end, began)
+				}
+			}
+		})
+	}
+}
+
+// What does not change: an item the source could not place in time still makes
+// both report nothing, and an empty fold still reports nothing.
+func TestAnUnplaceableItemStillReportsNothing(t *testing.T) {
+	t.Parallel()
+
+	b := fold([]model.Item{
+		sampleAt(ms(10_000), model.Some(time.Second)),
+		sampleAt(time.Time{}, model.Some(time.Second)),
+	})
+
+	if _, ok := b.Start(); ok {
+		t.Error("Start() reported a value for a fold holding an item it could not place")
+	}
+
+	if _, ok := b.End(); ok {
+		t.Error("End() reported a value for a fold holding an item it could not place")
+	}
+
+	var empty model.Bounds
+
+	if _, ok := empty.Start(); ok {
+		t.Error("the zero Bounds reported a start")
+	}
+
+	if _, ok := empty.End(); ok {
+		t.Error("the zero Bounds reported an end")
 	}
 }

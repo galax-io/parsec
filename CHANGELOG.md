@@ -34,6 +34,17 @@ MINOR release like any other addition.
 
 ### Changed
 
+- `model.Bounds.End()` is never earlier than the start of an item the fold counted. An item with a
+  start and no recorded end used to extend only the start, so a run whose last sample never completed
+  reported a span that ended before that sample began — a consumer divided a count including it by an
+  interval excluding it. That item now extends the end to its own start: the run is known to have
+  been running at that instant, which is what Gatling's own arithmetic says about a request that
+  never completed, and what `Bounds` already did for a virtual-user `START`. **This moves a number
+  every consumer divides by.** Three consequences: a run of samples that all lack an end now reports
+  a span instead of no end at all; a virtual-user `END` earlier than every sample start no longer
+  leaves the two bounds crossed and both reported absent; and a negative duration gives an end at the
+  item's own start rather than none. An item the source could not place in time still makes both
+  report nothing (#103).
 - A codec handed the other format's log now returns a `*gatling.UnsupportedFormatError` naming the
   format found and the package that reads it, where it returned a `*gatling.SyntaxError` — an error
   documented as *"the position it names could not be decoded"*, meaning a damaged log. This is the
