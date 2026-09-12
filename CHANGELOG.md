@@ -82,6 +82,17 @@ MINOR release like any other addition.
 
 ### Fixed
 
+- `README.md` opens with what the library is, `go get`, the minimum Go version and a
+  copy-pasteable program that reads a run — the body of an example `go test` compiles and
+  output-checks, so it cannot rot. It had no code at all, no install line, and its first Go
+  identifier on line 53 of 100. The named read call was `gatling/text.NewRunReader`, which reads
+  3.11.5 through 3.12.0 only, in a file that opens by promising to rescue a run archived in the
+  binary format; it is now `simlog.NewRunReader`, with the codec packages presented as the shortcut
+  for a version already known. The compatibility table said `Gatling 3.13.0 … 3.15.x` — wrong at
+  both ends: 3.13.0 is refused, and 3.15.2 and later decode with a warning rather than being
+  supported. It now reads 3.13.1 through 3.15.1, carries the reason 3.13.0 is refused, and points at
+  `simlog.Supported()`. The per-package version stamps and the Status narrative are gone;
+  `CHANGELOG.md` is where that lives (#99).
 - `SECURITY.md` names a private reporting channel, what a reporter can expect, and which versions
   receive fixes. This module's whole job is decoding untrusted input — four fuzz targets, a nightly
   fuzz workflow and an allocation-ceiling regime designed against corrupt length prefixes — and
