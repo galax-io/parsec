@@ -4,6 +4,7 @@ import (
 	"strconv"
 
 	"github.com/galax-io/parsec/gatling"
+	"github.com/galax-io/parsec/internal/wire"
 )
 
 // The record kinds the format writes, as the first byte of every record. They
@@ -140,11 +141,11 @@ func readRunRest(r *reader, version gatling.Version) (runHeader, error) {
 	}
 
 	// Every later record resolves against this, so it is checked once here
-	// rather than on each addition. The bounds are gatling.MaxRunStart's, which
+	// rather than on each addition. The bounds are wire.MaxRunStart's, which
 	// the text codec applies to the same field: keeping them in one place is
 	// what stops a run start being readable by one codec and refused by the
 	// other.
-	if start < 0 || start > gatling.MaxRunStart {
+	if start < 0 || start > wire.MaxRunStart {
 		return out, r.syntax(startAt, "the run start",
 			"an epoch millisecond of "+strconv.FormatInt(start, 10))
 	}

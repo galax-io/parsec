@@ -17,6 +17,11 @@ import (
 // satisfy it without an adapter: the two codecs share these method sets.
 //
 // Reach for [RunReader] unless you need to see what the log actually held.
+//
+// The method set is frozen at v0.1.0, on both sides. A consumer's test double
+// implements this interface, so adding a method breaks the implementer and not
+// only the caller — which makes an addition a breaking change with no
+// deprecation path, and is why the set is final rather than merely stable.
 type RecordReader interface {
 	// Header is the run header, available before the first record.
 	Header() gatling.Header
@@ -45,6 +50,9 @@ type RecordReader interface {
 // RunReader yields canonical results: the same log as [RecordReader], decoded
 // into the model every source shares. [text.RunReader] and [binary.RunReader]
 // both satisfy it.
+//
+// Its method set is frozen at v0.1.0 on both sides, for the reason
+// [RecordReader] gives.
 type RunReader interface {
 	// Run is everything about the run that does not grow with its length,
 	// including what the source cannot record and any version warning.

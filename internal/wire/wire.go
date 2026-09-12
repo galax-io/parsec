@@ -19,6 +19,20 @@ import (
 	"github.com/galax-io/parsec/model"
 )
 
+// MaxRunStart is the latest run start either codec accepts.
+//
+// Every event time is resolved against the run start, and the binary format
+// stores each one as a 32-bit offset from it, so a start above this could not
+// carry an offset without running past the end of the int64 range. A log naming
+// a later start is refused rather than decoded into instants that would wrap —
+// and both codecs bound it here, so a value both formats can express cannot be
+// read by one and refused by the other.
+//
+// It is not exported from gatling: the two codecs read it and no consumer
+// computes with it. What a consumer needs to know — that a later start is
+// refused — is on the readers that refuse it.
+const MaxRunStart int64 = math.MaxInt64 - math.MaxInt32
+
 // Item fills it from one wire record. The result is false for a record that is
 // not an event of the run.
 //

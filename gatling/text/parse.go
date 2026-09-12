@@ -6,6 +6,7 @@ import (
 	"strconv"
 
 	"github.com/galax-io/parsec/gatling"
+	"github.com/galax-io/parsec/internal/wire"
 )
 
 // minVersion and maxVersion bound what this codec accepts without a warning.
@@ -476,15 +477,15 @@ func parseEvent(b []byte, lineNo int) (gatling.Event, error) {
 
 // parseRunStart reads the run start: an epoch millisecond within the range both
 // codecs accept. It is the one time a log may not leave absent, because every
-// later instant is resolved against it, and the ceiling is gatling.MaxRunStart's
+// later instant is resolved against it, and the ceiling is wire.MaxRunStart's
 // so that the two codecs cannot disagree about a value both formats can express.
 func parseRunStart(b []byte, lineNo int, what string) (int64, error) {
 	v, ok := parseInt(b)
-	if !ok || v < 0 || v > gatling.MaxRunStart {
+	if !ok || v < 0 || v > wire.MaxRunStart {
 		return 0, &gatling.SyntaxError{
 			Format:   gatling.FormatText,
 			Line:     lineNo,
-			Expected: "an epoch millisecond " + what + " no later than " + strconv.FormatInt(gatling.MaxRunStart, 10),
+			Expected: "an epoch millisecond " + what + " no later than " + strconv.FormatInt(wire.MaxRunStart, 10),
 			Found:    quote(b),
 		}
 	}

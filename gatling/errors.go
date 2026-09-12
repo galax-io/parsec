@@ -32,6 +32,10 @@ type SyntaxError struct {
 	// can fail at byte 0 and a text log can fail before it has a line, so both
 	// positions are legitimately zero and neither can discriminate on its own.
 	//
+	// These three fields are the v0.1.0 contract. Folding the two positions into
+	// one was considered and rejected: it loses the type-level distinction
+	// between a line and a byte, and leaves nothing to discriminate on.
+	//
 	// Both codecs in this module set it. The zero value is FormatUnknown, which
 	// renders as a line: that is what an error built by something other than a
 	// codec — a test, or a consumer constructing one by hand — reads as.
@@ -230,17 +234,26 @@ func (e *UnverifiedError) Error() string {
 }
 
 // UnsupportedFormatError ends a read before anything is decoded: the stream is
-// a Gatling simulation.log in a format this module cannot read yet.
+// a Gatling simulation.log in a format the reader that was asked does not
+// decode.
 //
 // It is neither of the two failures it would otherwise be mistaken for. The
 // bytes were recognised, so this is not a *FormatError; nothing was decoded, so
 // it is not a *SyntaxError. A caller can tell a user that the file is fine and
-// the reader is not yet, which is a different message from either.
+// this reader is the wrong one, which is a different message from either.
 //
-// No input produces one today: this module has a codec for both formats Gatling
-// writes. It is kept because the answer it gives — "this is a Gatling log, of a
-// format nothing here reads" — is the one a third format would need, and a
-// consumer's errors.As branch for it costs nothing while it cannot fire.
+// Two things produce it. A codec handed the other format's log returns one
+// naming the format it found, so a consumer with a mixed archive does not
+// quarantine every log of the other format as damaged; use
+// [github.com/galax-io/parsec/gatling/simlog] to open a log without being told
+// which Gatling wrote it. And a format this module knows of but has no codec for
+// would return one from simlog itself — no input reaches that today, since both
+// formats Gatling writes have a codec.
+//
+// The type is part of the v0.1.0 contract. It was a candidate for removal while
+// nothing produced one; the wrong-codec case is what decides it, because
+// overloading *FormatError there would make a consumer's "not a Gatling file"
+// branch wrong for every log of the other format.
 type UnsupportedFormatError struct {
 	// Format is the format that was detected.
 	Format Format
@@ -254,7 +267,9 @@ type UnsupportedFormatError struct {
 	Head []byte
 }
 
-// Error names the format and says plainly that nothing here reads it yet.
+// Error names the format found and says plainly that the reader in hand does
+// not decode it. It is worded for both producers: the codec handed the other
+// format's log, and a format this module has no codec for at all.
 func (e *UnsupportedFormatError) Error() string {
-	return fmt.Sprintf("gatling: %s simulation.log: this module has no codec for it yet", e.Format)
+	return fmt.Sprintf("gatling: %s simulation.log: this reader does not decode it", e.Format)
 }
