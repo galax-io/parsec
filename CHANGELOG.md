@@ -82,6 +82,12 @@ MINOR release like any other addition.
 
 ### Fixed
 
+- `SECURITY.md` names a private reporting channel, what a reporter can expect, and which versions
+  receive fixes. This module's whole job is decoding untrusted input — four fuzz targets, a nightly
+  fuzz workflow and an allocation-ceiling regime designed against corrupt length prefixes — and
+  someone who fuzzed a hostile `simulation.log` into an out-of-memory or a panic had only the public
+  tracker, where a crasher for a decoder is a working exploit for every consumer that has not
+  upgraded (#101).
 - Six tests that could not fail, or stopped testing what they name, now fail when what they name
   breaks. The corpus is the specification (Principle III), so a test that cannot go red is a gap in
   it — and two of these covered public guarantees that freeze at v0.1.0. The `Groups` reuse test
