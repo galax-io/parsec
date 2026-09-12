@@ -55,7 +55,7 @@ Golden corpus per Gatling version under testdata/corpus/, each run committed tog
 
 **Ask first:** new deps or upgrades, changing public API signatures / observable behavior / serialized formats, editing another repo, release/publish workflow changes.
 
-**Never:** force-push or commit to `main`, merge commits in PR branches (rebase only), commit broken code, opportunistic refactors outside scope, mock external systems where a real integration path exists, follow a skill the constitution forbids (testify, samber/*, a DI container, `pkg/`-style relayout) — a skill never outranks this repository's rules.
+**Never:** force-push or commit to `main`, merge commits in PR branches (rebase only), commit broken code, opportunistic refactors outside scope, mock external systems where a real integration path exists, move packages out of the repository root — a `pkg/`-style relayout changes every published import path — or take a skill's recommendation as approval for a dependency: a new module is asked for, never assumed, and no skill outranks this repository's rules.
 
 ## Milestones (ALWAYS)
 
