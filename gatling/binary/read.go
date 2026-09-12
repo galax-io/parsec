@@ -202,8 +202,9 @@ func (r *reader) truncated(at int64, expected string) error {
 // own, and bufio hands it through unchanged; io.ErrUnexpectedEOF is worse still,
 // because a truncated gzip, flate or zlib stream returns that sentinel by
 // identity. Neither says anything about the Gatling log.
-// reader.atEnd, scanner.next, simlog.identify and simlog.readHead hold the same
-// rule.
+// reader.peek, reader.atEnd, scanner.next, simlog.identify and simlog.readHead
+// hold the same rule. This list is what a change to the rule has to walk, so a
+// new site belongs in it.
 func (r *reader) sourceFailed(at int64, expected string, err error) error {
 	if err == io.EOF || errors.Is(err, errCutShort) { //nolint:errorlint // deliberate: identity, not wrapping; see above
 		return r.truncated(at, expected)
@@ -214,6 +215,29 @@ func (r *reader) sourceFailed(at int64, expected string, err error) error {
 	// module's own — would read a broken transport as a complete run.
 	// source.Failed hides io.EOF and keeps every other cause reachable.
 	return source.Failed(fmt.Sprintf("gatling: byte %d: reading %s", at, expected), err)
+}
+
+// peek returns up to n bytes of what comes next without consuming any of them,
+// so the head can be identified before the first value is read. Fewer than n
+// bytes is not a failure here: a short head is still a head, and
+// gatling.Detect decides as soon as the bytes are conclusive.
+//
+// Any other error is the source's failure and is returned, for the reason
+// readFull states at the top of this file: bufio hands a pending error over once
+// and clears it. Dropped here it is not seen again — the bytes it arrived with
+// stay in the buffer, the read after them finds the stream ended, and a reset
+// connection is reported as a log cut short. expected names what the caller was
+// about to read, for the error.
+func (r *reader) peek(n int, expected string) ([]byte, error) {
+	head, err := r.src.Peek(n)
+
+	// Identity, not errors.Is, and for the reason atEnd gives: a cause merely
+	// wrapping io.EOF is a source reporting a failure of its own.
+	if err == nil || err == io.EOF {
+		return head, nil
+	}
+
+	return head, r.sourceFailed(r.off, expected, err)
 }
 
 // u8 reads one byte.

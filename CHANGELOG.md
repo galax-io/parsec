@@ -34,6 +34,15 @@ MINOR release like any other addition.
 
 ### Changed
 
+- A codec handed the other format's log now returns a `*gatling.UnsupportedFormatError` naming the
+  format found and the package that reads it, where it returned a `*gatling.SyntaxError` — an error
+  documented as *"the position it names could not be decoded"*, meaning a damaged log. This is the
+  most likely first failure a new consumer meets, and a caller with a mixed archive that caught that
+  error and quarantined the file as corrupt would have quarantined every log of the other format. The
+  answer was already in bytes both codecs had consumed: `gatling.Detect` needs ten, the text preamble
+  has read a whole line, and the binary constructor now peeks its head before reading the first byte.
+  A damaged log of the reader's own format is still a `*gatling.SyntaxError`, one cut short is still a
+  `*gatling.TruncationError`, and a file that is not a Gatling log at all is unchanged (#84).
 - An out-of-range value of an exported enum renders as the type name and the number — `Outcome(200)`,
   `Field(60000)` — on all eleven of them. Five `model` enums rendered `"unknown"`, which is what their
   zero value renders as, and the zero value means something: `model.Outcome`'s documentation says it

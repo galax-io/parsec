@@ -1,6 +1,8 @@
 package binary
 
 import (
+	"bytes"
+	"fmt"
 	"io"
 	"slices"
 
@@ -96,12 +98,28 @@ type Reader struct {
 func NewReader(r io.Reader, opts ...gatling.Option) (*Reader, error) {
 	rd := &Reader{rd: *newReader(r)}
 
+	// Taken before the first byte is consumed: this constructor fails at byte 0,
+	// and a peek afterwards would hand Detect bytes 1..10 and name the wrong
+	// format. Nothing is read that the buffer did not already hold.
+	//
+	// Its error is the source's, not the log's, and ends the read here: the peek
+	// is the first thing to touch the stream, so a failure it sees is one no
+	// later read will see again.
+	head, err := rd.rd.peek(gatling.DetectSize, "the run record")
+	if err != nil {
+		return nil, err
+	}
+
 	kind, err := rd.rd.u8("the run record")
 	if err != nil {
 		return nil, err
 	}
 
 	if kind != kindRun {
+		if wrong := wrongFormat(head); wrong != nil {
+			return nil, wrong
+		}
+
 		return nil, rd.rd.syntax(0, "the run record", describeByte(kind))
 	}
 
@@ -219,4 +237,28 @@ func (r *Reader) record() (gatling.Record, error) {
 	}
 
 	return rec, nil
+}
+
+// wrongFormat answers a log of the other format, from bytes this reader has
+// already consumed.
+//
+// A *gatling.SyntaxError says the position it names could not be decoded — a
+// damaged log. A log Gatling wrote in its other format is not damaged, and a
+// caller with a mixed archive that catches that error and quarantines the file
+// would quarantine every text log it holds. It returns nil unless the head
+// names the text format, so a genuinely damaged binary log still reaches the
+// syntax error it deserves.
+func wrongFormat(head []byte) error {
+	// Detect names a format only when it is sure, and answers FormatUnknown with
+	// an error otherwise. The error says the bytes are not conclusively any
+	// Gatling log, which is not this function's business to report: the caller's
+	// own answer stands. The format alone decides.
+	format, _ := gatling.Detect(head)
+	if format != gatling.FormatText {
+		return nil
+	}
+
+	return fmt.Errorf("%w; gatling/text reads this format, and gatling/simlog reads either "+
+		"without being told which",
+		&gatling.UnsupportedFormatError{Format: format, Head: bytes.Clone(head)})
 }

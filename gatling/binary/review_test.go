@@ -156,6 +156,67 @@ func TestASourceFailureIsNotReportedAsTruncation(t *testing.T) {
 	}
 }
 
+// The same rule at byte 0, where the head is peeked before the first value is
+// read. io.Reader does not require a source to repeat its error, and a socket
+// after a reset does not: read(2) reports ECONNRESET once and then returns 0,
+// which Go surfaces as io.EOF. bufio.Reader.Peek takes that one report and
+// clears it, so a peek that drops the error leaves nothing behind to find —
+// and the constructor blames the file.
+//
+// Both head shapes are here because they failed differently: with no bytes the
+// stream looked empty and came back a *gatling.SyntaxError, and with a few it
+// looked cut short and came back a *gatling.TruncationError. Both are claims
+// about the file, so both are asserted against in every row — asserting only the
+// truncation would be vacuous for the empty head, which never produced one.
+//
+// The wrapping cause is the other half. peek compares against io.EOF by identity
+// rather than with errors.Is, for the reason sourceFailed gives: a cause that
+// merely wraps io.EOF is a source reporting a failure of its own — a truncated
+// decompressor, a closed transport — and reading it as the clean end of a short
+// head would put the error back where this test started. Nothing else in the
+// suite reaches that branch at byte 0.
+func TestASourceThatReportsItsFailureOnceIsNotALogCutShort(t *testing.T) {
+	t.Parallel()
+
+	broken := errors.New("connection reset by peer")
+	wrapping := fmt.Errorf("decompressor gave up: %w", io.EOF)
+
+	tests := []struct {
+		name string
+		head []byte
+		err  error
+	}{
+		{name: "before a byte arrives", head: nil, err: broken},
+		{name: "after a few bytes arrive", head: minimal("3.15.1")[:3], err: broken},
+		{name: "a cause wrapping io.EOF, before a byte arrives", head: nil, err: wrapping},
+		{name: "a cause wrapping io.EOF, after a few bytes", head: minimal("3.15.1")[:3], err: wrapping},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			_, err := binary.NewReader(&failOnce{b: tt.head, err: tt.err})
+			if err == nil {
+				t.Fatal("NewReader accepted a source that failed")
+			}
+
+			if !errors.Is(err, tt.err) {
+				t.Errorf("NewReader = _, %v; the cause must survive so a caller can tell a "+
+					"broken stream from a short file", err)
+			}
+
+			if errors.As(err, new(*gatling.TruncationError)) {
+				t.Errorf("a source failure is reported as a log cut short: %v", err)
+			}
+
+			if errors.As(err, new(*gatling.SyntaxError)) {
+				t.Errorf("a source failure is reported as a damaged log: %v", err)
+			}
+		})
+	}
+}
+
 // A run start that would make a timestamp wrap is refused once, at the header,
 // rather than producing plausible instants in the distant past for every record.
 func TestARunStartThatCannotCarryAnOffsetIsRefused(t *testing.T) {
@@ -208,6 +269,25 @@ func TestAnUnpairedSurrogateIsRefused(t *testing.T) {
 	if !errors.As(err, &se) {
 		t.Fatalf("NewReader = _, %v; want a *gatling.SyntaxError", err)
 	}
+}
+
+// failOnce serves its bytes together with its failure, in one read, and then
+// reports the stream ended — a source that does not repeat itself, which
+// io.Reader permits and a reset socket does.
+type failOnce struct {
+	b    []byte
+	err  error
+	done bool
+}
+
+func (f *failOnce) Read(p []byte) (int, error) {
+	if f.done {
+		return 0, io.EOF
+	}
+
+	f.done = true
+
+	return copy(p, f.b), f.err
 }
 
 // failAfter serves its bytes and then fails, rather than ending.

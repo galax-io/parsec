@@ -97,6 +97,10 @@ func assertUsable(t *testing.T, err error) {
 	case errors.As(err, new(*gatling.SyntaxError)),
 		errors.As(err, new(*gatling.VersionError)),
 		errors.As(err, new(*gatling.UnverifiedError)),
+		// A fuzzer starting from a text seed produces text logs, and this codec
+		// now says so rather than calling them damaged: a stated answer with a
+		// stated remedy, which is what a caller can act on.
+		errors.As(err, new(*gatling.UnsupportedFormatError)),
 		// A shortened input is a log cut short, which is a stated ending with
 		// its own type: the caller keeps the records that arrived. Most of what
 		// a fuzzer produces from a valid recording is exactly this.
