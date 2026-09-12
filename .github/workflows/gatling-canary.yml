@@ -43,20 +43,20 @@ jobs:
       matrix:
         gatling: ${{ fromJSON(inputs.versions || '["3.11.5", "3.12.0", "3.13.1", "3.14.9", "3.15.1"]') }}
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
-      - uses: actions/setup-java@v6
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
         with:
           distribution: temurin
           java-version: '17'
-      - uses: sbt/setup-sbt@v1
+      - uses: sbt/setup-sbt@82da71df4e122282484a99a8d70096bc2369dbd8 # v1.5.9
       # Keyed on the Gatling version, which setup-java's own sbt cache cannot see:
       # it hashes the build files, and those are identical across the matrix because
       # the version arrives as -Dgatling.version. Both legs would key alike, only one
       # could save, and the other would re-resolve its Gatling on every run.
-      - uses: actions/cache@v6
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/.cache/coursier
@@ -80,22 +80,36 @@ jobs:
           exit 1
       - name: run the probe simulation under Gatling ${{ matrix.gatling }}
         working-directory: ${{ env.SIMULATION }}
+        # matrix.gatling comes from inputs.versions on a dispatch. GitHub
+        # substitutes it textually before bash parses the line, so an unchecked
+        # value is arbitrary execution on the runner and an arbitrary path below
+        # — the guard record-corpus.yml already carries, for the same value.
+        env:
+          GATLING: ${{ matrix.gatling }}
         run: |
           set -euo pipefail
-          if ! sbt -batch -Dgatling.version="${{ matrix.gatling }}" "Gatling/testOnly io.galaxio.parsec.corpus.CorpusSimulation"; then
-            echo "canary: Gatling ${{ matrix.gatling }} could not run the probe simulation"
+
+          if ! printf '%s' "$GATLING" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "refusing '$GATLING': a Gatling version is three dot-separated numbers"
             exit 1
           fi
-          mv "$(ls -d target/gatling/corpussimulation-* | head -1)" "target/gatling/v${{ matrix.gatling }}"
+
+          if ! sbt -batch -Dgatling.version="$GATLING" "Gatling/testOnly io.galaxio.parsec.corpus.CorpusSimulation"; then
+            echo "canary: Gatling $GATLING could not run the probe simulation"
+            exit 1
+          fi
+
+          mv "$(ls -d target/gatling/corpussimulation-* | head -1)" "target/gatling/v$GATLING"
       - name: decode the fresh run and hold it to its own report
         env:
           PARSEC_CANARY_RUNS: ${{ matrix.gatling }}=${{ github.workspace }}/${{ env.SIMULATION }}/target/gatling/v${{ matrix.gatling }}
           # One version at a time here by construction, so the range gate stands
           # down: it belongs to the compare job, which sees every run at once.
-          PARSEC_CANARY_PARTIAL: '1' 
+          PARSEC_CANARY_PARTIAL: '1'
+          GATLING: ${{ matrix.gatling }}
         run: |
           set -euo pipefail
-          echo "## Gatling canary — ${{ matrix.gatling }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "## Gatling canary — $GATLING" >> "$GITHUB_STEP_SUMMARY"
           if ! go test -tags=canary -race -count=1 -run '^TestCanary$' -json ./gatling/text/ ./gatling/binary/ > canary.json; then
             jq -r 'select(.Action == "output") | .Output' canary.json | grep -E 'FAIL|Gatling|\.go:[0-9]+:' | tail -60
             exit 1
@@ -106,7 +120,7 @@ jobs:
             echo "no canary test ran"
             exit 1
           fi
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: gatling-run-${{ matrix.gatling }}
           path: ${{ env.SIMULATION }}/target/gatling/v${{ matrix.gatling }}
@@ -117,11 +131,11 @@ jobs:
     needs: run
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           pattern: gatling-run-*
           path: runs
@@ -138,7 +152,7 @@ jobs:
           # A dispatch naming a chosen subset is not the gate that holds the
           # supported range to the canary — asking for one version to debug it
           # must not red the build for the four it did not ask for.
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
             export PARSEC_CANARY_PARTIAL=1
           fi
           if ! go test -tags=canary -race -count=1 \
