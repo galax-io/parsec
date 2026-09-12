@@ -14,11 +14,12 @@ import "time"
 // ready to use. The fold is a minimum and a maximum, so the order of items does
 // not matter.
 //
-// What does not count: the run's recorded start ([Run.Start]), run-level
-// errors, assertion payloads, and a sample or group end that is absent — such
-// an item still contributes its start. A group's end is its start plus its
-// wall-clock Duration; CumulatedDuration answers a different question and never
-// moves a bound.
+// What does not count: the run's recorded start ([Run.Start]), run-level errors
+// and assertion payloads. A sample or group whose end the source did not record
+// does count, and contributes its start at both ends: the run was running at
+// that instant, so a span that ended before it would exclude something the same
+// fold counted. A group's end is its start plus its wall-clock Duration;
+// CumulatedDuration answers a different question and never moves a bound.
 //
 // An item the source recorded but could not place in time — one whose start is
 // the zero [time.Time] — is different, and it makes the bounds unusable rather
@@ -26,7 +27,6 @@ import "time"
 // carries no end without a start to measure from, so its end is unreachable
 // here; reporting a span that silently excludes it would be a span too short and
 // a rate too high, with nothing to say so. Start and End report nothing instead.
-// For the same reason they report nothing when the end would precede the start.
 type Bounds struct {
 	start, end time.Time
 	// unplaced records that an item counted towards the run and could not be
@@ -67,17 +67,15 @@ func (b Bounds) Start() (time.Time, bool) {
 }
 
 // End returns the instant the run ended and true, or the zero time and false
-// when nothing that ends a run has been folded, an item could not be placed in
-// time, or the end folded so far precedes the start. A run can have a start and
-// no end: samples whose ends the source did not record, and no virtual-user
-// event.
+// when nothing that ends a run has been folded or an item could not be placed in
+// time.
 //
-// The end is never reported before the start. A virtual-user END extends only
-// the end and a sample with no recorded end extends only the start, so the two
-// can cross; a consumer dividing a count by a negative span would print a
-// negative rate for every row, and no span at all is the honest answer.
+// It is never earlier than the start of any item the fold counted. Every item
+// that begins the bounds also finishes them at or after that instant — an item
+// whose end the source did not record contributes its own start — and the end
+// only ever moves later, so the two cannot cross.
 func (b Bounds) End() (time.Time, bool) {
-	if b.unplaced || b.end.IsZero() || b.end.Before(b.start) {
+	if b.unplaced || b.end.IsZero() {
 		return time.Time{}, false
 	}
 
@@ -90,7 +88,13 @@ func (b Bounds) End() (time.Time, bool) {
 // own end — which the source may well have recorded — cannot be reached from
 // here, and skipping it would shorten the run without saying so.
 //
-// A duration that is not positive time cannot give an end either. Every source
+// An operation whose end the source did not record still extends the end, to its
+// own start: the run is known to have been running at that instant, which is
+// what Gatling's own arithmetic says about a request that never completed. This
+// is what keeps End from ever reporting an instant earlier than the start of
+// something the fold counted, and coverUser's START already did the same.
+//
+// A duration that is not positive time gives no end past the start. Every source
 // this package documents promises a non-negative Duration, and the Gatling path
 // keeps that promise, but Bounds is exported and an adapter that broke it would
 // otherwise drag the end behind the start.
@@ -103,9 +107,12 @@ func (b *Bounds) cover(start time.Time, d Opt[time.Duration]) {
 
 	b.begin(start)
 
+	end := start
 	if v, ok := d.Get(); ok && v >= 0 {
-		b.finish(start.Add(v))
+		end = start.Add(v)
 	}
+
+	b.finish(end)
 }
 
 // coverUser extends the bounds by a virtual-user event: a START can open the
