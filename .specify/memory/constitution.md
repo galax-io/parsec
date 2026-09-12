@@ -1,33 +1,64 @@
 <!--
 Sync Impact Report
 ==================
-Version change: 2.2.0 → 2.3.0
-Bump rationale: MINOR. Quality Gates & Tooling now distinguishes the `go` directive — the consumer
-floor, a compatibility promise — from the `toolchain` directive, the Go the gates actually run, and
-requires the latter to be a release still receiving fixes. No principle is removed or redefined.
+Version change: 2.3.0 → 2.4.0
+Bump rationale: MINOR. Prohibitions are lifted and replaced by the judgement Principles III–VI
+already provide. Nothing that was compliant becomes non-compliant and no principle is removed, so
+this is not the MAJOR case ("removed or redefined in a backward-incompatible way"). A reviewer who
+reads the removal of a whole section as MAJOR has a fair argument; it is recorded here rather than
+left to be inferred.
 
-Modified principles: none in substance. Principle IV's text named `.github/workflows/ci.yml` as the
-home of the `deps` job; it is `verify.yml`, and the reference is corrected as wording.
+Modified principles: Principle III — the sentence "Tests are table-driven on the standard `testing`
+package" fixed the test framework and, with the prohibition below, made an assertion library a
+constitutional matter. It now says tests are table-driven and run under the standard `testing`
+package, and that a library layered on top of it is a dependency Principle IV decides on the case
+made for it. Table-driven tests, the race detector, the coverage floors, real artefacts over mocks
+and the corpus rules are untouched. No other principle changes: Principle IV still pre-approves no
+module and keeps `model/` and `gatling/` stdlib-only, and Principle VI still refuses abstraction
+without a current need.
+
 Modified sections:
-- Quality Gates & Tooling — the Toolchain paragraph, and where `golangci-lint` is pinned
-  (`verify.yml`, not `ci.yml`).
+- Engineering Guidance (Skills) — the *Must not be followed* table is removed. Its three rows become
+  *Consult when the occasion arises* entries with the occasion stated: an assertion or suite library
+  (`golang-stretchr-testify` and the third-party sections of `golang-testing`), a helper a library
+  already provides (`golang-samber-*`, `golang-popular-libraries`), and wiring or object lifetime
+  (`golang-dependency-injection`, `golang-google-wire`, `golang-uber-dig`, `golang-uber-fx`,
+  `golang-samber-do`). The `golang-testing` required-reading row no longer excludes anything, and the
+  orchestrator paragraph no longer points at a list that does not exist.
+- Engineering Guidance → the `golang-project-layout` carve-out — its third bullet said the
+  dependency-injection question was settled because "Principle IV rules out a container". It is not
+  settled by fiat: no occasion has arisen, which is a different statement and is where it now sits.
+  The `pkg/` bullet stands unchanged and for its own reason — moving packages out of the repository
+  root changes every published import path of a module three builds pin, which is Principle V, not a
+  preference about layout.
 
-Added sections: none. Removed sections: none. Renamed principles: none.
+Removed sections: *Must not be followed*, replaced by a paragraph stating that nothing is forbidden
+and that a skill proposing a dependency, a layout change, a weakened gate or a lower coverage floor
+is making a proposal Principles III–VI decide on its merits.
 
-Why now: `go.mod` carried `go 1.25` alone, so `setup-go` resolved the newest 1.25.x — 1.25.14, the
-final patch of a line that stopped receiving fixes when Go 1.27 shipped — and every gate certified
-the module on it. It bit before the next stdlib CVE did: the compat gate's pinned `golang.org/x/exp`
-required `go >= 1.26.0`, and its first run failed on the runner (#106, #109). The consumer floor does
-not move for this — a `toolchain` line is ignored by anyone importing the module — so the fix is one
-line and a rule that keeps it current (#104).
+Added sections: none. Renamed principles: none.
+
+Why now: the maintainer states the prohibitions were never theirs — the standing instruction is to
+use what is warranted, judged case by case, which is what Principle IV's ask-first already is. A
+blanket ban was a second, narrower rule doing the same job worse: it decided in advance a question
+that belongs to the feature proposing the dependency, and it let a plan record "forbidden, not
+followed" instead of thinking about whether the library would help. The gates are unchanged: no
+module is pre-approved, `model/` and `gatling/` ship stdlib-only, the `deps` job in `verify.yml`
+enforces that, and `AGENTS.md` still says a new dependency is asked for. Lifting the bans makes these
+libraries askable, not adopted.
 
 Templates:
-- ✅ .specify/templates/plan-template.md — "Go 1.25 (`go.mod` is authoritative)" and "any Go 1.25
-  target" describe the floor, which is unchanged; no edit.
-- ✅ spec-template.md, tasks-template.md, checklist-template.md — no toolchain text; no change.
-- ✅ AGENTS.md — "Go 1.25" in Stack is the floor; agrees. No change.
-- ✅ specs/001-ci-release-automation/contracts/dependency-ownership.md, quickstart.md — updated in
-  the same PR: the toolchain row names the `toolchain` directive and who bumps it.
+- ✅ .specify/templates/plan-template.md — "stdlib `testing`, table-driven" and "no third-party
+  module is pre-approved anywhere (Principle IV) … ask first" describe what this module does today
+  and remain accurate; no edit.
+- ✅ .specify/templates/tasks-template.md — "table-driven on stdlib `testing`" likewise; no edit.
+- ✅ spec-template.md, checklist-template.md — no test-framework or dependency text; no change.
+- ✅ AGENTS.md — the Never list loses "follow a skill the constitution forbids (testify, samber/*, a
+  DI container)" in the same PR, as the agreement rule requires. What remains of that clause is the
+  two things that are not about a library: packages stay at the repository root, and a skill's
+  recommendation is not approval for a dependency. "Ask first: new deps or upgrades" is unchanged.
+- ⚠️ specs/004 through specs/010 record the prohibitions as they stood when each was planned. They
+  are the history of decisions taken under 2.0.0–2.3.0 and are not rewritten.
 
 Follow-up TODOs:
 - Carried forward, still unresolved: `.claude/skills/speckit-tasks/SKILL.md` says test tasks are
@@ -38,8 +69,16 @@ Follow-up TODOs:
 - The skills classification is pinned to `samber/cc-skills-golang` 2.0.1 and
   `galaxio/galaxio-gatling` 2.4.0, and is re-read at every `release/X.Y.0` cut and on every
   skill-plugin update.
-- New: the `toolchain` directive has no bot owner until Renovate is installed (001 T043); until
-  then it is bumped by hand at each `release/X.Y.0` cut, like the `golangci-lint` pin.
+- Carried forward: the `toolchain` directive has no bot owner until Renovate is installed (001
+  T043); until then it is bumped by hand at each `release/X.Y.0` cut, like the `golangci-lint` pin.
+- New: the `deps` job proves `./model/...` and `./gatling/...` import no third-party package, and
+  `go list -deps` does not walk test files. A test-only dependency would pass it today. Decide
+  whether that job should cover tests when one is first proposed, rather than discovering the gap
+  after it has landed.
+- New: `.golangci.yml` enables `testifylint` and explicitly disables `depguard`. If a module is ever
+  admitted for tests only, `depguard` with a rule is what would enforce "not in `model/` or
+  `gatling/`" at lint time, and re-enabling it is the decision to take then — the `deps` job alone
+  does not see test files.
 - Ratification date is the scaffold date (2026-09-02); no earlier constitution existed.
 -->
 # parsec Constitution
@@ -114,8 +153,11 @@ an external format, and streaming is what lets a multi-gigabyte log be reported 
   for field where the record stream is stored decoded). Statistics MUST be compared
   against the report the tool itself produced for that run, within a tolerance documented
   next to the assertion together with the reason for it.
-- Tests are table-driven on the standard `testing` package. The race detector is always
-  on: `go test -race -shuffle=on ./...` is both the CI command and the local verify step.
+- Tests are table-driven and run under the standard `testing` package. An assertion or
+  suite library layered on top of it is neither required nor forbidden here: it is a
+  dependency, and Principle IV decides it on the case made for it, like any other.
+  The race detector is always on: `go test -race -shuffle=on ./...` is both the CI
+  command and the local verify step.
 - Coverage floors: 90% for decoder packages, 80% for the module overall. A change that
   takes a package below its floor MUST NOT merge.
 - Tests land with the change they cover, and a bug fix MUST include a regression test
@@ -241,10 +283,10 @@ can drift, and may be absent for a contributor. The gate table above enforces th
 skills are how a change is got right the first time.
 
 **An orchestrator does not override this classification.** `golang-how-to` describes itself as
-always active and loads other skills by task shape. It may therefore surface a skill this section
-forbids, in a context where it looks apt. The classification still binds: a skill reached through
-an orchestrator is the same skill, and *Must not be followed* means the advice is not taken however
-it arrived.
+always active and loads other skills by task shape. It may therefore surface a skill whose advice
+costs a dependency or a layout change, in a context where it looks apt. The classification still
+binds: a skill reached through an orchestrator is the same skill, and arriving that way is not the
+approval Principles III–VI require.
 
 Three bounds apply to all of them:
 
@@ -262,7 +304,7 @@ Three bounds apply to all of them:
 |---|---|---|
 | adds, renames or changes any exported identifier | `golang-naming` | Principle V: from v0.1.0 a name is effectively permanent — changing one costs a deprecation window and a MINOR release. |
 | adds or changes an error, or a path that returns one | `golang-error-handling` | Principle II requires errors carrying an offset; Principle VI requires errors as values, `%w`, `errors.Is`/`errors.As`, and no control flow by panic. |
-| adds or changes a test — which is every change | `golang-testing` | Principle III is NON-NEGOTIABLE. Its third-party sections are excluded; see *Must not be followed*. |
+| adds or changes a test — which is every change | `golang-testing` | Principle III is NON-NEGOTIABLE. Where it reaches for a third-party library, that is a dependency proposal under Principle IV — argued, not ignored. |
 | adds an exported identifier | `golang-documentation` | Principle V requires a doc comment on each one, stating for a decoder which tool versions it accepts. |
 | adds an exported type, interface or method set | `golang-structs-interfaces` | Principle I turns on what a tool package exports, and interface placement decides who imports whom. |
 
@@ -283,30 +325,34 @@ than a suggestion.
 | a new tool package lands, or a shared helper needs a home | `golang-project-layout` | **Carve-out below** — parts of it are settled here and are not open. |
 | the probe simulation, a corpus recording, or a Gatling version question | `galaxio-gatling-pro`, `gatling-versions`, `gatling-build`, `gatling-migration`, `scala-pro` | The corpus is Principle III's evidence and the probe is the only Scala here. `gatling-versions` carries the artefact-per-Gatling-line table, which is what decides whether a version can be recorded at all — it already ruled out running the probe under 3.14.x or 3.15.x, because no `gatling-picatinny` release targets those lines. |
 | the Go toolchain is bumped | `golang-modernize` | At the bump, not between them. |
+| an assertion or suite library is weighed for the tests | `golang-stretchr-testify`, and the third-party sections of `golang-testing` | Not forbidden. `testifylint` is already enabled in `.golangci.yml`. Adding the module is a Principle IV decision: argued in the feature's `research.md`, approved before it lands, and weighed against the fact that `model/` and `gatling/` ship stdlib-only. |
+| a helper is about to be written that a library already provides | `golang-samber-lo`, `golang-samber-mo`, `golang-samber-ro`, `golang-samber-hot`, `golang-popular-libraries` | Not forbidden. Whether a module earns its place in three consumers' graphs is a Principle IV decision, argued in the feature's `research.md`. `model/` and `gatling/` ship stdlib-only, so a library reaching into either raises that question before anything else. |
+| wiring or object lifetime is genuinely becoming the problem | `golang-dependency-injection`, `golang-google-wire`, `golang-uber-dig`, `golang-uber-fx`, `golang-samber-do` | Not forbidden, and no occasion has arisen: this module is imported rather than wired, and a reader is constructed from an `io.Reader`. A container today would be a dependency (IV) and an abstraction with no current need (VI) — make the case if that stops being true. |
 
 **`golang-project-layout` — what is settled and what is open.** Principle I already fixes the tool
 packages by name and the module's import paths are published, so the questions that skill opens with
-are answered here and are not open to revision:
+are answered here — on evidence a skill does not have, not by preference:
 
 - packages live at the repository root. `pkg/` is not used, and moving to it would change every
   import path of a module three builds depend on;
 - a `main` package lives with the thing it serves — the corpus stub sits under
   `testdata/corpus/gatling/simulation/stub/`, not under `cmd/`, and that is correct;
-- the architecture question and the dependency-injection question are settled: this is a library of
-  packages, and Principle IV rules out a container.
+- the architecture question is settled: this is a library of packages, not a service. Dependency
+  injection is a different matter and is not settled by fiat — see the consult table: no occasion
+  has arisen, and a container today would be a dependency (IV) and an abstraction with no current
+  need (VI).
 
 What is genuinely open, and grows as `jmeter/`, `k6/`, `locust/` and `phout/` arrive: when a helper
 belongs in `internal/` rather than in a tool package, and where a package boundary falls once
 several adapters share a problem. Principle I names `internal/` already; the skill is how to use it
 well.
 
-**Must not be followed.**
-
-| Skill | The MUST it breaks |
-|---|---|
-| `golang-stretchr-testify`, and the testify sections of `golang-testing` | Principle III fixes the standard `testing` package; Principle IV forbids the dependency and the `deps` job enforces it. |
-| `golang-samber-*`, `golang-popular-libraries` | Principle IV: no module is pre-approved, and `model/` and `gatling/` are stdlib-only. |
-| `golang-dependency-injection`, `golang-google-wire`, `golang-uber-dig`, `golang-uber-fx`, `golang-samber-do` | A container is both a dependency (IV) and an abstraction with no current need (VI). This module is imported, not wired. |
+**Nothing is forbidden.** There is no list of skills whose advice may not be taken. A skill that
+reaches for a dependency, a layout change, a weakened gate or a lower coverage floor is making a
+proposal, and Principles III–VI decide it on the case made for it — in the feature's `research.md`,
+before it lands, not in advance and not forever. The three bounds above are what hold: this document
+wins where the two disagree, a skill's say-so is not itself a justification, and unavailability
+blocks nothing.
 
 **No occasion has arisen** for the service, transport, storage and telemetry skills —
 `golang-cli`, `golang-spf13-cobra`, `golang-spf13-viper`, `golang-grpc`, `golang-graphql`,
@@ -387,4 +433,4 @@ contradict.
   re-reads Principles I–VI against the milestone's merged PRs and files an issue for
   each gap in the next milestone.
 
-**Version**: 2.3.0 | **Ratified**: 2026-09-02 | **Last Amended**: 2026-09-10
+**Version**: 2.4.0 | **Ratified**: 2026-09-02 | **Last Amended**: 2026-09-12
