@@ -82,6 +82,15 @@ MINOR release like any other addition.
 
 ### Fixed
 
+- Six tests that could not fail, or stopped testing what they name, now fail when what they name
+  breaks. The corpus is the specification (Principle III), so a test that cannot go red is a gap in
+  it — and two of these covered public guarantees that freeze at v0.1.0. The `Groups` reuse test
+  skipped when the documented reuse was gone and never copied before comparing, so the guarantee
+  stated on six surfaces was pinned by a test that turned green on breakage. Two selection tests
+  asserted an identity of their own filter. One asserted that Go zeroes the fields a literal omits.
+  One carried an assertion unreachable through the accessor it used, and the danger it named is now
+  tested where it is reachable. And one built a `chmod 000` fixture without `requireUnixPermissions`,
+  so as root — an ordinary Docker CI container — it passed without testing anything (#95).
 - The package overviews route to the entry point instead of away from it. `gatling`'s said the
   canonical model and the conversion into it *"arrive in a later milestone"* — they arrived in v0.0.3
   and v0.0.5, and it is the first Gatling page a symbol search lands on, so it sent readers to build

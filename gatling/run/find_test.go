@@ -91,6 +91,13 @@ func requireUnixPermissions(t *testing.T) {
 	}
 }
 
+// unixPermissionsDeny answers the same question without ending the test, for a
+// test that has something else to assert where mode 000 is inert — as it is for
+// root, which is what an ordinary Docker CI container runs as.
+func unixPermissionsDeny() bool {
+	return runtime.GOOS != "windows" && os.Geteuid() != 0
+}
+
 // rootWithThreeRuns builds a results root holding runNames, oldest first, with
 // modification times a minute apart so that the middle one is neither newest nor
 // oldest — the shape issue #11's acceptance cases are written against.
@@ -841,26 +848,43 @@ func TestFindNeverOpensTheLog(t *testing.T) {
 	touchLog(t, garbage, base)
 
 	// A log that cannot be opened, in a directory that can still be listed.
-	unreadable := mkRun(t, root, runNames[1])
-	if err := os.Chmod(filepath.Join(unreadable, "simulation.log"), 0o000); err != nil {
-		t.Fatalf("chmod: %v", err)
-	}
+	//
+	// Mode 000 denies nothing to root — which is what an ordinary Docker CI
+	// container runs as — nor on Windows, where os.Chmod only toggles the
+	// read-only attribute. There the fixture would be an ordinary readable file
+	// and this half would pass without testing anything, so it is built only
+	// where the bit bites. The garbage log above tests Find everywhere, which is
+	// why the whole test does not skip.
+	newest, want := garbage, "the log that is not a Gatling log"
 
-	t.Cleanup(func() {
-		if err := os.Chmod(filepath.Join(unreadable, "simulation.log"), 0o600); err != nil {
-			t.Errorf("restoring permissions: %v", err)
+	if unixPermissionsDeny() {
+		unreadable := mkRun(t, root, runNames[1])
+		if err := os.Chmod(filepath.Join(unreadable, "simulation.log"), 0o000); err != nil {
+			t.Fatalf("chmod: %v", err)
 		}
-	})
 
-	touchLog(t, unreadable, base.Add(time.Minute))
+		t.Cleanup(func() {
+			if err := os.Chmod(filepath.Join(unreadable, "simulation.log"), 0o600); err != nil {
+				t.Errorf("restoring permissions: %v", err)
+			}
+		})
+
+		touchLog(t, unreadable, base.Add(time.Minute))
+
+		newest, want = unreadable, "the log that cannot be opened"
+	} else {
+		t.Log("mode 000 does not deny here, so the unopenable fixture is not built; " +
+			"only the unreadable-content half of this test ran")
+	}
 
 	loc, err := run.Find(root)
 	if err != nil {
 		t.Fatalf("Find: %v", err)
 	}
 
-	if loc.Dir != unreadable {
-		t.Errorf("Dir = %s, want %s — discovery is not affected by what a log contains", loc.Dir, unreadable)
+	if loc.Dir != newest {
+		t.Errorf("Dir = %s, want %s (%s) — discovery is not affected by what a log contains "+
+			"or by whether it can be opened", loc.Dir, newest, want)
 	}
 }
 

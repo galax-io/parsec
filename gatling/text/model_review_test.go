@@ -62,9 +62,14 @@ func TestOversizedDurationsAreAbsentNotNegative(t *testing.T) {
 				t.Errorf("Duration = %v (set), want unset — an overflowed count is not a measurement", d)
 			}
 
-			if d < 0 {
-				t.Errorf("Duration = %v, negative", d)
-			}
+			// The danger this names — a count that wraps to a small plausible
+			// negative — is not reachable through this accessor. Opt's value is
+			// unexported, so outside model an unset Opt yields exactly the zero
+			// duration, and "d < 0" could never hold. Where it *is* reachable is
+			// inside model, on the conversion itself, and model/opt_test.go is
+			// where that belongs. What this accessor can say is that the
+			// overflow produced an absence rather than a measurement, which is
+			// the assertion above.
 		})
 	}
 }

@@ -161,3 +161,36 @@ func TestCorpusSuccessSelectionIsUnchangedByFailures(t *testing.T) {
 		})
 	}
 }
+
+// The claim the selection test opens with is about the decoder, not about a
+// filter: the outcome is read from what the log wrote and never inferred from
+// whether some other field is set, so a failure cannot become a success by
+// losing its message and a success cannot become a failure by carrying one.
+// model.Sample states it as an if-and-only-if, and this is where it meets a real
+// recording.
+func TestCorpusFailurePresenceMatchesTheOutcome(t *testing.T) {
+	t.Parallel()
+
+	for _, dir := range corpusDirs(t) {
+		t.Run(filepath.Base(dir), func(t *testing.T) {
+			t.Parallel()
+
+			for _, it := range readItems(t, filepath.Join(dir, "simulation.log")) {
+				if it.Kind != model.ItemSample {
+					continue
+				}
+
+				_, hasFailure := it.Sample.Failure.Get()
+
+				switch {
+				case it.Sample.Outcome == model.OutcomeFailure && !hasFailure:
+					t.Errorf("sample %q failed and carries no Failure; the two must agree",
+						it.Sample.Name)
+				case it.Sample.Outcome != model.OutcomeFailure && hasFailure:
+					t.Errorf("sample %q carries a Failure with outcome %v; presence is what marks "+
+						"a sample failed", it.Sample.Name, it.Sample.Outcome)
+				}
+			}
+		})
+	}
+}

@@ -108,9 +108,68 @@ func successes(items []model.Item) []model.Sample {
 	return out
 }
 
+// notFailures is the selection a consumer writes when it believes an operation
+// either failed or succeeded. It is the correctness failure the ecosystem has
+// already made, and this package is where it is either possible or not.
+func notFailures(items []model.Item) []model.Sample {
+	var out []model.Sample
+
+	for _, it := range items {
+		if it.Kind == model.ItemSample && it.Sample.Outcome != model.OutcomeFailure {
+			out = append(out, it.Sample)
+		}
+	}
+
+	return out
+}
+
+// A sample that lost its outcome on the way is not a success. Outcome has three
+// states and not two, so "did not fail" and "succeeded" are different questions
+// with different answers, and a consumer that asks the first and reports the
+// second inflates every success rate by however many samples the source could
+// not account for.
+//
+// This is what the three states buy, and it is the whole reason OutcomeUnknown
+// sits at iota 0: a zero value that meant success would make the wrong answer
+// the default for every sample a decoder failed to fill in.
+func TestASampleThatLostItsOutcomeIsNotASuccess(t *testing.T) {
+	t.Parallel()
+
+	items := []model.Item{
+		{Kind: model.ItemSample, Sample: model.Sample{Name: "ok", Outcome: model.OutcomeSuccess}},
+		{Kind: model.ItemSample, Sample: model.Sample{
+			Name: "ko", Outcome: model.OutcomeFailure, Failure: model.Some(model.Failure{Message: "boom"}),
+		}},
+		// No adapter produces this. A consumer casting an integer, or a future
+		// adapter with a gap, can.
+		{Kind: model.ItemSample, Sample: model.Sample{Name: "lost"}},
+	}
+
+	if got := successes(items); len(got) != 1 || got[0].Name != "ok" {
+		t.Errorf("successes selected %d samples (%v), want exactly the one recorded as succeeding",
+			len(got), names(got))
+	}
+
+	if got := notFailures(items); len(got) != 2 {
+		t.Errorf("the did-not-fail selection took %d samples, want 2 — it must include the one "+
+			"whose outcome was lost, which is what makes it the wrong question", len(got))
+	}
+
+	// The zero value is the one that must not be a success: it is what every
+	// unfilled Sample carries.
+	var unset model.Sample
+	if unset.Outcome == model.OutcomeSuccess {
+		t.Error("the zero Outcome reads as a success; a sample nothing filled in would count as one")
+	}
+
+	if model.OutcomeUnknown == model.OutcomeSuccess || model.OutcomeUnknown == model.OutcomeFailure {
+		t.Error("OutcomeUnknown is not distinct from a recorded outcome")
+	}
+}
+
 // Selecting what succeeded returns the same thing however many failures the run
-// contains. This is the correctness failure the ecosystem has already made, and
-// the model is where it is either possible or not.
+// contains — and the failures must not be reachable through the success
+// selection at all, whatever their number or order.
 func TestSuccessSelectionIsUnchangedByFailures(t *testing.T) {
 	t.Parallel()
 
@@ -152,7 +211,26 @@ func TestSuccessSelectionIsUnchangedByFailures(t *testing.T) {
 		if !sameDurations(got, want) {
 			t.Errorf("with %d failures added, the selected successes differ as a multiset", failures)
 		}
+
+		// The selection is by outcome and not by name, so a failure reaching it
+		// would be a failure counted as a success.
+		for _, s := range got {
+			if s.Outcome != model.OutcomeSuccess {
+				t.Fatalf("with %d failures added, a sample with outcome %v reached the success selection",
+					failures, s.Outcome)
+			}
+		}
 	}
+}
+
+// names renders a selection for a failure message.
+func names(samples []model.Sample) []string {
+	out := make([]string, 0, len(samples))
+	for _, s := range samples {
+		out = append(out, s.Name)
+	}
+
+	return out
 }
 
 // An all-failure run selects nothing, and an all-success run selects everything.
