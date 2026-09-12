@@ -30,7 +30,7 @@ jobs:
       issues: read
       pull-requests: read
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # A tag-triggered checkout fetches the tag at depth 1 and creates no
           # remote-tracking branches at all, so `git branch -r --contains` would
@@ -94,13 +94,13 @@ jobs:
       # Write is granted here and nowhere else in this workflow.
       contents: write
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
 
       - name: generate the release notes
         id: notes
-        uses: orhun/git-cliff-action@v4
+        uses: orhun/git-cliff-action@3d96a18cc4ec17e9dc69ddcc424ccafaf1f78ce2 # v4.9.0
         with:
           config: cliff.toml
           args: --latest --strip header

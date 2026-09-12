@@ -82,6 +82,19 @@ MINOR release like any other addition.
 
 ### Fixed
 
+- Every third-party action in every workflow is pinned to a full commit SHA with the release in a
+  trailing comment, `actions/*` included. A git tag is movable, and `release.yml` grants its publish
+  job `contents: write` and a token that can cut releases — so a moved upstream tag ran whatever it
+  now pointed at, needing no access to this repository at all. Four actions sat on tags, one of them
+  inside that job. And no `${{ … }}` substitution of any context reaches a shell any more: eleven of
+  them across four workflows are gone from the scripts that run them — most bound in `env:` and read
+  back as a quoted `$VAR`, two replaced by a variable the runner already exports — and validated where
+  they need it, using the guard `record-corpus.yml` already carried and no second pattern. `scripts/check-pins.sh` holds both
+  rules and runs in the `quick` job, because a rule held by review is what let four actions drift in
+  the first place. It reads the parsed YAML: a line matcher cannot tell a `uses:` key from the same
+  text inside a scalar, so it refused a step whose name mentioned one and passed `? uses` / `: …`,
+  which is the explicit-key spelling of a real one. No workflow does anything it did not do before
+  (#93).
 - `README.md` opens with what the library is, `go get`, the minimum Go version and a
   copy-pasteable program that reads a run — the body of an example `go test` compiles and
   output-checks, so it cannot rot. It had no code at all, no install line, and its first Go

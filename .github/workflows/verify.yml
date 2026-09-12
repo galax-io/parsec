@@ -46,8 +46,8 @@ jobs:
   quick:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
       - name: gofmt
@@ -61,6 +61,18 @@ jobs:
         run: go vet ./...
       - name: go build
         run: go build ./...
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.13"
+      - name: install the workflow parser
+        # check-pins.sh reads the parsed YAML rather than the lines, because a line
+        # matcher cannot tell a `uses:` key from the same text inside a scalar — it
+        # refused a step whose name mentioned one and passed the explicit-key spelling
+        # of a real one. Pinned for the reason the nfr job pins its validator: a parser
+        # that changes under us turns a green gate red without a change to what it checks.
+        run: pip install --disable-pip-version-check 'PyYAML==6.0.3'
+      - name: every action is pinned and every substitution is kept out of the shell
+        run: bash scripts/check-pins.sh
       - name: the shell gates test themselves
         # These guard every release, and until now nothing guarded them: both
         # scripts/*_test.sh files were committed and run by no workflow, so a
@@ -69,7 +81,7 @@ jobs:
         run: |
           set -euo pipefail
           for t in scripts/check-linkage_test.sh scripts/check-coverage_test.sh \
-                   scripts/check-compat_test.sh \
+                   scripts/check-compat_test.sh scripts/check-pins_test.sh \
                    .claude/hooks/linkage-guard_test.sh .githooks/pre-push_test.sh; do
             echo "--- $t"
             bash "$t"
@@ -79,15 +91,15 @@ jobs:
     needs: quick
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
       # One run covers every build configuration: .golangci.yml sets
       # run.build-tags, so the integration and canary files are loaded too.
       # Without that they would be invisible to every linter and the job would
       # report an empty package — indistinguishable from clean code.
-      - uses: golangci/golangci-lint-action@v9
+      - uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
         with:
           # renovate: datasource=github-releases depName=golangci/golangci-lint
           version: v2.12.2
@@ -96,8 +108,8 @@ jobs:
     needs: quick
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
       - name: test
@@ -107,8 +119,8 @@ jobs:
     needs: quick
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
       - name: end-to-end over the golden corpus
@@ -155,8 +167,8 @@ jobs:
     outputs:
       matrix: ${{ steps.list.outputs.matrix }}
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
       - name: every Fuzz target in the module
@@ -200,20 +212,41 @@ jobs:
       matrix:
         case: ${{ fromJSON(needs.fuzz-targets.outputs.matrix) }}
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
       - name: fuzz ${{ matrix.case.target }}
         # -run '^$' is required: without it the ordinary tests run first and spend
         # the budget before a single new input is generated.
+        #
+        # The matrix is built from `go test -list`, which reads the module, and
+        # GitHub substitutes these textually before bash parses the line. They go
+        # through env: and are checked first, the guard record-corpus.yml uses.
+        env:
+          TARGET: ${{ matrix.case.target }}
+          PACKAGE: ${{ matrix.case.package }}
         run: |
           set -euo pipefail
-          go test -run '^$' -fuzz '^${{ matrix.case.target }}$' -fuzztime 90s '${{ matrix.case.package }}'
+
+          if ! printf '%s' "$TARGET" | grep -qE '^Fuzz[A-Za-z0-9_]*$'; then
+            echo "refusing '$TARGET': a fuzz target is Fuzz followed by Go identifier characters"
+            exit 1
+          fi
+
+          # go list, which builds this matrix, emits full import paths — so the
+          # shape to accept is this module's own path and nothing else. Anything
+          # outside it is not a package this repository fuzzes.
+          if ! printf '%s' "$PACKAGE" | grep -qE '^github\.com/galax-io/parsec(/[A-Za-z0-9_.-]+)*$'; then
+            echo "refusing '$PACKAGE': a package is an import path inside this module"
+            exit 1
+          fi
+
+          go test -run '^$' -fuzz "^${TARGET}\$" -fuzztime 90s "$PACKAGE"
       # A crasher is written to testdata/fuzz/<target>/ in the package directory and
       # the run fails. It is uploaded and never committed: the job is granted no write
       # permission, and the generated corpus lives in $GOCACHE and never reaches the tree.
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: failure()
         with:
           name: crasher-${{ matrix.case.target }}
@@ -238,8 +271,8 @@ jobs:
       DOCUMENT: testdata/corpus/gatling/simulation/src/test/resources/nfr.yaml
       MIRROR: specs/003-canonical-model/contracts/nfr.yaml
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.13"
       - name: install the validator
@@ -292,8 +325,8 @@ jobs:
     needs: quick
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
       - name: model and gatling depend on the standard library only
@@ -324,8 +357,8 @@ jobs:
     needs: quick
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
       - name: govulncheck
@@ -346,12 +379,12 @@ jobs:
     if: inputs.compat
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # The base is the last tag reachable from this commit, and a shallow
           # clone has no tags to reach.
           fetch-depth: 0
-      - uses: actions/setup-go@v7
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
       - name: gorelease against the last tag
@@ -388,8 +421,8 @@ jobs:
     needs: quick
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
       - name: coverage floors — 90% per decoder package, 80% overall

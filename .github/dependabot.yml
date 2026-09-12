@@ -7,6 +7,10 @@ updates:
       go-minor-patch:
         update-types: [minor, patch]
     labels: [dependencies, go]
+  # Every action is pinned to a commit SHA with the release in a trailing comment
+  # (scripts/check-pins.sh). Dependabot updates a SHA pin and keeps that comment in
+  # step, so nothing here has to say so — but the pins are what it is maintaining,
+  # not the tags, and a pull request from it moves a 40-character hash.
   - package-ecosystem: github-actions
     directory: /
     schedule: { interval: weekly, day: monday }
