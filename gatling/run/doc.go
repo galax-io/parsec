@@ -8,8 +8,11 @@
 //
 // It stops exactly where reading begins. No log is opened here and no version
 // gate is applied, so a run whose log is truncated, damaged or outside the
-// supported range still resolves and fails only when gatling/text,
-// gatling/binary or gatling/simlog is handed the file.
+// supported range still resolves and fails only when
+// [github.com/galax-io/parsec/gatling/text],
+// [github.com/galax-io/parsec/gatling/binary] or
+// [github.com/galax-io/parsec/gatling/simlog] is handed the file. The usual next
+// call is simlog.NewRunReader on [Location].Log.
 //
 // The package deliberately depends on nothing else in this module. Locating a
 // run is not something the codecs share — it happens strictly before them — and
