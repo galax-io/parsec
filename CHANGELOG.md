@@ -5,6 +5,33 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### The v0.1.0 compatibility promise
+
+From the `v0.1.0` tag this module has a public API you may pin.
+
+**What is stable.** Every exported identifier of `model`, `gatling`, `gatling/text`,
+`gatling/binary`, `gatling/simlog` and `gatling/run` — 275 of them at the tag, listed in
+`testdata/api/surface.txt`, which a test regenerates from the source so the list cannot drift from
+the code. Nothing outside that list is public: `internal/` is not importable and carries no promise,
+and neither does anything unexported.
+
+**What a version bump means.** While this module is below v1, changing the signature or the
+observable behaviour of a listed identifier, or any format the module writes, is a **breaking
+change**: it is called out in a spec, approved before implementation, recorded here, and released as
+a new **MINOR** version. A superseded identifier keeps working for at least one MINOR release and
+carries a `// Deprecated:` comment naming its replacement; removal without that window was available
+only below v0.1.0 and is not available after it. A PATCH release changes no exported signature and no
+observable behaviour.
+
+**What it reads.** Gatling **3.11.5 through 3.12.0** in the text format, and **3.13.1 through
+3.15.1** in the binary one. A 3.13.0 log is refused although the codec could read it: that version
+writes the binary format and cannot generate a report, so no run of it can carry the second account
+of its own numbers a corpus entry needs. Take the range from `simlog.Supported()` rather than from
+this paragraph — a hard-coded range goes stale the first time one is recorded.
+
+**What is not promised.** A v1.0.0 commitment. The surface may still grow, and a new identifier is a
+MINOR release like any other addition.
+
 ### Changed
 
 - `gatling.UnsupportedFormatError` now reads *"this reader does not decode it"* rather than *"this
