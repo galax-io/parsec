@@ -48,7 +48,7 @@ func TestParseHeader(t *testing.T) {
 		{name: "five fields", line: "RUN\ta\tb\t1\t3.11.5", wantSyntax: true},
 		{name: "start is not a number", line: "RUN\ta\tb\tnope\t \t3.11.5", wantSyntax: true},
 		{name: "start is negative", line: "RUN\ta\tb\t-1\t \t3.11.5", wantSyntax: true},
-		// Both codecs bound the run start by gatling.MaxRunStart, because every
+		// Both codecs bound the run start by wire.MaxRunStart, because every
 		// later instant is resolved against it and the binary format adds a
 		// 32-bit offset to it. A start one past the ceiling was readable here
 		// and refused by the binary codec.

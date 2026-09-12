@@ -5,6 +5,28 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Changed
+
+- `gatling.UnsupportedFormatError` now reads *"this reader does not decode it"* rather than *"this
+  module has no codec for it yet"*, and its documentation names the two things that produce one. The
+  old wording was true only of a format the module has no codec for at all, and from #84 the type
+  also answers a codec handed the other format's log — where the module does read the file, just not
+  in that package (#107).
+
+### Removed
+
+- `gatling.Gate` is unexported. Its only caller was `Policy.Apply`, whose own documentation calls
+  itself *"the single place the outcomes are decided"*; a second exported entrance to one rule
+  contradicted that, and nothing outside this module called it. What it decides is unchanged and is
+  reached through `Policy.Apply`, which the version tests now drive (#107).
+- `gatling.MaxRunStart` is no longer exported; it moved to `internal/wire`. The two codecs read it
+  and no consumer computes with it. The refusal it implements — a run start later than the ceiling is
+  refused rather than decoded into instants that would wrap — stays documented on the readers that
+  refuse it (#107).
+
+Principle V allows both removals without a deprecation window only while the module is below v0.1.0.
+That window closes at the tag.
+
 ## [0.0.10] - 2026-09-12
 
 Pre-freeze hardening: nine findings answered before v0.1.0 makes this surface a contract.

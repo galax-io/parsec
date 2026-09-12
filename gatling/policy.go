@@ -38,7 +38,7 @@ func (p Policy) Apply(found Version, opts ...Option) (Verdict, Warning, error) {
 	// depends on which branch a log happens to take.
 	o := resolve(opts)
 
-	switch verdict := Gate(found, p.Min, p.Max); verdict {
+	switch verdict := gate(found, p.Min, p.Max); verdict {
 	case VerdictAccepted:
 		return verdict, Warning{}, nil
 
@@ -61,7 +61,7 @@ func (p Policy) Apply(found Version, opts ...Option) (Verdict, Warning, error) {
 	case VerdictUnknown:
 	}
 
-	// Gate never returns VerdictUnknown. If one ever reaches here the gate has
+	// gate never returns VerdictUnknown. If one ever reaches here the gate has
 	// not run, and a gate that has not run refuses: failing open would decode a
 	// log nothing has vouched for.
 	return VerdictRefused, Warning{}, &VersionError{

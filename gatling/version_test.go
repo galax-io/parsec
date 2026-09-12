@@ -92,31 +92,45 @@ func TestVersionCompare(t *testing.T) {
 	}
 }
 
-func TestGate(t *testing.T) {
+// The gate is reached through Policy.Apply, which gatling/policy.go documents
+// as "the single place the outcomes are decided". Driving it here rather than
+// through a second exported entrance is what lets that sentence stay true.
+func TestThePolicyGatesOnTheVersionFound(t *testing.T) {
 	t.Parallel()
 
-	minV, maxV := v(3, 11, 5), v(3, 12, 0)
+	p := gatling.Policy{Min: v(3, 11, 5), Max: v(3, 12, 0)}
 
 	tests := []struct {
-		found gatling.Version
-		want  gatling.Verdict
+		found    gatling.Version
+		want     gatling.Verdict
+		wantErr  bool
+		wantWarn bool
 	}{
-		{found: v(3, 9, 0), want: gatling.VerdictRefused},
-		{found: v(3, 11, 4), want: gatling.VerdictRefused},
+		{found: v(3, 9, 0), want: gatling.VerdictRefused, wantErr: true},
+		{found: v(3, 11, 4), want: gatling.VerdictRefused, wantErr: true},
 		{found: v(3, 11, 5), want: gatling.VerdictAccepted},
 		{found: v(3, 11, 9), want: gatling.VerdictAccepted},
 		{found: v(3, 12, 0), want: gatling.VerdictAccepted},
-		{found: v(3, 12, 1), want: gatling.VerdictUnverified},
-		{found: v(3, 13, 0), want: gatling.VerdictUnverified},
-		{found: v(4, 0, 0), want: gatling.VerdictUnverified},
+		{found: v(3, 12, 1), want: gatling.VerdictUnverified, wantWarn: true},
+		{found: v(3, 13, 0), want: gatling.VerdictUnverified, wantWarn: true},
+		{found: v(4, 0, 0), want: gatling.VerdictUnverified, wantWarn: true},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.found.String(), func(t *testing.T) {
 			t.Parallel()
 
-			if got := gatling.Gate(tt.found, minV, maxV); got != tt.want {
-				t.Fatalf("Gate(%v) = %v, want %v", tt.found, got, tt.want)
+			got, warning, err := p.Apply(tt.found)
+			if got != tt.want {
+				t.Fatalf("Apply(%v) verdict = %v, want %v", tt.found, got, tt.want)
+			}
+
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("Apply(%v) error = %v, want error: %v", tt.found, err, tt.wantErr)
+			}
+
+			if hasWarning := warning != (gatling.Warning{}); hasWarning != tt.wantWarn {
+				t.Fatalf("Apply(%v) warning = %+v, want warning: %v", tt.found, warning, tt.wantWarn)
 			}
 		})
 	}

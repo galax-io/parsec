@@ -97,16 +97,6 @@ func (e Event) String() string {
 // the negative half of the number line means absence and nothing else.
 const AbsentTimestamp int64 = math.MinInt64
 
-// MaxRunStart is the latest run start either codec accepts.
-//
-// Every event time is resolved against the run start, and the binary format
-// stores each one as a 32-bit offset from it, so a start above this could not
-// carry an offset without running past the end of the int64 range. A log naming
-// a later start is refused rather than decoded into instants that would wrap —
-// and both codecs bound it here, so a value both formats can express cannot be
-// read by one and refused by the other.
-const MaxRunStart int64 = math.MaxInt64 - math.MaxInt32
-
 // Header is the run header every log carries exactly once. It is decoded from
 // the RUN record and is what the version gate reads.
 type Header struct {
@@ -148,6 +138,11 @@ type Record struct {
 	// simulation.log. A binary log has no lines and leaves it 0; the position of
 	// a record in one is a byte offset, which only a failure needs and which
 	// SyntaxError.Offset carries.
+	//
+	// The 0 is the v0.1.0 contract, not an omission. A binary record's offset
+	// serves no seek — the format cannot be resumed from the middle — so nothing
+	// a consumer does with it would work. An Offset field can be added
+	// compatibly later if a need appears.
 	Line int
 	// Groups is the ordered path of enclosing group names, outermost first. It
 	// is empty for a request outside any group.

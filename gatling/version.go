@@ -63,7 +63,7 @@ func (v Version) Compare(o Version) int {
 }
 
 // Verdict is the outcome of the version gate for a log. VerdictUnknown is the
-// zero value and is never returned by Gate.
+// zero value and is never returned by gate.
 type Verdict uint8
 
 // The outcomes of the version gate, behind the unknown sentinel.
@@ -97,10 +97,10 @@ func (v Verdict) String() string {
 	}
 }
 
-// Gate applies the version gate: a version below lo is refused, a version
+// gate applies the version gate: a version below lo is refused, a version
 // above hi is unverified, and anything from lo through hi inclusive is
 // accepted. A codec's lo and hi equal the range its golden corpus covers.
-func Gate(found, lo, hi Version) Verdict {
+func gate(found, lo, hi Version) Verdict {
 	switch {
 	case found.Compare(lo) < 0:
 		return VerdictRefused
