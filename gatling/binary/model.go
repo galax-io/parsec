@@ -33,41 +33,11 @@ func NewRunReader(r io.Reader, opts ...gatling.Option) (*RunReader, error) {
 		return nil, err
 	}
 
-	h := rd.Header()
-
-	// Nil when there is nothing to say, matching Assertions: a caller reading
-	// `len(run.Warnings) == 0` and one reading `run.Warnings == nil` must agree.
-	var carried []model.Warning
-
 	oldest, newest := SupportedVersions()
 
-	for _, w := range rd.Warnings() {
-		// The reason names neither the version nor this package: Warning.Version
-		// already carries the first, and the second belongs to no tool-agnostic
-		// type. A report printing Warning.String() gets the version once.
-		carried = append(carried, model.Warning{
-			Version: w.Version.String(),
-			Reason: "no recording covers it — the verified range is " +
-				oldest.String() + " through " + newest.String() + ", so the records decode unverified",
-		})
-	}
-
 	return &RunReader{
-		rd: rd,
-		run: model.Run{
-			// The binary log records no run identifier of its own, so this is
-			// the simulation class: every run of one simulation carries the same
-			// string, and Start is what tells two apart.
-			ID:           h.RunID,
-			Name:         h.SimulationClass,
-			Description:  h.Description,
-			Start:        wire.Millis(h.Start),
-			Tool:         gatling.Tool,
-			ToolVersion:  h.Version.String(),
-			Capabilities: Capabilities(),
-			Warnings:     carried,
-			Assertions:   rd.Assertions(),
-		},
+		rd:  rd,
+		run: wire.NewRun(rd.Header(), Capabilities(), wire.Warnings(rd.Warnings(), oldest, newest), rd.Assertions()),
 	}, nil
 }
 

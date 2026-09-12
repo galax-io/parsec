@@ -33,6 +33,61 @@ import (
 // refused — is on the readers that refuse it.
 const MaxRunStart int64 = math.MaxInt64 - math.MaxInt32
 
+// Warnings converts what the version gate raised into the canonical form, for a
+// codec whose corpus covers oldest through newest.
+//
+// The reason is written here rather than in each codec because it is prose a
+// user reads, and two copies of a sentence can drift: the same condition would
+// then print differently depending on which log format was opened, in a module
+// whose whole point is that a consumer cannot tell the two apart. It names
+// neither the version nor the codec — [model.Warning].Version already carries
+// the first, and the second belongs to no tool-agnostic type, so a report
+// printing Warning.String() gets the version once.
+//
+// The result is nil when there is nothing to say, matching Assertions: a caller
+// reading len(ws) == 0 and one reading ws == nil must agree.
+func Warnings(ws []gatling.Warning, oldest, newest gatling.Version) []model.Warning {
+	var out []model.Warning
+
+	for _, w := range ws {
+		out = append(out, model.Warning{
+			Version: w.Version.String(),
+			Reason: "no recording covers it — the verified range is " +
+				oldest.String() + " through " + newest.String() + ", so the records decode unverified",
+		})
+	}
+
+	return out
+}
+
+// NewRun builds everything about a run that does not grow with its length: its
+// identity, the tool and version, what the source can and cannot record, any
+// version warning, and the opaque assertion payloads.
+//
+// Both codecs call it, so a run header cannot mean one thing read from a text
+// log and another read from a binary one. What differs between them is the
+// capability set, which each codec declares for itself and passes in — #58 and
+// #77 both leave those separate deliberately, because the two sets are asserted
+// equal by a test and may legitimately diverge later.
+//
+// Gatling's run identifier is the simulation's, so every run of one simulation
+// carries the same string and [model.Run].Start is what tells two apart. The
+// binary log records no identifier of its own and the codec passes the
+// simulation class, which comes to the same thing.
+func NewRun(h gatling.Header, caps model.Capabilities, ws []model.Warning, assertions []string) model.Run {
+	return model.Run{
+		ID:           h.RunID,
+		Name:         h.SimulationClass,
+		Description:  h.Description,
+		Start:        Millis(h.Start),
+		Tool:         gatling.Tool,
+		ToolVersion:  h.Version.String(),
+		Capabilities: caps,
+		Warnings:     ws,
+		Assertions:   assertions,
+	}
+}
+
 // Item fills it from one wire record. The result is false for a record that is
 // not an event of the run.
 //
