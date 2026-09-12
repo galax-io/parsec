@@ -1,6 +1,9 @@
 package model
 
-import "time"
+import (
+	"strconv"
+	"time"
+)
 
 // Outcome is whether one recorded operation succeeded or failed, as the source
 // recorded it.
@@ -20,17 +23,18 @@ const (
 	OutcomeFailure
 )
 
-// String returns "success", "failure" or "unknown".
+var outcomeNames = [...]string{unknownName, "success", "failure"}
+
+// String returns "success", "failure", or "unknown" for the zero value. A value
+// outside the set renders as the type name and the number — "Outcome(200)" — as
+// every exported enum in this module does, so a value this package cannot name
+// is never mistaken for one whose outcome the source lost.
 func (o Outcome) String() string {
-	switch o {
-	case OutcomeSuccess:
-		return "success"
-	case OutcomeFailure:
-		return "failure"
-	case OutcomeUnknown:
+	if int(o) < len(outcomeNames) {
+		return outcomeNames[o]
 	}
 
-	return unknownName
+	return "Outcome(" + strconv.Itoa(int(o)) + ")"
 }
 
 // Failure is what the source recorded about an operation that did not succeed.
@@ -122,17 +126,16 @@ const (
 	UserEnd
 )
 
-// String returns "start", "end" or "unknown".
+var userEventKindNames = [...]string{unknownName, "start", "end"}
+
+// String returns "start", "end", or "unknown" for the zero value. A value
+// outside the set renders as the type name and the number.
 func (k UserEventKind) String() string {
-	switch k {
-	case UserStart:
-		return "start"
-	case UserEnd:
-		return "end"
-	case UserEventUnknown:
+	if int(k) < len(userEventKindNames) {
+		return userEventKindNames[k]
 	}
 
-	return unknownName
+	return "UserEventKind(" + strconv.Itoa(int(k)) + ")"
 }
 
 // UserEvent is one virtual user starting or ending a scenario.

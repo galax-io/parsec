@@ -1,6 +1,9 @@
 package model
 
-import "time"
+import (
+	"strconv"
+	"time"
+)
 
 // Warning is something a source's version gate raised about a run that was read
 // anyway — typically that no recording covers the version that wrote it.
@@ -77,23 +80,17 @@ const (
 	ItemAssertion
 )
 
-// String returns "sample", "group", "user", "error" or "unknown".
+var itemKindNames = [...]string{unknownName, "sample", "group", "user", "error", "assertion"}
+
+// String returns "sample", "group", "user", "error", "assertion", or "unknown"
+// for the zero value. A value outside the set renders as the type name and the
+// number.
 func (k ItemKind) String() string {
-	switch k {
-	case ItemSample:
-		return "sample"
-	case ItemGroup:
-		return "group"
-	case ItemUser:
-		return "user"
-	case ItemError:
-		return "error"
-	case ItemAssertion:
-		return "assertion"
-	case ItemUnknown:
+	if int(k) < len(itemKindNames) {
+		return itemKindNames[k]
 	}
 
-	return unknownName
+	return "ItemKind(" + strconv.Itoa(int(k)) + ")"
 }
 
 // Item is one thing a run's stream yields.

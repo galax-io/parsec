@@ -157,7 +157,10 @@ func TestEnumStringsCoverEveryConstant(t *testing.T) {
 			model.PositionUnknown: "unknown",
 			model.PositionSample:  "sample",
 			model.PositionGroup:   "group",
-			model.PositionKind(9): "unknown",
+			// Out of range names the type and the number, as every exported
+			// enum in this module does; TestOutOfRangeValuesNameTheTypeAndTheNumber
+			// walks all five of this package's.
+			model.PositionKind(9): "PositionKind(9)",
 		}
 		for k, s := range want {
 			if got := k.String(); got != s {

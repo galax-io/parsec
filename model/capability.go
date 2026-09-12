@@ -1,6 +1,9 @@
 package model
 
-import "slices"
+import (
+	"slices"
+	"strconv"
+)
 
 // unknownName is what every zero value in this package prints as. Named once
 // for the same reason the gatling package names it once: seven copies of a
@@ -105,10 +108,12 @@ var fieldNames = [fieldCount]string{
 	FieldIntervalSeries:         "interval series",
 }
 
-// String returns the field's name, for a report that names what is missing.
+// String returns the field's name, for a report that names what is missing, or
+// "unknown" for the zero value. A value outside the set renders as the type name
+// and the number.
 func (f Field) String() string {
 	if f >= fieldCount {
-		return unknownName
+		return "Field(" + strconv.Itoa(int(f)) + ")"
 	}
 
 	return fieldNames[f]
