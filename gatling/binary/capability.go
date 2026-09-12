@@ -5,9 +5,6 @@ import (
 	"github.com/galax-io/parsec/model"
 )
 
-// Tool is what this source is called in [model.Run].Tool.
-const Tool = "gatling"
-
 // The range this codec accepts without a warning. It equals the versions the
 // golden corpus covers, and widening it means recording a new entry first.
 //

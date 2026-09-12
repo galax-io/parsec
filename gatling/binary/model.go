@@ -62,7 +62,7 @@ func NewRunReader(r io.Reader, opts ...gatling.Option) (*RunReader, error) {
 			Name:         h.SimulationClass,
 			Description:  h.Description,
 			Start:        wire.Millis(h.Start),
-			Tool:         Tool,
+			Tool:         gatling.Tool,
 			ToolVersion:  h.Version.String(),
 			Capabilities: Capabilities(),
 			Warnings:     carried,

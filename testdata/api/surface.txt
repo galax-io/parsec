@@ -110,7 +110,7 @@
     type UserEvent
     type UserEventKind
     type Warning
-## gatling  (105)
+## gatling  (106)
     const AbsentTimestamp
     const DetectSize
     const EventEnd
@@ -129,6 +129,7 @@
     const StatusKO
     const StatusOK
     const StatusUnknown
+    const Tool
     const VerdictAccepted
     const VerdictRefused
     const VerdictUnknown
@@ -216,9 +217,8 @@
     type Version
     type VersionError
     type Warning
-## gatling/text  (14)
+## gatling/text  (13)
     const MaxLineLen
-    const Tool
     func Capabilities
     func NewReader
     func NewRunReader
@@ -231,9 +231,8 @@
     method RunReader.Run
     type Reader
     type RunReader
-## gatling/binary  (14)
+## gatling/binary  (13)
     const MaxStringLen
-    const Tool
     func Capabilities
     func NewReader
     func NewRunReader
@@ -280,4 +279,4 @@
     type Location
     type NotFoundError
     var ErrNoPath
-TOTAL 276
+TOTAL 275

@@ -70,7 +70,7 @@ func NewRunReader(r io.Reader, opts ...gatling.Option) (*RunReader, error) {
 			Name:         h.SimulationClass,
 			Description:  h.Description,
 			Start:        wire.Millis(h.Start),
-			Tool:         Tool,
+			Tool:         gatling.Tool,
 			ToolVersion:  h.Version.String(),
 			Capabilities: Capabilities(),
 			Warnings:     carried,
@@ -78,9 +78,6 @@ func NewRunReader(r io.Reader, opts ...gatling.Option) (*RunReader, error) {
 		},
 	}, nil
 }
-
-// Tool is what this source is called in [model.Run.Tool].
-const Tool = "gatling"
 
 // Run returns everything about this run that does not grow with its length: its
 // identity, the tool and version, what the source can and cannot record, any
