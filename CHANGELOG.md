@@ -80,6 +80,14 @@ MINOR release like any other addition.
 - `gatling.Tool` — the string a Gatling source is called in `model.Run.Tool`, declared once. A
   consumer that wants to branch on the tool can now name it without importing a codec (#77).
 
+### Fixed
+
+- `gatling.SyntaxError.Error`'s documentation said it *"names the line"*, above a method that renders
+  a byte offset for a binary log. A consumer that believed it and wrote `line %d` into its own
+  message reported byte 42 of a binary log as line 42, which no reader can act on — the type's own
+  comment six lines above had it right the whole time. `gatling.TruncationError` stated the
+  boundary-cut fact twice inside one comment; it is true, important, and now stated once (#79).
+
 ### Removed
 
 - `gatling/text.Tool` and `gatling/binary.Tool` are gone, replaced by `gatling.Tool`. One value had

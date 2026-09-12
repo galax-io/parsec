@@ -144,6 +144,103 @@ func qualify(rendered string) []string {
 	return out
 }
 
+// Docs returns the doc comment of every exported identifier declared in dir,
+// keyed as Surface names it, with the comment markers stripped and the lines
+// joined by newlines — what pkg.go.dev renders, before it renders it.
+//
+// The package comment is keyed "package". An identifier with no doc comment is
+// absent from the map rather than present and empty, so a test can tell "says
+// nothing" from "says nothing yet".
+func Docs(dir string) (map[string]string, error) {
+	sources, err := filepath.Glob(filepath.Join(dir, "*.go"))
+	if err != nil {
+		return nil, fmt.Errorf("listing %s: %w", dir, err)
+	}
+
+	fset := token.NewFileSet()
+	out := map[string]string{}
+
+	for _, src := range sources {
+		if strings.HasSuffix(src, "_test.go") {
+			continue
+		}
+
+		file, err := parser.ParseFile(fset, src, nil, parser.ParseComments|parser.SkipObjectResolution)
+		if err != nil {
+			return nil, fmt.Errorf("parsing %s: %w", src, err)
+		}
+
+		if text := file.Doc.Text(); text != "" {
+			out["package"] = text
+		}
+
+		for _, decl := range file.Decls {
+			collectDocs(decl, out)
+		}
+	}
+
+	return out, nil
+}
+
+func collectDocs(decl ast.Decl, out map[string]string) {
+	switch d := decl.(type) {
+	case *ast.FuncDecl:
+		for _, name := range declExports(d) {
+			if text := d.Doc.Text(); text != "" {
+				out[name] = text
+			}
+		}
+	case *ast.GenDecl:
+		for _, spec := range d.Specs {
+			s, ok := spec.(*ast.TypeSpec)
+			if !ok || !s.Name.IsExported() {
+				continue
+			}
+
+			// A lone type declaration carries its comment on the GenDecl.
+			text := s.Doc.Text()
+			if text == "" {
+				text = d.Doc.Text()
+			}
+
+			if text != "" {
+				out["type "+s.Name.Name] = text
+			}
+
+			collectMemberDocs(s, out)
+		}
+	}
+}
+
+func collectMemberDocs(s *ast.TypeSpec, out map[string]string) {
+	var (
+		kind string
+		list *ast.FieldList
+	)
+
+	switch t := s.Type.(type) {
+	case *ast.StructType:
+		kind, list = "field ", t.Fields
+	case *ast.InterfaceType:
+		kind, list = "imethod ", t.Methods
+	default:
+		return
+	}
+
+	for _, f := range list.List {
+		text := f.Doc.Text()
+		if text == "" {
+			continue
+		}
+
+		for _, n := range f.Names {
+			if n.IsExported() {
+				out[kind+s.Name.Name+"."+n.Name] = text
+			}
+		}
+	}
+}
+
 // Write rewrites the golden file at path with the given rendering.
 func Write(path, rendered string) error {
 	if err := os.WriteFile(path, []byte(rendered), 0o600); err != nil {

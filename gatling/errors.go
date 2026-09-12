@@ -46,7 +46,11 @@ type SyntaxError struct {
 	Found string
 }
 
-// Error names the line, what was expected there and what was found.
+// Error names the position, what was expected there and what was found. Which
+// position it names depends on Format, as the type's own documentation says: a
+// line for a text log, a byte offset for a binary one. A consumer that writes
+// "line %d" into its own message for every *SyntaxError reports byte 42 of a
+// binary log as line 42, which no reader can act on.
 func (e *SyntaxError) Error() string {
 	if e.Format == FormatBinary {
 		return fmt.Sprintf("gatling: byte %d: expected %s, found %s", e.Offset, e.Expected, e.Found)
@@ -70,10 +74,8 @@ func (e *SyntaxError) Error() string {
 // the file holds is byte for byte what a file cut mid-value looks like, so a
 // damaged log can arrive here — with a Dropped as large as the file — rather
 // than as a *SyntaxError, which is what a defect the grammar *can* see still
-// yields. And a binary log cut exactly on a record boundary is a shorter valid
-// log, so it ends cleanly with no truncation at all. A caller that must not act
-// on a damaged run needs a check this module cannot give it, such as the run's
-// own report or a writer it can see.
+// yields. A caller that must not act on a damaged run needs a check this module
+// cannot give it, such as the run's own report or a writer it can see.
 //
 // It is deliberately neither io.EOF nor a wrapper around one, and it unwraps to
 // nothing. A caller written before this type existed breaks its loop on io.EOF
