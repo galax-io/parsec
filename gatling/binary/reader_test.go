@@ -2,6 +2,7 @@ package binary_test
 
 import (
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/galax-io/parsec/gatling"
@@ -140,9 +141,17 @@ func TestEveryRecordCarriesItsGroupPath(t *testing.T) {
 	}
 }
 
-// The group path a record hands out points into memory the reader reuses. That
-// is the contract, and it is only safe because it is documented — this pins both
-// halves: the slice really is reused, and copying it really does keep it.
+// The group path a record hands out points into memory the reader reuses.
+// gatling.Record.Groups states it, and five other surfaces repeat it, so a
+// consumer that keeps a record without copying gets every one of them reporting
+// the last record's path.
+//
+// Both halves are pinned, and both can fail. The reuse: two records of the same
+// depth share the backing array, so the aliasing the documentation warns about
+// is real — a reader that allocated a fresh path each call would make the
+// warning false and is caught here rather than skipped past. And the copy:
+// slices.Clone of the first path still reads as itself after the second record
+// has overwritten the array, so the remedy the documentation offers works.
 func TestTheGroupPathIsReusedBetweenRecords(t *testing.T) {
 	t.Parallel()
 
@@ -153,7 +162,11 @@ func TestTheGroupPathIsReusedBetweenRecords(t *testing.T) {
 		t.Fatalf("NewReader: %v", err)
 	}
 
-	var held []string
+	var (
+		first    []string
+		copied   []string
+		compared bool
+	)
 
 	for {
 		rec, err := rd.Next()
@@ -161,22 +174,37 @@ func TestTheGroupPathIsReusedBetweenRecords(t *testing.T) {
 			break
 		}
 
-		if len(rec.Groups) == 2 {
-			if held == nil {
-				held = rec.Groups
-
-				continue
-			}
-
-			if &held[0] != &rec.Groups[0] {
-				t.Skip("the reader allocated a fresh path; nothing here is wrong, but the reuse this pins is gone")
-			}
-
-			return
+		if len(rec.Groups) != 2 {
+			continue
 		}
+
+		if first == nil {
+			first = rec.Groups
+			copied = slices.Clone(rec.Groups)
+
+			continue
+		}
+
+		if &first[0] != &rec.Groups[0] {
+			t.Fatalf("the reader allocated a fresh group path; gatling.Record.Groups documents "+
+				"that it is backed by a slice the reader reuses, and six surfaces repeat it. "+
+				"Either the reuse is back or every one of those comments is now wrong. "+
+				"first=%p second=%p", &first[0], &rec.Groups[0])
+		}
+
+		if !slices.Equal(copied, first) {
+			t.Errorf("a copy taken before the reuse reads %q, want %q — copying is the remedy "+
+				"the documentation offers and it must keep the path", copied, first)
+		}
+
+		compared = true
+
+		break
 	}
 
-	t.Fatal("no two records shared a group path: the corpus should hold many")
+	if !compared {
+		t.Fatal("no two records shared a group path: the corpus should hold many")
+	}
 }
 
 // depthOf checks a group path against the two the probe declares and returns how

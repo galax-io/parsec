@@ -1,6 +1,7 @@
 package wire_test
 
 import (
+	"math"
 	"testing"
 	"time"
 
@@ -415,5 +416,56 @@ func TestNewRunCarriesTheHeaderAndTheCapabilities(t *testing.T) {
 
 	if len(run.Assertions) != 1 || run.Assertions[0] != "payload" {
 		t.Errorf("Assertions = %+v, want [payload]", run.Assertions)
+	}
+}
+
+// A count too large to be a duration is an absence, not a measurement. This is
+// where that is reachable: outside model an unset Opt yields exactly the zero
+// duration, so a test on the far side of the accessor cannot tell a refused
+// conversion from a wrapped one, and the wrap is what would turn a count past
+// the int64 nanosecond range into a small plausible negative.
+func TestACountTooLargeToBeADurationIsAbsent(t *testing.T) {
+	t.Parallel()
+
+	const maxMillis = int64(math.MaxInt64) / int64(time.Millisecond)
+
+	tests := []struct {
+		name  string
+		ms    int64
+		want  time.Duration
+		isSet bool
+	}{
+		{name: "zero", ms: 0, want: 0, isSet: true},
+		{name: "one second", ms: 1000, want: time.Second, isSet: true},
+		{name: "the largest that still converts", ms: maxMillis, want: time.Duration(maxMillis) * time.Millisecond, isSet: true},
+		{name: "one past it", ms: maxMillis + 1},
+		{name: "the largest int64", ms: math.MaxInt64},
+		{name: "negative", ms: -1},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			rec := gatling.Record{Kind: gatling.KindGroup, Start: start, End: start, CumulatedResponseTime: tt.ms}
+
+			var it model.Item
+			if !wire.Item(&it, &rec) {
+				t.Fatal("a group record did not convert")
+			}
+
+			got, ok := it.Group.CumulatedDuration.Get()
+			if ok != tt.isSet {
+				t.Fatalf("CumulatedDuration set = %v, want %v", ok, tt.isSet)
+			}
+
+			if ok && got != tt.want {
+				t.Errorf("CumulatedDuration = %v, want %v", got, tt.want)
+			}
+
+			if got < 0 {
+				t.Errorf("CumulatedDuration = %v, negative — a count that wrapped would read as one", got)
+			}
+		})
 	}
 }

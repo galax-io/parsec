@@ -7,44 +7,55 @@ import (
 	"github.com/galax-io/parsec/model"
 )
 
-// Kind selects one field; the rest hold their zero value. A consumer that
-// switches on Kind must never be able to read a value the item does not carry.
-func TestItemKindSelectsOneField(t *testing.T) {
+// Kind decides which field is read, and nothing else does. Asserting that the
+// other fields of a literal hold their zero value asserts that Go zeroes what a
+// literal omits; Item has no constructor, so nothing in this package could make
+// that fail. What can fail is dispatch: a consumer switching on Kind must read
+// the field the kind selects even when another field happens to be populated,
+// and this package's own consumer of Kind is [model.Bounds.Extend].
+//
+// Each item below carries a decoy — a plausible value in a field its Kind does
+// not select, set an hour away from the real one — so a fold that read the wrong
+// field would place the run an hour out.
+func TestKindDecidesWhichFieldIsRead(t *testing.T) {
 	t.Parallel()
 
-	at := time.Unix(0, 0).UTC()
+	var (
+		selected = time.Unix(0, 0).UTC()
+		decoy    = selected.Add(time.Hour)
+	)
 
 	tests := []struct {
 		name string
 		item model.Item
+		want time.Time // where the fold must place the run
 	}{
 		{
-			name: "sample",
+			name: "a group is read from Group, not from the Sample beside it",
+			item: model.Item{
+				Kind:   model.ItemGroup,
+				Group:  model.GroupSample{Groups: []string{"outer"}, Start: selected},
+				Sample: model.Sample{Name: "decoy", Start: decoy},
+			},
+			want: selected,
+		},
+		{
+			name: "a sample is read from Sample, not from the Group beside it",
 			item: model.Item{
 				Kind:   model.ItemSample,
-				Sample: model.Sample{Name: "GET /ok", Start: at, Outcome: model.OutcomeSuccess},
+				Sample: model.Sample{Name: "GET /ok", Start: selected},
+				Group:  model.GroupSample{Groups: []string{"decoy"}, Start: decoy},
 			},
+			want: selected,
 		},
 		{
-			name: "group",
+			name: "a user event is read from User, not from the Sample beside it",
 			item: model.Item{
-				Kind:  model.ItemGroup,
-				Group: model.GroupSample{Groups: []string{"outer"}, Start: at, Outcome: model.OutcomeSuccess},
+				Kind:   model.ItemUser,
+				User:   model.UserEvent{Scenario: "s", Kind: model.UserStart, At: selected},
+				Sample: model.Sample{Name: "decoy", Start: decoy},
 			},
-		},
-		{
-			name: "user",
-			item: model.Item{
-				Kind: model.ItemUser,
-				User: model.UserEvent{Scenario: "s", Kind: model.UserStart, At: at},
-			},
-		},
-		{
-			name: "error",
-			item: model.Item{
-				Kind:  model.ItemError,
-				Error: model.RunError{Message: "boom", At: at},
-			},
+			want: selected,
 		},
 	}
 
@@ -52,33 +63,46 @@ func TestItemKindSelectsOneField(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			// Sample and GroupSample carry a []string and so are not
-			// comparable; every other field of each is, and a zero one is what
-			// an unselected field must hold.
-			if tt.item.Kind != model.ItemSample {
-				if tt.item.Sample.Name != "" || tt.item.Sample.Outcome != model.OutcomeUnknown ||
-					!tt.item.Sample.Start.IsZero() || tt.item.Sample.Groups != nil {
-					t.Error("Sample is set on an item that does not select it")
-				}
-			}
+			item := tt.item
 
-			if tt.item.Kind != model.ItemGroup {
-				if tt.item.Group.Outcome != model.OutcomeUnknown ||
-					!tt.item.Group.Start.IsZero() || tt.item.Group.Groups != nil {
-					t.Error("Group is set on an item that does not select it")
-				}
-			}
+			var b model.Bounds
 
-			var zero model.Item
+			b.Extend(&item)
 
-			if tt.item.Kind != model.ItemUser && tt.item.User != zero.User {
-				t.Error("User is set on an item that does not select it")
-			}
-
-			if tt.item.Kind != model.ItemError && tt.item.Error != zero.Error {
-				t.Error("Error is set on an item that does not select it")
+			start, ok := b.Start()
+			if !ok || !start.Equal(tt.want) {
+				t.Errorf("Start() = %v, %t; want %v — the fold read a field this Kind does not select",
+					start, ok, tt.want)
 			}
 		})
+	}
+}
+
+// An error counts towards no bound however it is filled in: the report counts no
+// error towards the span, and a decoy in every other field must not change that.
+func TestAnErrorItemBoundsNothing(t *testing.T) {
+	t.Parallel()
+
+	at := time.Unix(0, 0).UTC()
+
+	item := model.Item{
+		Kind:   model.ItemError,
+		Error:  model.RunError{Message: "boom", At: at},
+		Sample: model.Sample{Name: "decoy", Start: at},
+		Group:  model.GroupSample{Groups: []string{"decoy"}, Start: at},
+		User:   model.UserEvent{Scenario: "s", Kind: model.UserStart, At: at},
+	}
+
+	var b model.Bounds
+
+	b.Extend(&item)
+
+	if _, ok := b.Start(); ok {
+		t.Error("an error item moved the start; the report counts no error towards the span")
+	}
+
+	if _, ok := b.End(); ok {
+		t.Error("an error item moved the end; the report counts no error towards the span")
 	}
 }
 
