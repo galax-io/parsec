@@ -260,3 +260,69 @@ func TestCodecsGateBeforeTheRestOfTheRunRecord(t *testing.T) {
 		}
 	}
 }
+
+// The version warning a user reads is prose, and it was written out twice — once
+// in each codec's NewRunReader, byte for byte the same, one function short of
+// where the v0.0.5 extraction stopped. Two copies of a sentence can drift, and
+// then the same condition prints differently depending on which format was
+// opened, in a module whose stated goal is that a consumer cannot tell the two
+// formats apart.
+//
+// The two ranges differ, so the sentences are not equal; what must be equal is
+// everything around the two versions. The test builds each codec's expected
+// reason from one template and its own SupportedVersions, so a codec that
+// reworded its half fails here.
+func TestBothCodecsWordTheSameWarningIdentically(t *testing.T) {
+	t.Parallel()
+
+	const template = "no recording covers it — the verified range is %s through %s, " +
+		"so the records decode unverified"
+
+	// One release above either codec's range, so both gate it as unverified.
+	const above = "3.16.0"
+
+	textOldest, textNewest := text.SupportedVersions()
+	binOldest, binNewest := binary.SupportedVersions()
+
+	textRun, err := text.NewRunReader(strings.NewReader(
+		"RUN\tio.example.Sim\tsim\t1788670094356\t \t" + above + "\n",
+	))
+	if err != nil {
+		t.Fatalf("text.NewRunReader: %v", err)
+	}
+
+	binRun, err := binary.NewRunReader(bytes.NewReader(
+		(&builder{}).runRecord(above, []string{"s"}, nil).bytes(),
+	))
+	if err != nil {
+		t.Fatalf("binary.NewRunReader: %v", err)
+	}
+
+	cases := []struct {
+		name           string
+		got            []model.Warning
+		oldest, newest gatling.Version
+	}{
+		{name: "text", got: textRun.Run().Warnings, oldest: textOldest, newest: textNewest},
+		{name: "binary", got: binRun.Run().Warnings, oldest: binOldest, newest: binNewest},
+	}
+
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			want := model.Warning{
+				Version: above,
+				Reason:  fmt.Sprintf(template, tt.oldest, tt.newest),
+			}
+
+			if len(tt.got) != 1 {
+				t.Fatalf("Warnings = %+v, want exactly one", tt.got)
+			}
+
+			if tt.got[0] != want {
+				t.Errorf("Warnings[0] =\n  %+v\nwant\n  %+v", tt.got[0], want)
+			}
+		})
+	}
+}

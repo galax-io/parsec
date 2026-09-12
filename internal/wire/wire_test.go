@@ -333,3 +333,87 @@ func TestAnAbsentStartYieldsAZeroStartAndNoDuration(t *testing.T) {
 		})
 	}
 }
+
+// The warning a user reads is built here, once. It was byte-identical in both
+// codecs, one function short of where the v0.0.5 extraction stopped — and it is
+// the part that contains prose, so the same condition could have started
+// printing two different sentences depending on which format was opened.
+func TestWarningsBuildsOneReasonForEveryCodec(t *testing.T) {
+	t.Parallel()
+
+	oldest, newest := gatling.Version{Major: 3, Minor: 13, Patch: 1}, gatling.Version{Major: 3, Minor: 15, Patch: 1}
+	above := gatling.Version{Major: 3, Minor: 16, Patch: 0}
+
+	got := wire.Warnings([]gatling.Warning{{Version: above, Min: oldest, Max: newest}}, oldest, newest)
+
+	want := []model.Warning{{
+		Version: "3.16.0",
+		Reason: "no recording covers it — the verified range is 3.13.1 through 3.15.1, " +
+			"so the records decode unverified",
+	}}
+
+	if len(got) != len(want) || got[0] != want[0] {
+		t.Errorf("Warnings() = %+v, want %+v", got, want)
+	}
+}
+
+// Nil rather than empty, matching Assertions: both codecs document that a caller
+// reading len(run.Warnings) == 0 and one reading run.Warnings == nil agree.
+func TestWarningsIsNilWhenThereIsNothingToSay(t *testing.T) {
+	t.Parallel()
+
+	v := gatling.Version{Major: 3, Minor: 13, Patch: 1}
+
+	if got := wire.Warnings(nil, v, v); got != nil {
+		t.Errorf("Warnings(nil) = %+v, want nil", got)
+	}
+}
+
+// NewRun builds the part of a run that does not grow with its length. The two
+// codecs differ in the capabilities they declare and in nothing else, so the
+// header they hand back for the same header record must be equal.
+func TestNewRunCarriesTheHeaderAndTheCapabilities(t *testing.T) {
+	t.Parallel()
+
+	h := gatling.Header{
+		RunID:           "io.example.Sim",
+		SimulationClass: "io.example.Sim",
+		Description:     "a run",
+		Start:           start,
+		Version:         gatling.Version{Major: 3, Minor: 13, Patch: 1},
+	}
+
+	caps := model.NewCapabilities(model.FieldSampleDuration)
+	ws := []model.Warning{{Version: "3.16.0", Reason: "unverified"}}
+
+	run := wire.NewRun(h, caps, ws, []string{"payload"})
+
+	if run.Tool != gatling.Tool {
+		t.Errorf("Tool = %q, want %q", run.Tool, gatling.Tool)
+	}
+
+	if run.ID != h.RunID || run.Name != h.SimulationClass || run.Description != h.Description {
+		t.Errorf("identity = %q/%q/%q, want %q/%q/%q",
+			run.ID, run.Name, run.Description, h.RunID, h.SimulationClass, h.Description)
+	}
+
+	if run.ToolVersion != "3.13.1" {
+		t.Errorf("ToolVersion = %q, want %q", run.ToolVersion, "3.13.1")
+	}
+
+	if !run.Start.Equal(wire.Millis(start)) {
+		t.Errorf("Start = %v, want %v", run.Start, wire.Millis(start))
+	}
+
+	if !run.Capabilities.Provides(model.FieldSampleDuration) {
+		t.Error("the capabilities the codec declared did not reach the run")
+	}
+
+	if len(run.Warnings) != 1 || run.Warnings[0] != ws[0] {
+		t.Errorf("Warnings = %+v, want %+v", run.Warnings, ws)
+	}
+
+	if len(run.Assertions) != 1 || run.Assertions[0] != "payload" {
+		t.Errorf("Assertions = %+v, want [payload]", run.Assertions)
+	}
+}

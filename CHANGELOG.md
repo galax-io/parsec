@@ -34,6 +34,13 @@ MINOR release like any other addition.
 
 ### Changed
 
+- The version warning a consumer reads is built in one place. The `carried` loop, its comments and
+  the sentence *"no recording covers it — the verified range is … through …, so the records decode
+  unverified"* were byte-identical in both codecs' `NewRunReader`, one function short of where the
+  v0.0.5 `internal/wire` extraction stopped — and the part left duplicated was the part containing
+  prose a user reads, so the same condition could have begun printing two different sentences
+  depending on which log format was opened. The run header is built there too: the two
+  `NewRunReader` bodies are now identical, each resolving its own `Capabilities()` (#58).
 - `gatling.UnsupportedFormatError` now reads *"this reader does not decode it"* rather than *"this
   module has no codec for it yet"*, and its documentation names the two things that produce one. The
   old wording was true only of a format the module has no codec for at all, and from #84 the type
