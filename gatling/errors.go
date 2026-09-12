@@ -158,6 +158,14 @@ func (e *VersionError) Error() string {
 // Warning is raised for a log written by a version above the range any
 // recording covers. The log decodes, and the warning travels in the result;
 // it is never only logged.
+//
+// This is the wire form. Its canonical form is
+// [github.com/galax-io/parsec/model.Warning], whose Reason is this type's
+// String() and whose Version is this one's rendered as text — and the two are
+// one call apart, because simlog.NewReader hands back these and
+// simlog.NewRunReader hands back those. Code written against Version.Compare,
+// Min or Max does not survive the move; the compile error reads like a rename,
+// and it is a different type in a different package.
 type Warning struct {
 	// Version is the release that wrote the log.
 	Version Version
