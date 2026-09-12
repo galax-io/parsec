@@ -5,6 +5,30 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.0.10] - 2026-09-12
+
+Pre-freeze hardening: nine findings answered before v0.1.0 makes this surface a contract.
+
+A max-effort review of what the freeze would lock in found nine places where the documentation and
+the code disagreed, and the documentation was right every time: a complete upload reported as a
+killed run, a torn transport reported as the end of the log, a 32 MiB memory budget stated in four
+places and enforced in one, a read buffer the caller set by accident, a version gate that ran after
+the record it was meant to guard, and a run ordering whose answer depended on the order a directory
+happened to be listed in. None of them is a missing feature. Each cost a commit here, and would have
+cost a deprecation window after the tag.
+
+What shaped the release was reviewing the fixes as adversarially as the code they fixed, which sent
+two of them back. The first answer to #82 followed `io.ReadFull` and cleared every error once a value
+was full; bufio's direct-read path hands a source's failure over once and forgets it, so a transport
+failure beside the last bytes of a large value still read as a complete run — the same defect, one
+step along. The first answer to #83 cut the whole error chain to keep `io.EOF` out of it, and took
+`context.Canceled` and `*fs.PathError` with it. Both are recorded below as they ended, not as they
+were first written.
+
+Beside them, and invisible to a consumer: CI now fails a pull request that changes an exported
+signature, and runs on a Go release that still receives fixes. Both are what freezing an API takes,
+as against promising to.
+
 ### Changed
 
 - Both codecs judge the version before the rest of the run header (constitution Principle II: the
