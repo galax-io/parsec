@@ -5,6 +5,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-09-13
+
+A stable API. From this tag the exported surface of `model`, `gatling`, `gatling/text`,
+`gatling/binary`, `gatling/simlog` and `gatling/run` — 275 identifiers — is a contract: a change to
+any signature or observable behaviour is a breaking change, and removing one costs a deprecation
+window and a MINOR release. What the freeze locks in had to be true first, which is what the
+sixteen issues below are.
+
 **The v0.1.0 compatibility promise.**
 
 From the `v0.1.0` tag this module has a public API you may pin.
