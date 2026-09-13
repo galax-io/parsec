@@ -173,24 +173,6 @@ principle (II) and the same Changed entry, and the contracts say so.
 
 ## Project Structure
 
-### Documentation (this feature)
-
-```text
-specs/010-pre-freeze-hardening/
-├── plan.md                       # this file
-├── spec.md                       # what and why — nine issues, six stories
-├── research.md                   # R1–R12: one decision per fix, the landing order, the measurement, the skills
-├── data-model.md                 # the four behaviours being pinned: endings, precedence, retention, ordering
-├── quickstart.md                 # how to validate each story, and how to make each part fail
-├── contracts/
-│   ├── README.md                 # index — no public-API change; three behavioural contracts
-│   ├── endings.md                # contract 1 — endings and source failures (#82, #83, #102)
-│   ├── binary-budget.md          # contract 2 — the budget, the buffer and the gate (#75, #87, #76)
-│   └── run-ordering.md           # contract 3 — the total order (#88)
-├── checklists/requirements.md    # spec quality gate, 16/16
-└── tasks.md                      # /speckit-tasks output — not created here
-```
-
 ### Source Code (repository root)
 
 ```text

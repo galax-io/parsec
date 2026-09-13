@@ -121,26 +121,6 @@ deviation is still a deviation and the next reader needs the reasoning, not just
 
 ## Project Structure
 
-### Documentation (this feature)
-
-```text
-specs/007-corpus-and-canary/
-├── plan.md              # This file
-├── spec.md              # Phase −1 (/speckit-specify)
-├── research.md          # Phase 0 — R1…R9, with the measurements
-├── data-model.md        # Phase 1 — the report tree and what it is compared against
-├── quickstart.md        # Phase 1 — how to run every check this adds
-├── contracts/           # Phase 1 — the four interfaces that change
-│   ├── README.md
-│   ├── public-api.md            # MaxStringLen — the one consumer-facing change
-│   ├── canary-env.md            # PARSEC_CANARY_RUNS, extended
-│   ├── record-corpus-workflow.md
-│   └── fuzz-ci.md
-├── checklists/
-│   └── requirements.md
-└── tasks.md             # Phase 2 (/speckit-tasks — NOT created here)
-```
-
 ### Source Code (repository root)
 
 ```text

@@ -112,26 +112,6 @@ This feature amends nothing in it.
 
 ## Project Structure
 
-### Documentation (this feature)
-
-```text
-specs/011-stable-api/
-├── plan.md              # This file
-├── research.md          # Phase 0 output — R1–R20
-├── data-model.md        # Phase 1 output
-├── quickstart.md        # Phase 1 output
-├── contracts/           # Phase 1 output
-│   ├── README.md
-│   ├── public-api.md         # the freeze list and the compatibility promise
-│   ├── enum-rendering.md     # the one rule, the eleven enums
-│   ├── bounds.md             # what an end-less item does to the span
-│   ├── wrong-format.md       # a codec handed the other format's log
-│   └── release-path.md       # pinned actions, guarded dispatch inputs
-├── checklists/
-│   └── requirements.md
-└── tasks.md             # Phase 2 output (/speckit-tasks — NOT created here)
-```
-
 ### Source Code (repository root)
 
 ```text

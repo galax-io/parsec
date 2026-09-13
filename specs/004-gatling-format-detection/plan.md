@@ -149,21 +149,6 @@ Source: `.specify/memory/constitution.md` **v2.1.0** — the version this branch
 
 ## Project Structure
 
-### Documentation (this feature)
-
-```text
-specs/004-gatling-format-detection/
-├── plan.md                        # This file
-├── research.md                    # Phase 0 — 13 decisions, 4 questions carried forward
-├── data-model.md                  # Phase 1 — the types and their transitions
-├── quickstart.md                  # Phase 1 — 10 runnable validation scenarios
-├── contracts/
-│   └── gatling-detect.md          # Phase 1 — the exported API and the CHANGELOG plan
-├── checklists/
-│   └── requirements.md            # from /speckit-specify — 16/16
-└── tasks.md                       # Phase 2 — /speckit-tasks, not created here
-```
-
 ### Source Code (repository root)
 
 ```text

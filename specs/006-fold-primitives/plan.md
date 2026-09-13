@@ -147,22 +147,6 @@ Source: `.specify/memory/constitution.md` **v2.2.0**. This feature does not amen
 
 ## Project Structure
 
-### Documentation (this feature)
-
-```text
-specs/006-fold-primitives/
-├── plan.md              # This file
-├── research.md          # Phase 0 — 13 decisions, 3 questions carried forward
-├── data-model.md        # Phase 1 — the key encoding, the bounds rules, absence, ceilings, goldens
-├── quickstart.md        # Phase 1 — 9 runnable validation scenarios
-├── contracts/
-│   ├── model-fold.md    #   Position, Bounds, AbsentTimestamp, the zero-time convention, changelog
-│   └── gatling-fixes.md #   #56, #57, #55 as observable changes, tests, changelog, commit order
-├── checklists/
-│   └── requirements.md  # from /speckit-specify — 16/16
-└── tasks.md             # Phase 2 — /speckit-tasks, not created here
-```
-
 ### Source Code (repository root)
 
 ```text

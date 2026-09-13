@@ -66,21 +66,6 @@ Source: `.specify/memory/constitution.md` v1.1.0.
 
 ## Project Structure
 
-### Documentation (this feature)
-
-```text
-specs/002-gatling-text-decoder/
-├── plan.md              # This file
-├── research.md          # Phase 0 output
-├── data-model.md        # Phase 1 output
-├── quickstart.md        # Phase 1 output
-├── contracts/           # Phase 1 output — exported API surface
-│   └── gatling-text.md
-├── checklists/
-│   └── requirements.md  # from /speckit-specify
-└── tasks.md             # /speckit-tasks output — NOT created here
-```
-
 ### Source Code (repository root)
 
 ```text
