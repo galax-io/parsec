@@ -2,7 +2,6 @@
 
 [![CI](https://github.com/galax-io/parsec/actions/workflows/ci.yml/badge.svg)](https://github.com/galax-io/parsec/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/galax-io/parsec)](https://github.com/galax-io/parsec/releases)
-[![Go Report Card](https://goreportcard.com/badge/github.com/galax-io/parsec)](https://goreportcard.com/report/github.com/galax-io/parsec)
 [![Go Reference](https://pkg.go.dev/badge/github.com/galax-io/parsec.svg)](https://pkg.go.dev/github.com/galax-io/parsec)
 [![License](https://img.shields.io/github/license/galax-io/parsec)](https://github.com/galax-io/parsec/blob/main/LICENSE)
 
