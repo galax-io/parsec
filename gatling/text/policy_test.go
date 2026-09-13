@@ -144,6 +144,14 @@ func TestCodecDefersToThePolicy(t *testing.T) {
 					t.Fatalf("NewReader = _, %v (%T); not the error type this case is about", err, err)
 				}
 
+				// A refusal returns no reader. A caller that checks the error and
+				// then uses the value anyway is a bug, but handing back a usable
+				// reader beside a refusal invites it — and the outcome table this
+				// test now stands in for used to be the only thing watching.
+				if r != nil {
+					t.Errorf("NewReader = %v, %v; a refused log yields no reader", r, err)
+				}
+
 				return
 			}
 

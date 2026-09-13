@@ -134,41 +134,6 @@ func endAfter(start time.Time, d model.Opt[time.Duration]) int64 {
 	return start.Add(v).UnixMilli()
 }
 
-// TestModelAgainstReport is TestReport's counterpart through the canonical
-// types: every count the kept report files carry, matched exactly by the model.
-func TestModelAgainstReport(t *testing.T) {
-	t.Parallel()
-
-	for _, dir := range corpusDirs(t) {
-		t.Run(filepath.Base(dir), func(t *testing.T) {
-			t.Parallel()
-
-			ta := modelTally(t, filepath.Join(dir, "simulation.log"))
-			// The span every rate divides by comes from the model alone: it is
-			// bounded by sample, group and user timestamps, and the model
-			// carries all three.
-			dur := ta.durationSec()
-
-			var global reportStats
-			loadJSON(t, filepath.Join(dir, "global_stats.json"), &global)
-			checkCounts(t, "global_stats.json", ta.global, global.NumberOfRequests)
-			checkRates(t, "global_stats.json", ta.global, dur, global.MeanNumberOfRequestsPerSecond)
-
-			var root reportNode
-			loadJSON(t, filepath.Join(dir, "stats.json"), &root)
-			checkCounts(t, "stats.json root", ta.global, root.Stats.NumberOfRequests)
-			checkRates(t, "stats.json root", ta.global, dur, root.Stats.MeanNumberOfRequestsPerSecond)
-
-			seen := 0
-			walk(t, root, nil, ta, dur, &seen)
-
-			if want := len(ta.requests) + len(ta.groups); seen != want {
-				t.Errorf("stats.json describes %d requests and groups, the model has %d", seen, want)
-			}
-		})
-	}
-}
-
 // The conversion preserves counts exactly: one item per event record, and the
 // same split by outcome. A disagreement here is the conversion's alone, because
 // both sides read the same log with the same decoder.

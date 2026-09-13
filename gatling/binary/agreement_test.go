@@ -6,12 +6,14 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"slices"
 	"strings"
 	"testing"
 
 	"github.com/galax-io/parsec/gatling"
 	"github.com/galax-io/parsec/gatling/binary"
 	"github.com/galax-io/parsec/gatling/text"
+	"github.com/galax-io/parsec/internal/wire"
 	"github.com/galax-io/parsec/model"
 )
 
@@ -262,27 +264,24 @@ func TestCodecsGateBeforeTheRestOfTheRunRecord(t *testing.T) {
 }
 
 // The version warning a user reads is prose, and it was written out twice — once
-// in each codec's NewRunReader, byte for byte the same, one function short of
-// where the v0.0.5 extraction stopped. Two copies of a sentence can drift, and
-// then the same condition prints differently depending on which format was
-// opened, in a module whose stated goal is that a consumer cannot tell the two
-// formats apart.
+// in each codec's NewRunReader — until the v0.1.0 work folded both into
+// internal/wire. The wording is proven there, once, by
+// TestWarningsBuildsOneReasonForEveryCodec; what is proven here is the wiring:
+// that both codecs route their own supported range through that one builder, so a
+// consumer cannot tell from the sentence which format was opened.
 //
-// The two ranges differ, so the sentences are not equal; what must be equal is
-// everything around the two versions. The test builds each codec's expected
-// reason from one template and its own SupportedVersions, so a codec that
-// reworded its half fails here.
-func TestBothCodecsWordTheSameWarningIdentically(t *testing.T) {
+// Asserting against wire.Warnings rather than against a copy of the template is
+// the point. A copy here would be a third place for the sentence to live.
+func TestBothCodecsWireTheWarningThroughOneBuilder(t *testing.T) {
 	t.Parallel()
-
-	const template = "no recording covers it — the verified range is %s through %s, " +
-		"so the records decode unverified"
 
 	// One release above either codec's range, so both gate it as unverified.
 	const above = "3.16.0"
 
-	textOldest, textNewest := text.SupportedVersions()
-	binOldest, binNewest := binary.SupportedVersions()
+	version, err := gatling.ParseVersion(above)
+	if err != nil {
+		t.Fatalf("ParseVersion: %v", err)
+	}
 
 	textRun, err := text.NewRunReader(strings.NewReader(
 		"RUN\tio.example.Sim\tsim\t1788670094356\t \t" + above + "\n",
@@ -298,6 +297,9 @@ func TestBothCodecsWordTheSameWarningIdentically(t *testing.T) {
 		t.Fatalf("binary.NewRunReader: %v", err)
 	}
 
+	textOldest, textNewest := text.SupportedVersions()
+	binOldest, binNewest := binary.SupportedVersions()
+
 	cases := []struct {
 		name           string
 		got            []model.Warning
@@ -311,17 +313,13 @@ func TestBothCodecsWordTheSameWarningIdentically(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			want := model.Warning{
-				Version: above,
-				Reason:  fmt.Sprintf(template, tt.oldest, tt.newest),
-			}
+			want := wire.Warnings(
+				[]gatling.Warning{{Version: version, Min: tt.oldest, Max: tt.newest}},
+				tt.oldest, tt.newest,
+			)
 
-			if len(tt.got) != 1 {
-				t.Fatalf("Warnings = %+v, want exactly one", tt.got)
-			}
-
-			if tt.got[0] != want {
-				t.Errorf("Warnings[0] =\n  %+v\nwant\n  %+v", tt.got[0], want)
+			if !slices.Equal(tt.got, want) {
+				t.Errorf("Warnings =\n  %+v\nwant\n  %+v", tt.got, want)
 			}
 		})
 	}

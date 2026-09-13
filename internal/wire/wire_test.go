@@ -218,6 +218,37 @@ func TestAnEndBeforeTheStartYieldsNoDuration(t *testing.T) {
 	}
 }
 
+// An end equal to the start is a measurement, not a missing one: the request took
+// less than the millisecond the format records in. Absent would say the source did
+// not report it, which is a different fact and the one a consumer branches on.
+//
+// The boundary is one character of the refusal in span — `end < start` against
+// `end <= start` — and it used to be held by a test in gatling/text, which tested
+// this package's subject through the text codec's wrapper. Held here it holds for
+// both codecs.
+func TestAnEndEqualToTheStartIsARecordedZero(t *testing.T) {
+	t.Parallel()
+
+	rec := gatling.Record{
+		Kind: gatling.KindRequest, Name: "instant",
+		Start: start, End: start, Status: gatling.StatusOK,
+	}
+
+	var it model.Item
+	if !wire.Item(&it, &rec) {
+		t.Fatal("Item refused a request record")
+	}
+
+	d, ok := it.Sample.Duration.Get()
+	if !ok {
+		t.Fatal("Duration is absent; a zero-length request was measured, not unreported")
+	}
+
+	if d != 0 {
+		t.Errorf("Duration = %v, want 0", d)
+	}
+}
+
 // The conversion clears what it does not set. Reusing an Item across calls must
 // not leave a previous record's fields behind, which is the one bug a
 // pointer-in, pointer-out signature invites.
