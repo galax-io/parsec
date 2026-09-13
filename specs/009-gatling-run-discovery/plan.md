@@ -161,23 +161,6 @@ reading.
 
 ## Project Structure
 
-### Documentation (this feature)
-
-```text
-specs/009-gatling-run-discovery/
-├── plan.md                       # this file
-├── spec.md                       # what and why
-├── research.md                   # R1–R11: what the plugin bytecode and the corpus settled
-├── data-model.md                 # RunLocation, FoundBy, RunNotFoundError, and the resolution pass
-├── quickstart.md                 # how to validate, and how to make each part fail
-├── contracts/
-│   ├── README.md                 # index
-│   ├── public-api.md             # contract 1 — four additions, nothing changed
-│   └── lastrun-file.md           # contract 2 — what gatling-maven-plugin writes, and what we assume
-├── checklists/requirements.md    # spec quality gate, 16/16
-└── tasks.md                      # /speckit-tasks output — not created here
-```
-
 ### Source Code (repository root)
 
 ```text

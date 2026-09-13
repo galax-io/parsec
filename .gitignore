@@ -24,3 +24,6 @@ testdata/corpus/gatling/simulation/project/project/
 testdata/corpus/gatling/simulation/.bsp/
 testdata/corpus/gatling/simulation/.metals/
 testdata/corpus/gatling/simulation/.bloop/
+
+# Written by setup-speckit.sh; the transcript of an install, not a record of anything.
+speckit-install.log

@@ -132,21 +132,6 @@ Source: `.specify/memory/constitution.md` **v2.2.0**. This feature does not amen
 
 ## Project Structure
 
-### Documentation (this feature)
-
-```text
-specs/005-gatling-binary-decoder/
-├── plan.md              # This file
-├── research.md          # Phase 0 — 11 decisions, 3 questions carried forward
-├── data-model.md        # Phase 1 — the grammar, the table, the reader's state
-├── quickstart.md        # Phase 1 — 12 runnable validation scenarios
-├── contracts/
-│   └── gatling-binary.md
-├── checklists/
-│   └── requirements.md  # from /speckit-specify — 16/16
-└── tasks.md             # Phase 2 — /speckit-tasks, not created here
-```
-
 ### Source Code (repository root)
 
 ```text

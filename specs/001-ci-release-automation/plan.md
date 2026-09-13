@@ -105,23 +105,6 @@ Both passes reached the same verdicts; where Phase 1 sharpened a reason it is no
 
 ## Project Structure
 
-### Documentation (this feature)
-
-```text
-specs/001-ci-release-automation/
-├── plan.md                          # This file
-├── spec.md                          # Feature specification
-├── research.md                      # Phase 0: 10 decisions, verified starting state
-├── data-model.md                    # Phase 1: pipeline and corpus entities
-├── quickstart.md                    # Phase 1: record a run, run the gates, cut a release
-├── contracts/
-│   ├── workflows.md                 # triggers, jobs, the single required check, permissions
-│   ├── release.md                   # tag contract, preconditions, outputs, failure modes
-│   └── dependency-ownership.md      # family → owner, labels, grouping
-├── checklists/requirements.md       # spec quality checklist (complete)
-└── tasks.md                         # /speckit-tasks output — NOT created here
-```
-
 ### Source Code (repository root)
 
 ```text

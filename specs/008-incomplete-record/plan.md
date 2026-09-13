@@ -138,23 +138,6 @@ No row fails. Complexity Tracking is empty.
 
 ## Project Structure
 
-### Documentation (this feature)
-
-```text
-specs/008-incomplete-record/
-├── plan.md                       # this file
-├── spec.md                       # what and why
-├── research.md                   # R1–R10: the decisions and the two findings
-├── data-model.md                 # the three endings of a read; TruncationError
-├── quickstart.md                 # how to validate, and how to make each part fail
-├── contracts/
-│   ├── README.md                 # index
-│   ├── public-api.md             # contract 1 — the addition and the change
-│   └── blocking-source.md        # contract 2 — what a follower may rely on
-├── checklists/requirements.md    # spec quality gate, 16/16
-└── tasks.md                      # /speckit-tasks output — not created here
-```
-
 ### Source Code (repository root)
 
 ```text

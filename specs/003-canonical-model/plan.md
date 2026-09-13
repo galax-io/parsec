@@ -135,23 +135,6 @@ merges or the tracked requirements and the shipped code disagree on the record:
 
 ## Project Structure
 
-### Documentation (this feature)
-
-```text
-specs/003-canonical-model/
-├── plan.md                  # This file
-├── research.md              # Phase 0 output
-├── data-model.md            # Phase 1 output
-├── quickstart.md            # Phase 1 output
-├── contracts/               # Phase 1 output — exported API surface
-│   ├── model.md             # the canonical types
-│   ├── gatling-text.md      # the conversion entry point
-│   └── nfr.yaml             # the probe's requirements, as they will be committed
-├── checklists/
-│   └── requirements.md      # from /speckit-specify
-└── tasks.md                 # /speckit-tasks output — NOT created here
-```
-
 ### Source Code (repository root)
 
 ```text
