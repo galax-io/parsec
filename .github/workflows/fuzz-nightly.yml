@@ -24,85 +24,11 @@ permissions:
   contents: read
 
 jobs:
-  targets:
-    runs-on: ubuntu-latest
-    outputs:
-      matrix: ${{ steps.list.outputs.matrix }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: go.mod
-      - name: every Fuzz target in the module
-        id: list
-        run: |
-          set -euo pipefail
-          pairs=""
-          for pkg in $(go list ./...); do
-            for target in $(go test -list '^Fuzz' "$pkg" | grep '^Fuzz' || true); do
-              pairs="$pairs$pkg $target\n"
-            done
-          done
-          matrix=$(printf "$pairs" | jq -Rsc '
-            split("\n") | map(select(length > 0) | split(" ") | {package: .[0], target: .[1]})')
-          echo "$matrix" | jq .
-          if [ "$(echo "$matrix" | jq 'length')" -eq 0 ]; then
-            echo "no Fuzz target found in the module"
-            exit 1
-          fi
-          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
-
+  # The same workflow verify.yml calls on a pull request, for as long as a nightly
+  # can afford. The crasher is kept three times longer: it is the whole
+  # reproduction for an issue nobody is watching for yet.
   fuzz:
-    needs: targets
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        case: ${{ fromJSON(needs.targets.outputs.matrix) }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: go.mod
-      - name: fuzz ${{ matrix.case.target }} for ${{ inputs.fuzztime || '10m' }}
-        # The three values below reach a shell. GitHub substitutes them textually
-        # before bash parses the line, so an unchecked one is arbitrary execution
-        # on the runner — fuzztime is a dispatch input, and the matrix is built
-        # from `go test -list`, which reads the module. They go through env: and
-        # are checked first, the guard record-corpus.yml already uses.
-        env:
-          TARGET: ${{ matrix.case.target }}
-          PACKAGE: ${{ matrix.case.package }}
-          FUZZTIME: ${{ inputs.fuzztime || '10m' }}
-        run: |
-          set -euo pipefail
-
-          if ! printf '%s' "$TARGET" | grep -qE '^Fuzz[A-Za-z0-9_]*$'; then
-            echo "refusing '$TARGET': a fuzz target is Fuzz followed by Go identifier characters"
-            exit 1
-          fi
-
-          # go list, which builds this matrix, emits full import paths — so the
-          # shape to accept is this module's own path and nothing else. Anything
-          # outside it is not a package this repository fuzzes.
-          if ! printf '%s' "$PACKAGE" | grep -qE '^github\.com/galax-io/parsec(/[A-Za-z0-9_.-]+)*$'; then
-            echo "refusing '$PACKAGE': a package is an import path inside this module"
-            exit 1
-          fi
-
-          if ! printf '%s' "$FUZZTIME" | grep -qE '^[0-9]+[smh]$'; then
-            echo "refusing '$FUZZTIME': a fuzz time is a number followed by s, m or h"
-            exit 1
-          fi
-
-          go test -run '^$' -fuzz "^${TARGET}\$" -fuzztime "$FUZZTIME" "$PACKAGE"
-      # The crasher is the artefact to open an issue with: it is the whole
-      # reproduction, and it cannot be recovered from a job that has been
-      # garbage-collected.
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        if: failure()
-        with:
-          name: crasher-${{ matrix.case.target }}
-          path: '**/testdata/fuzz/**'
-          if-no-files-found: warn
-          retention-days: 90
+    uses: ./.github/workflows/fuzz.yml
+    with:
+      fuzztime: ${{ inputs.fuzztime || '10m' }}
+      retention_days: 90
