@@ -80,9 +80,12 @@ jobs:
         # did, twice.
         run: |
           set -euo pipefail
-          for t in scripts/check-linkage_test.sh scripts/check-coverage_test.sh \
-                   scripts/check-compat_test.sh scripts/check-pins_test.sh \
-                   .claude/hooks/linkage-guard_test.sh .githooks/pre-push_test.sh; do
+          # The glob AGENTS.md documents, not a list to keep in step with it: a suite
+          # added and not enrolled is a suite nobody runs. The floor is what stops the
+          # glob failing open — a typo that matches nothing would otherwise pass.
+          suites=(scripts/*_test.sh .claude/hooks/*_test.sh .githooks/*_test.sh)
+          [ "${#suites[@]}" -ge 6 ] || { echo "found ${#suites[@]} shell suites, expected at least 6"; exit 1; }
+          for t in "${suites[@]}"; do
             echo "--- $t"
             bash "$t"
           done
@@ -104,17 +107,6 @@ jobs:
           # renovate: datasource=github-releases depName=golangci/golangci-lint
           version: v2.12.2
 
-  test:
-    needs: quick
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: go.mod
-      - name: test
-        run: go test -race -shuffle=on ./...
-
   e2e:
     needs: quick
     runs-on: ubuntu-latest
@@ -132,10 +124,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if [ -z "$(for pat in ./model/... ./gatling/...; do go list "$pat" 2>/dev/null || true; done)" ]; then
-            echo "no decoder package yet; the end-to-end suite has nothing to run"
-            exit 0
-          fi
           # Not a pipeline into the inventory: `cmd | inventory || true` would take the
           # trailing `|| true` for the whole pipeline and discard the test result. The
           # status is checked on its own, and the inventory is the second reading.
@@ -160,99 +148,16 @@ jobs:
   # Every Fuzz target in the module, discovered rather than listed: a hard-coded
   # list silently stops covering a target added later, and FR-013 asks for every
   # one of them.
-  fuzz-targets:
-    if: inputs.fuzz
-    needs: quick
-    runs-on: ubuntu-latest
-    outputs:
-      matrix: ${{ steps.list.outputs.matrix }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: go.mod
-      - name: every Fuzz target in the module
-        id: list
-        run: |
-          set -euo pipefail
-          pairs=""
-          for pkg in $(go list ./...); do
-            for target in $(go test -list '^Fuzz' "$pkg" | grep '^Fuzz' || true); do
-              pairs="$pairs$pkg $target\n"
-            done
-          done
-          matrix=$(printf "$pairs" | jq -Rsc '
-            split("\n") | map(select(length > 0) | split(" ") | {package: .[0], target: .[1]})')
-          echo "$matrix" | jq .
-          # Say so rather than passing quietly: a discovery step that found nothing
-          # reads exactly like one that found everything and was satisfied.
-          if [ "$(echo "$matrix" | jq 'length')" -eq 0 ]; then
-            echo "no Fuzz target found in the module"
-            exit 1
-          fi
-          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
-
-  # One job per target, not one job running three.
-  #
-  # A single fuzzer saturates every core it is given — 862% CPU measured on a ten-core
-  # machine — so three sharing a four-core runner would each get a third of the budget
-  # the flag appears to grant.
-  #
-  # The budget is 90 s, from the report in #60 that FuzzDecode finds the math.MinInt32
-  # crasher in about that. Measured here with a warm cache it took under 3 s, but that
-  # is not the CI shape: a cold GOCACHE gives FuzzDecode 14 baseline inputs where a warm
-  # one gave 147, and no generated corpus is committed. 90 s is the figure for the cold
-  # case, and it is confirmed on the runner rather than inferred from a laptop.
+  # Both legs of the fuzzing live in fuzz.yml, which 55 of their 65 lines had in
+  # common. Bounded here so it can gate a merge; fuzz-nightly.yml asks the same
+  # workflow for a longer run.
   fuzz:
     if: inputs.fuzz
-    needs: fuzz-targets
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        case: ${{ fromJSON(needs.fuzz-targets.outputs.matrix) }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: go.mod
-      - name: fuzz ${{ matrix.case.target }}
-        # -run '^$' is required: without it the ordinary tests run first and spend
-        # the budget before a single new input is generated.
-        #
-        # The matrix is built from `go test -list`, which reads the module, and
-        # GitHub substitutes these textually before bash parses the line. They go
-        # through env: and are checked first, the guard record-corpus.yml uses.
-        env:
-          TARGET: ${{ matrix.case.target }}
-          PACKAGE: ${{ matrix.case.package }}
-        run: |
-          set -euo pipefail
-
-          if ! printf '%s' "$TARGET" | grep -qE '^Fuzz[A-Za-z0-9_]*$'; then
-            echo "refusing '$TARGET': a fuzz target is Fuzz followed by Go identifier characters"
-            exit 1
-          fi
-
-          # go list, which builds this matrix, emits full import paths — so the
-          # shape to accept is this module's own path and nothing else. Anything
-          # outside it is not a package this repository fuzzes.
-          if ! printf '%s' "$PACKAGE" | grep -qE '^github\.com/galax-io/parsec(/[A-Za-z0-9_.-]+)*$'; then
-            echo "refusing '$PACKAGE': a package is an import path inside this module"
-            exit 1
-          fi
-
-          go test -run '^$' -fuzz "^${TARGET}\$" -fuzztime 90s "$PACKAGE"
-      # A crasher is written to testdata/fuzz/<target>/ in the package directory and
-      # the run fails. It is uploaded and never committed: the job is granted no write
-      # permission, and the generated corpus lives in $GOCACHE and never reaches the tree.
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        if: failure()
-        with:
-          name: crasher-${{ matrix.case.target }}
-          path: '**/testdata/fuzz/**'
-          if-no-files-found: warn
-          retention-days: 30
+    needs: quick
+    uses: ./.github/workflows/fuzz.yml
+    with:
+      fuzztime: 90s
+      retention_days: 30
 
   # The corpus probe states what it must produce once, in an OpenNFR document, and
   # the Gatling assertions are rendered from it. This gate holds that document to
