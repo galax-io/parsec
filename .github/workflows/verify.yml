@@ -71,6 +71,19 @@ jobs:
         # of a real one. Pinned for the reason the nfr job pins its validator: a parser
         # that changes under us turns a green gate red without a change to what it checks.
         run: pip install --disable-pip-version-check 'PyYAML==6.0.3'
+      - name: the process material stays out of the module zip
+        # Three go.mod sentinels keep specs/, .specify/ and .claude/ out of a
+        # consumer's download — 62% of it. .specify/ is copier-managed and .claude/ is
+        # tool-managed, so either could lose one to a template update silently; this is
+        # what notices.
+        #
+        # testdata/ is deliberately not among them: it holds the stub the canary builds
+        # by path, and a sentinel there makes that a different module.
+        run: |
+          set -euo pipefail
+          for d in specs .specify .claude; do
+            test -f "$d/go.mod" || { echo "$d/go.mod is gone: $d would ship to every consumer again"; exit 1; }
+          done
       - name: every action is pinned and every substitution is kept out of the shell
         run: bash scripts/check-pins.sh
       - name: the shell gates test themselves
