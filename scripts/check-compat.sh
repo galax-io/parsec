@@ -19,16 +19,23 @@ design — so this script is where the report becomes a gate.
   incompatible changes, --allow-breaking         -> pass only when CHANGELOG.md records the
                                                    change under [Unreleased] as ### Changed
                                                    or ### Removed
+
+A --baseline report subtracts what the base branch already reports. gorelease compares
+against the last TAG, not against the base, so once a deliberate breaking change merges,
+every later pull request inherits it until the tag is cut — and each one would be asked
+for a label for somebody else's change. What this gate judges is what the change ADDS.
   an empty report, or one without "# summary"    -> exit 2: the gate did not run. An empty
                                                    report is a broken gate, not a clean one.
 
 Usage:
-  scripts/check-compat.sh [--allow-breaking] [--changelog FILE] REPORT
+  scripts/check-compat.sh [--allow-breaking] [--changelog FILE] [--baseline FILE] REPORT
 
   REPORT               a gorelease report; "-" reads stdin
   --allow-breaking     the pull request carries the `breaking` label: a deliberate MINOR
                        bump, which Principle V permits with a changelog entry
   --changelog FILE     the changelog to check (default: CHANGELOG.md)
+  --baseline FILE      a gorelease report for the base branch; every incompatible change
+                       it lists is already merged and is not this change's to answer for
 
 Writes a line to $GITHUB_STEP_SUMMARY when that is set.
 
@@ -39,11 +46,13 @@ USAGE
 ALLOW=0
 CHANGELOG=CHANGELOG.md
 REPORT=""
+BASELINE=""
 
 while [ $# -gt 0 ]; do
   case "$1" in
     --allow-breaking) ALLOW=1 ;;
     --changelog) CHANGELOG="${2:-}"; shift ;;
+    --baseline) BASELINE="${2:-}"; shift ;;
     -h|--help) usage; exit 0 ;;
     -) REPORT="-" ;;
     -*) echo "check-compat: unknown option $1" >&2; usage >&2; exit 2 ;;
@@ -106,6 +115,23 @@ if ! grep -q '^# summary' "$REPORT"; then
 fi
 
 breaking="$(incompatible "$REPORT")"
+
+# What the base already reports is already merged: it was judged on its own pull
+# request, and asking this one to carry a label for it would make the gate cry wolf at
+# every change until the tag.
+if [ -n "$BASELINE" ]; then
+  if [ ! -s "$BASELINE" ] || ! grep -q '^# summary' "$BASELINE"; then
+    echo "check-compat: the baseline report is empty or is not a gorelease report — without it the gate cannot tell this change's breakage from the base's" >&2
+    exit 2
+  fi
+
+  inherited="$(incompatible "$BASELINE")"
+  if [ -n "$inherited" ]; then
+    echo "check-compat: the base already reports these, so they are not this change's:"
+    printf '%s\n' "$inherited" | sed 's/^/  /'
+  fi
+  breaking="$(comm -23 <(printf '%s\n' "$breaking" | sort -u) <(printf '%s\n' "$inherited" | sort -u) | grep . || true)"
+fi
 
 if [ -z "$breaking" ]; then
   echo "check-compat: no incompatible change to the public API"

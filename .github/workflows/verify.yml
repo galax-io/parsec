@@ -321,15 +321,25 @@ jobs:
           GOTOOLCHAIN: auto
         run: |
           set -euo pipefail
-          base="$(git describe --tags --abbrev=0 --match 'v*')"
-          echo "base: $base"
-          go run golang.org/x/exp/cmd/gorelease@v0.0.0-20260908205506-85c1c2202aba -base="$base" | tee "$RUNNER_TEMP/compat.txt"
+          tag="$(git describe --tags --abbrev=0 --match 'v*')"
+          echo "base tag: $tag"
+          tool=golang.org/x/exp/cmd/gorelease@v0.0.0-20260908205506-85c1c2202aba
+
+          go run "$tool" -base="$tag" | tee "$RUNNER_TEMP/compat.txt"
+
+          # And the same report for the branch this change is proposed against.
+          # gorelease compares against the last TAG, so once a deliberate breaking
+          # change merges, every later pull request inherits it until the tag is cut.
+          # The gate subtracts this, and judges what the change itself adds.
+          git worktree add -q "$RUNNER_TEMP/base" "origin/${GITHUB_BASE_REF:-main}"
+          (cd "$RUNNER_TEMP/base" && go run "$tool" -base="$tag") > "$RUNNER_TEMP/baseline.txt"
+          git worktree remove --force "$RUNNER_TEMP/base"
       - name: the report is the gate
         env:
           ALLOW: ${{ inputs.allow-breaking }}
         run: |
           set -euo pipefail
-          args=()
+          args=(--baseline "$RUNNER_TEMP/baseline.txt")
           if [ "$ALLOW" = "true" ]; then args+=(--allow-breaking); fi
           scripts/check-compat.sh "${args[@]}" "$RUNNER_TEMP/compat.txt"
       - name: the tool reached nothing in the tree
