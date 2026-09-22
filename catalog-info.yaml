@@ -1,0 +1,11 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: parsec
+  description: Go library of load-test result primitives — a canonical result model plus per-tool decoders (Gatling, with JMeter/k6/Locust/Yandex.Tank planned)
+  annotations:
+    github.com/project-slug: galax-io/parsec
+spec:
+  type: library
+  lifecycle: production
+  owner: galaxio
