@@ -1,7 +1,7 @@
 # Changes here will be overwritten by `copier update` — NEVER EDIT MANUALLY.
 # This file records the answers used to scaffold the project so the template
 # can be re-applied later.  Keep it committed.
-_commit: d8b7cd1
+_commit: 62de50c
 _src_path: gh:galax-io/spec-kit-galaxio-bootstrap
 architecture: model/ is the source of truth for every consumer; each tool package
     converts that tool's artefacts into model types and declares through Capabilities
