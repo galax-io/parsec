@@ -52,6 +52,8 @@ jobs:
           distribution: temurin
           java-version: '17'
       - uses: sbt/setup-sbt@ce95da69b39609ea153bad087708da5f37366897 # v1.5.10
+        with:
+          disk-cache: false # FR-007: never restore the sbt 2 task cache
       # Keyed on the Gatling version, which setup-java's own sbt cache cannot see:
       # it hashes the build files, and those are identical across the matrix because
       # the version arrives as -Dgatling.version. Both legs would key alike, only one
