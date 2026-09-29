@@ -51,7 +51,7 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-      - uses: sbt/setup-sbt@82da71df4e122282484a99a8d70096bc2369dbd8 # v1.5.9
+      - uses: sbt/setup-sbt@ce95da69b39609ea153bad087708da5f37366897 # v1.5.10
       # Keyed on the Gatling version, which setup-java's own sbt cache cannot see:
       # it hashes the build files, and those are identical across the matrix because
       # the version arrives as -Dgatling.version. Both legs would key alike, only one
