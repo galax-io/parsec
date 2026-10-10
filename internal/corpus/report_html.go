@@ -27,6 +27,14 @@ var (
 	// table carry no id and are skipped by construction.
 	reportRow = regexp.MustCompile(`(?s)<tr id="([^"]*)"([^>]*)>(.*?)</tr>`)
 
+	// Column headings contain rows but no figures. Remove only paired blocks;
+	// an unclosed heading must not hide the markup that follows it.
+	reportHeadings = regexp.MustCompile(`(?is)<thead(?:\s[^>]*)?>.*?</thead\s*>`)
+
+	// A row opening outside the supported shape still establishes that the
+	// table is not empty. The tag boundary keeps names like <track> out.
+	reportRowOpening = regexp.MustCompile(`(?i)<tr(?:\s|/?>)`)
+
 	rowParent = regexp.MustCompile(`data-parent="([^"]*)"`)
 	rowName   = regexp.MustCompile(`class="(?:[^"]* )?ellipsed-name(?: [^"]*)?"[^>]*>([^<]*)</span>`)
 )
@@ -107,9 +115,9 @@ var (
 // but empty — the figures are inserted by JavaScript at page load and are
 // genuinely not in the file — and the JSON beside it carries them instead.
 //
-// A report whose statistics table is missing altogether is an error. That is
-// the case where the markup has changed in a way this reader does not
-// understand, and reporting nothing found would be indistinguishable from
+// A report whose statistics table is missing or contains rows this reader does
+// not recognise is an error. The markup has changed in a way this reader does
+// not understand, and reporting nothing found would be indistinguishable from
 // checking everything and being satisfied.
 func FromReportHTML(path string) (Report, error) {
 	raw, err := os.ReadFile(path) //nolint:gosec // a path inside a recorded run directory, chosen by the caller
@@ -142,6 +150,14 @@ func FromReportHTML(path string) (Report, error) {
 	}
 
 	if len(matches) == 0 {
+		for _, table := range []string{head, body} {
+			if reportRowOpening.MatchString(reportHeadings.ReplaceAllString(table, "")) {
+				return Report{}, fmt.Errorf(
+					"%s: unrecognised statistics rows; the report's markup is not the shape this reader knows", path,
+				)
+			}
+		}
+
 		return Report{}, fmt.Errorf("%w: %s states its figures through JavaScript, not in the markup",
 			ErrNoFigures, path)
 	}
