@@ -59,7 +59,13 @@ case "$args" in
       f="$GH_FIXTURE/pulls-$sha.json"
       if [ -f "$f" ]; then emit < "$f"; else printf '[]\n' | emit; fi ;;
   "pr view "*)   emit < "$GH_FIXTURE/pr.json" ;;
-  "issue view "*) emit < "$GH_FIXTURE/issue.json" ;;
+  "issue view "*)
+      # A per-issue fixture (issue-<owner>_<repo>-<n>.json) wins over the one shared answer,
+      # so a test can put an issue of another repository in a milestone of its own.
+      set -- $args; n="$3"; r=""; prev=""
+      for a in "$@"; do [ "$prev" = "--repo" ] && r="$a"; prev="$a"; done
+      f="$GH_FIXTURE/issue-${r//\//_}-$n.json"
+      if [ -f "$f" ]; then emit < "$f"; else emit < "$GH_FIXTURE/issue.json"; fi ;;
   *) printf 'gh stub: unhandled call: %s\n' "$args" >&2; exit 1 ;;
 esac
 STUB
@@ -75,7 +81,7 @@ fixture() { # fixture <name> <milestones-json-array> [items-json-array]
 }
 
 run() { # run <fixture-dir> <args...>
-  GH_FIXTURE="$1" PATH="$tmp/bin:$PATH" REPO="acme/thing" bash "$script" "${@:2}" 2>&1
+  GH_FIXTURE="$1" PATH="$tmp/bin:$PATH" REPO="acme/thing" BACKLOG_REPO="acme/backlog" bash "$script" "${@:2}" 2>&1
 }
 
 MS='[{"number":1,"title":"v0.0.1 Scaffold","state":"open"},
@@ -193,6 +199,79 @@ if [ "$rc" -eq 2 ] && grep -q "no open vX.Y.Z milestone" <<<"$out"; then
 else
   bad "a version-less milestone must not be active" "exit=$rc $(head -2 <<<"$out")"
 fi
+
+printf '\na link to a feature of the backlog needs no same milestone\n'
+# A feature is an issue in BACKLOG_REPO whose milestone description has the line
+# "Release: business". The PR keeps its own version milestone; the feature sits in the
+# business one, so the two cannot match.
+BL=acme/backlog
+BUSINESS='Release: business'
+bl_issue() { # fixture-dir, number, milestone title, [milestone description]
+  jq -nc --arg ms "$3" --arg d "${4:-}" \
+    '{milestone: (if $ms == "" then null else {title: $ms, description: $d} end)}' \
+    > "$1/issue-${BL//\//_}-$2.json"
+}
+gate_fixture() { # name, pr body, closing-links JSON array, [pr milestone title]
+  local d; d=$(fixture "$1" '[]' '[]')
+  jq -nc --arg body "$2" --argjson links "$3" --arg ms "${4-v0.2.0 The gates hold}" \
+    '{number:3,title:"fix(x): y",state:"OPEN",baseRefName:"main",body:$body,closingIssuesReferences:$links,
+      milestone:(if $ms == "" then null else {title:$ms} end)}' > "$d/pr.json"
+  printf '{"milestone":{"title":"v0.1.0 Earlier"}}\n' > "$d/issue.json"
+  printf '%s' "$d"
+}
+BL_LINK='[{"number":30,"repository":{"name":"backlog","owner":{"login":"acme"}}}]'
+
+g=$(gate_fixture gate-feature-closes '' "$BL_LINK"); bl_issue "$g" 30 'M1 — first run' "$BUSINESS"
+out=$(run "$g" --pr 3); rc=$?
+if [ "$rc" -eq 0 ] && grep -qF "✓ links $BL#30 (feature of business milestone \"M1 — first run\")" <<<"$out"; then
+  ok "gate: a closing link to a backlog feature passes and names the business milestone"
+else bad "gate: closing link to a feature should pass" "rc=$rc $out"; fi
+
+g=$(gate_fixture gate-feature-partof "Part of $BL#30" '[]'); jq '.title="chore(x): y"' "$g/pr.json" > "$g/pr2" && mv "$g/pr2" "$g/pr.json"; bl_issue "$g" 30 'M1 — first run' "$BUSINESS"
+out=$(run "$g" --pr 3); rc=$?
+if [ "$rc" -eq 0 ] && grep -qF "✓ links $BL#30 (feature of business milestone" <<<"$out"; then
+  ok "gate: 'Part of' a backlog feature is reported as a feature link"
+else bad "gate: Part of a feature should be reported" "rc=$rc $out"; fi
+
+g=$(gate_fixture gate-feature-multiline '' "$BL_LINK"); bl_issue "$g" 30 'M1 — first run' $'First real run.\nrelease:  Business \nDue: autumn'
+out=$(run "$g" --pr 3); rc=$?
+if [ "$rc" -eq 0 ]; then ok "gate: the marker on its own line of a longer description counts, any case"
+else bad "gate: multi-line description should count" "rc=$rc $out"; fi
+
+g=$(gate_fixture gate-backlog-plain '' "$BL_LINK"); bl_issue "$g" 30 'v0.1.0' 'Tooling of the backlog itself.'
+out=$(run "$g" --pr 3); rc=$?
+if [ "$rc" -eq 1 ] && grep -qF "✗ closes $BL#30 but its milestone is \"v0.1.0\", not \"v0.2.0 The gates hold\"" <<<"$out"; then
+  ok "gate: a backlog issue in an ordinary milestone still has to match"
+else bad "gate: ordinary backlog milestone should fail" "rc=$rc $out"; fi
+
+g=$(gate_fixture gate-marker-elsewhere '' '[{"number":30,"repository":{"name":"other","owner":{"login":"acme"}}}]')
+jq -nc --arg d "$BUSINESS" '{milestone:{title:"M1 — first run",description:$d}}' > "$g/issue-acme_other-30.json"
+out=$(run "$g" --pr 3); rc=$?
+if [ "$rc" -eq 1 ]; then ok "gate: the marker outside the backlog repository does not make a feature"
+else bad "gate: marker elsewhere must not exempt" "rc=$rc $out"; fi
+
+g=$(gate_fixture gate-backlog-no-ms '' "$BL_LINK"); bl_issue "$g" 30 ""
+out=$(run "$g" --pr 3); rc=$?
+if [ "$rc" -eq 1 ]; then ok "gate: a backlog issue without a milestone is not a feature"
+else bad "gate: milestone-less backlog issue should fail" "rc=$rc $out"; fi
+
+g=$(gate_fixture gate-feature-no-pr-ms '' "$BL_LINK" ""); bl_issue "$g" 30 'M1 — first run' "$BUSINESS"
+out=$(run "$g" --pr 3); rc=$?
+if [ "$rc" -eq 1 ] && grep -qF "✗ no milestone" <<<"$out"; then
+  ok "gate: a feature link does not replace the PR's own milestone"
+else bad "gate: PR without milestone must still fail" "rc=$rc $out"; fi
+
+g=$(fixture audit-feature '[{"number":1,"title":"v0.2.0 The gates hold","state":"open"}]' '[{"number":3,"pull_request":{},"state":"open"}]')
+jq -nc --argjson links "$BL_LINK" '{number:3,title:"fix(x): y",state:"OPEN",body:"",closingIssuesReferences:$links,milestone:{title:"v0.2.0 The gates hold"}}' > "$g/pr.json"
+bl_issue "$g" 30 'M1 — first run' "$BUSINESS"
+out=$(run "$g"); rc=$?
+if [ "$rc" -eq 0 ]; then ok "audit: a PR of the milestone that closes a backlog feature is not an error"
+else bad "audit: feature link should not be an error" "rc=$rc $out"; fi
+bl_issue "$g" 30 'v0.1.0' 'plain'
+out=$(run "$g"); rc=$?
+if [ "$rc" -eq 1 ] && grep -qF "closes issue $BL#30 but that issue's milestone is 'v0.1.0'" <<<"$out"; then
+  ok "audit: a backlog issue in an ordinary milestone is still an error"
+else bad "audit: ordinary backlog milestone should fail" "rc=$rc $out"; fi
 
 printf '\n%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]
