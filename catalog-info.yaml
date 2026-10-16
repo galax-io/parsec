@@ -5,6 +5,9 @@ metadata:
   description: Go library of load-test result primitives — a canonical result model plus per-tool decoders (Gatling, with JMeter/k6/Locust/Yandex.Tank planned)
   annotations:
     github.com/project-slug: galax-io/parsec
+    galaxio.io/plans.backend: "contract: the platform ingests results in the parsec canonical model"
+    galaxio.io/plans.docker-images: "runtime: gatling-canary and record-corpus run Gatling in the runtime image"
+    galaxio.io/uses.spec-kit-galaxio-bootstrap: "process: created from the template, takes process updates via copier update"
 spec:
   type: library
   lifecycle: production
