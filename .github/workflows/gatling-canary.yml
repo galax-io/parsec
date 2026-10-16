@@ -51,7 +51,7 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-      - uses: sbt/setup-sbt@6158cb0903b8ceeae04f830055f3155e1b6a5ad7 # v1.5.11
+      - uses: sbt/setup-sbt@ecad189dd245444b9ae0a0cd5922fd938b88906f # v1.5.12
         with:
           disk-cache: false # FR-007: never restore the sbt 2 task cache
       # Keyed on the Gatling version, which setup-java's own sbt cache cannot see:
@@ -122,7 +122,7 @@ jobs:
             echo "no canary test ran"
             exit 1
           fi
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: gatling-run-${{ matrix.gatling }}
           path: ${{ env.SIMULATION }}/target/gatling/v${{ matrix.gatling }}
@@ -137,7 +137,7 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: gatling-run-*
           path: runs
