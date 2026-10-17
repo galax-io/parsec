@@ -277,6 +277,138 @@ func TestAnUnrecognisedReportFails(t *testing.T) {
 	}
 }
 
+// Attribute ordering is an unfamiliar row shape, not an absence of figures.
+func TestUnrecognisedStatisticsRowsFailTheRead(t *testing.T) {
+	t.Parallel()
+
+	doc, _ := unrecognisedRowsFixture(t)
+	path := writeReport(t, doc)
+
+	_, err := corpus.FromReportHTML(path)
+	if err == nil {
+		t.Fatal("FromReportHTML accepted statistics rows it could not recognise")
+	}
+
+	if errors.Is(err, corpus.ErrNoFigures) {
+		t.Fatalf("unrecognised statistics rows read as a known absence: %v", err)
+	}
+}
+
+// A console total cannot replace an HTML account whose tree was not understood.
+func TestAnUnrecognisedHTMLAccountFailsTheCall(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "index.html")
+	consolePath := filepath.Join(dir, "console.txt")
+	doc, console := unrecognisedRowsFixture(t)
+
+	if err := os.WriteFile(path, []byte(doc), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.WriteFile(consolePath, console, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := corpus.Accounts(dir)
+	if err == nil {
+		t.Fatal("Accounts skipped unrecognised HTML rows and returned only the console account")
+	}
+
+	if errors.Is(err, corpus.ErrNoFigures) {
+		t.Fatalf("Accounts returned a known absence for unreadable HTML rows: %v", err)
+	}
+}
+
+// unrecognisedRowsFixture derives a hand-edited HTML fixture and retains the
+// console account from the same recorded run.
+func unrecognisedRowsFixture(t *testing.T) (string, []byte) {
+	t.Helper()
+
+	raw, err := os.ReadFile(filepath.Join(corpusDir("3.15.1"), "index.html"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	doc := string(raw)
+	if rows := strings.Count(doc, `<tr id="`); rows != len(currentProbe) {
+		t.Fatalf("fixture source carries %d row openings; want %d", rows, len(currentProbe))
+	}
+
+	if !strings.Contains(doc, `<tr id="ROOT"`) {
+		t.Fatal("fixture source has no ROOT row to change")
+	}
+
+	console, err := os.ReadFile(filepath.Join(corpusDir("3.15.1"), "console.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	return strings.ReplaceAll(doc, `<tr id="`, `<tr class="row" id="`), console
+}
+
+// Only data rows within the two statistics tables distinguish unfamiliar
+// markup from a known absence. Column headings and other tables do not.
+func TestZeroMatchedRowsDistinguishUnfamiliarMarkupFromEmptyTables(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		head      string
+		body      string
+		outside   string
+		noFigures bool
+	}{
+		{"unfamiliar head row", `<tbody><tr class="row" id="ROOT"><td>102</td></tr></tbody>`, "", "", false},
+		{"unfamiliar body row", "", `<tbody><tr class="row" id="req_x"><td>102</td></tr></tbody>`, "", false},
+		{"direct table row", "", `<tr class="row" id="req_x"><td>102</td></tr>`, "", false},
+		{"row without attributes", "", `<tr><td>102</td></tr>`, "", false},
+		{"row with newline", "", "<tr\nclass=\"row\"><td>102</td></tr>", "", false},
+		{"self-closing row", "", `<tr/>`, "", false},
+		{"uppercase row", "", `<TR class="row"><td>102</td></TR>`, "", false},
+		{"empty tables", "", "", "", true},
+		{"headings and empty bodies", `<thead><tr><th>Total</th></tr></thead><tbody></tbody>`, `<tbody></tbody>`, "", true},
+		{"multiline heading with attributes", "<THEAD\nclass=\"columns\">\n<TR><TH>Total</TH></TR>\n</THEAD><tbody></tbody>", "", "", true},
+		{
+			"all paired headings", `<thead><tr><th>Total</th></tr></thead><thead><tr><th>OK</th></tr></thead>`,
+			`<thead><tr><th>Name</th></tr></thead>`, "", true,
+		},
+		{"row between paired headings", `<thead><tr><th>Total</th></tr></thead><tr class="row"><td>102</td></tr>` +
+			`<thead><tr><th>OK</th></tr></thead>`, "", "", false},
+		{
+			"unclosed heading leaves rows visible", `<thead><tr><th>Total</th></tr><tbody><tr class="row"><td>102</td></tr></tbody>`,
+			"", "", false,
+		},
+		{"track is not a row", `<tbody><track id="ROOT"></track></tbody>`, "", "", true},
+		{"outside table and script rows", "", "", `<table><tr id="ROOT"><td>102</td></tr></table>` +
+			`<script>const row = '<tr id="req_x"><td>102</td></tr>';</script>`, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			doc := tt.outside + `<table id="container_statistics_head">` + tt.head + `</table>` +
+				`<table id="container_statistics_body">` + tt.body + `</table>` + tt.outside
+			path := writeReport(t, doc)
+
+			_, err := corpus.FromReportHTML(path)
+			if err == nil {
+				t.Fatal("FromReportHTML accepted statistics tables with no supported rows")
+			}
+
+			if got := errors.Is(err, corpus.ErrNoFigures); got != tt.noFigures {
+				t.Fatalf("errors.Is(error, ErrNoFigures) = %t; want %t; error: %v", got, tt.noFigures, err)
+			}
+
+			if !strings.Contains(err.Error(), path) {
+				t.Errorf("the error %q must identify the report", err)
+			}
+		})
+	}
+}
+
 // Accounts fails on an artefact it cannot read rather than leaving it out. The
 // point of holding a decoder to a report is lost if an unreadable report reads
 // as agreement.
