@@ -3,9 +3,11 @@
 # Fires ONLY on a real git tag/push command, never on text that merely mentions one.
 # Bypass a deliberate release: LINKAGE_OFF=1 <cmd>
 #
-# Ported from galax-io/gatling-kafka-plugin, which had already solved the scoping
-# problem this repository then rediscovered the hard way. Keep the two in sync;
-# .claude/hooks/linkage-guard_test.sh is the shared contract.
+# This is the source every Galaxio repository copies. Change it here and carry the
+# change outward; linkage-guard_test.sh beside it is the contract those copies
+# share. It reached this shape after two repositories hit the same failure
+# independently — a `gh pr create` whose body documented the hook was blocked by
+# it, reporting a version that came from prose.
 #
 # One divergence, carried back the other way: the push rule does not treat a
 # release/N branch as a release. Publishing is what the tag does, a branch push
@@ -13,12 +15,13 @@
 # a release branch serves a whole minor line (release/1.2.0 -> v1.2.0, v1.2.1, …),
 # so for every patch release that name is the wrong version and the guard went
 # looking for a milestone that never existed. It blocked the documented release
-# procedure at its second step (parsec#46).
+# procedure at its second step.
 #
-# This is the fast in-session failure, not the authority: it only ever sees
-# commands the agent runs. .githooks/pre-push catches a push from any client by
-# reading the refs themselves, and release.yml runs the same check server-side
-# where nothing can bypass it.
+# This is the fast in-session failure, not the whole gate: it only ever sees
+# commands an agent runs, so a push from a terminal or an IDE never reaches it.
+# .githooks/pre-push catches those by reading the refs git hands it. Both run
+# locally and can be skipped; nothing checks server-side unless the project's
+# release workflow runs scripts/check-linkage.sh --for-tag itself.
 set -uo pipefail
 input=$(cat)
 cmd=$(printf '%s' "$input" | jq -r '.tool_input.command // ""' 2>/dev/null || true)

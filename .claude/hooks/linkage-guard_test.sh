@@ -2,9 +2,9 @@
 #
 # linkage-guard_test.sh — regression suite for .claude/hooks/linkage-guard.sh.
 #
-# Ported from galax-io/gatling-kafka-plugin together with the guard itself. Keep
-# the two suites in sync: they are the shared contract for a hook that half a
-# dozen repositories carry, and the cases below are the shapes it got wrong once.
+# This suite travels with the guard. It is the contract the copies in every
+# Galaxio repository share, and each case below is a shape the guard got wrong
+# at some point — keep them, and add to them rather than trimming.
 #
 # The guard must gate release tagging and nothing else. Two symmetric failures matter:
 # blocking a command that merely *mentions* tagging, and waving through a real tag hidden
@@ -82,7 +82,7 @@ run 2 'push --tags'                  'git push --tags'
 run 2 'push refs/tags'               'git push origin refs/tags/v1.0.7'
 # parsec diverges here, and the divergence belongs upstream too: publishing is
 # what the tag does, and a release branch serves a whole minor line, so its name
-# is the wrong version for every patch release (#46).
+# is the wrong version for every patch release in the repository that found it.
 run 0 'push a release branch'        'git push origin release/1.0'
 run 0 'fast-forward the release branch' 'git push origin origin/main:refs/heads/release/0.0.0'
 run 2 'commit && tag'                'git commit -m "prep" && git tag v1.0.7'
