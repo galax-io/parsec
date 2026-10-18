@@ -80,7 +80,12 @@ fixture() { # fixture <name> <milestones-json-array> [items-json-array]
   printf '%s' "$d"
 }
 
+# The cases that test other rules run with the feature requirement off (FEATURE_LINK=optional);
+# the cases at the end use run_strict, which leaves it at its default (required).
 run() { # run <fixture-dir> <args...>
+  GH_FIXTURE="$1" PATH="$tmp/bin:$PATH" REPO="acme/thing" BACKLOG_REPO="acme/backlog" FEATURE_LINK=optional bash "$script" "${@:2}" 2>&1
+}
+run_strict() { # run_strict <fixture-dir> <args...>
   GH_FIXTURE="$1" PATH="$tmp/bin:$PATH" REPO="acme/thing" BACKLOG_REPO="acme/backlog" bash "$script" "${@:2}" 2>&1
 }
 
@@ -147,7 +152,7 @@ printf '[]\n' > "$r/pulls-aaa.json"
 printf '{"number":99,"title":"an issue, not a PR","state":"MERGED","milestone":null,"closingIssuesReferences":[],"body":""}\n' > "$r/pr99.json"
 printf '[{"number":77}]\n' > "$r/pulls-bbb.json"
 printf '{"number":77,"title":"stray","state":"MERGED","milestone":null,"closingIssuesReferences":[],"body":""}\n' > "$r/pr77.json"
-out=$(GH_FIXTURE="$r" PATH="$tmp/bin:$PATH" REPO="acme/thing" bash "$script" --for-tag v0.0.2 2>&1)
+out=$(GH_FIXTURE="$r" PATH="$tmp/bin:$PATH" REPO="acme/thing" FEATURE_LINK=optional bash "$script" --for-tag v0.0.2 2>&1)
 if grep -q "PR #77 merged since v0.0.1" <<<"$out"; then
   ok "sees a PR merged in the range that the milestone query cannot"
 else
@@ -214,7 +219,9 @@ bl_issue() { # fixture-dir, number, milestone title, [milestone description]
 gate_fixture() { # name, pr body, closing-links JSON array, [pr milestone title]
   local d; d=$(fixture "$1" '[]' '[]')
   jq -nc --arg body "$2" --argjson links "$3" --arg ms "${4-v0.2.0 The gates hold}" \
+    --arg author "${PR_AUTHOR:-jigarkhwar}" --arg bot "${PR_BOT:-0}" --arg head "${PR_HEAD:-feat/x}" \
     '{number:3,title:"fix(x): y",state:"OPEN",baseRefName:"main",body:$body,closingIssuesReferences:$links,
+      author:{login:$author,is_bot:($bot == "1")},headRefName:$head,
       milestone:(if $ms == "" then null else {title:$ms} end)}' > "$d/pr.json"
   printf '{"milestone":{"title":"v0.1.0 Earlier"}}\n' > "$d/issue.json"
   printf '%s' "$d"
@@ -272,6 +279,82 @@ out=$(run "$g"); rc=$?
 if [ "$rc" -eq 1 ] && grep -qF "closes issue $BL#30 but that issue's milestone is 'v0.1.0'" <<<"$out"; then
   ok "audit: a backlog issue in an ordinary milestone is still an error"
 else bad "audit: ordinary backlog milestone should fail" "rc=$rc $out"; fi
+
+printf '\nevery PR links a feature of the backlog\n'
+OWN_LINK='[{"number":5}]'
+strict_pr() { # name, pr body, closing links, [title] -> fixture dir; issue #5 of this repo is in the PR's milestone
+  local d; d=$(gate_fixture "$1" "$2" "$3"); printf '{"milestone":{"title":"v0.2.0 The gates hold"}}\n' > "$d/issue.json"
+  if [ -n "${4:-}" ]; then jq --arg t "$4" '.title=$t' "$d/pr.json" > "$d/pr2" && mv "$d/pr2" "$d/pr.json"; fi
+  printf '%s' "$d"
+}
+
+g=$(strict_pr strict-none 'Closes #5' "$OWN_LINK")
+out=$(run_strict "$g" --pr 3); rc=$?
+if [ "$rc" -eq 1 ] && grep -qF '✗ links no feature of the backlog — add "Part of acme/backlog#<feature>" (maintenance with no feature of its own: the standing feature of the active business milestone, the issue with the label standing)' <<<"$out"; then
+  ok "strict: a PR that links no feature fails, with the message that says what to add"
+else bad "strict: no feature should fail" "rc=$rc $out"; fi
+
+g=$(strict_pr strict-chore '' '[]' 'chore(x): bump')
+out=$(run_strict "$g" --pr 3); rc=$?
+if [ "$rc" -eq 1 ] && grep -qF '✗ links no feature of the backlog' <<<"$out"; then
+  ok "strict: a PR that needs no issue still needs a feature"
+else bad "strict: chore without feature should fail" "rc=$rc $out"; fi
+
+g=$(strict_pr strict-part 'Part of acme/backlog#30' '[]' 'chore(x): bump'); bl_issue "$g" 30 'M1 — first run' "$BUSINESS"
+out=$(run_strict "$g" --pr 3); rc=$?
+if [ "$rc" -eq 0 ] && grep -qF "✓ links $BL#30 (feature of business milestone" <<<"$out"; then
+  ok "strict: Part of a feature passes"
+else bad "strict: Part of a feature should pass" "rc=$rc $out"; fi
+
+g=$(strict_pr strict-closes-and-part 'Closes #5
+Part of acme/backlog#30' "$OWN_LINK"); bl_issue "$g" 30 'M1 — first run' "$BUSINESS"
+out=$(run_strict "$g" --pr 3); rc=$?
+if [ "$rc" -eq 0 ] && grep -qF "✓ closes #5 (same milestone)" <<<"$out" && grep -qF "✓ links $BL#30 (feature of business milestone" <<<"$out"; then
+  ok "strict: a feature is seen next to a closing link to an issue of this repository"
+else bad "strict: closing link plus Part of a feature should pass" "rc=$rc $out"; fi
+
+g=$(strict_pr strict-closing-feature '' "$BL_LINK"); bl_issue "$g" 30 'M1 — first run' "$BUSINESS"
+out=$(run_strict "$g" --pr 3); rc=$?
+if [ "$rc" -eq 0 ] && ! grep -qF 'links no feature' <<<"$out"; then ok "strict: a closing link to a feature satisfies the rule"
+else bad "strict: closing link to a feature should pass" "rc=$rc $out"; fi
+
+g=$(strict_pr strict-not-feature 'Part of acme/backlog#31' '[]' 'chore(x): y'); bl_issue "$g" 31 'v0.1.0' 'Tooling of the backlog itself.'
+out=$(run_strict "$g" --pr 3); rc=$?
+if [ "$rc" -eq 1 ] && grep -qF '✗ links no feature of the backlog' <<<"$out"; then ok "strict: a backlog issue that is no feature does not satisfy the rule"
+else bad "strict: non-feature backlog issue should fail" "rc=$rc $out"; fi
+
+g=$(strict_pr strict-bot '' '[]' 'chore(deps): bump')
+jq '.author={login:"dependabot[bot]",is_bot:true}' "$g/pr.json" > "$g/p2" && mv "$g/p2" "$g/pr.json"
+out=$(run_strict "$g" --pr 3); rc=$?
+if [ "$rc" -eq 0 ] && grep -qF "a bot's PR needs no feature" <<<"$out"; then ok "strict: a bot's PR is exempt"
+else bad "strict: bot PR should pass" "rc=$rc $out"; fi
+
+for br in dependabot/go_modules/x update/scalafmt-3.9.0; do
+  g=$(strict_pr "strict-branch-${br%%/*}" '' '[]' 'chore(deps): bump'); jq --arg b "$br" '.headRefName=$b' "$g/pr.json" > "$g/p2" && mv "$g/p2" "$g/pr.json"
+  out=$(run_strict "$g" --pr 3); rc=$?
+  if [ "$rc" -eq 0 ]; then ok "strict: the branch $br is exempt"; else bad "strict: $br should be exempt" "rc=$rc $out"; fi
+done
+
+g=$(strict_pr strict-human-update '' '[]' 'chore(x): y'); jq '.headRefName="feat/update-docs"' "$g/pr.json" > "$g/p2" && mv "$g/p2" "$g/pr.json"
+out=$(run_strict "$g" --pr 3); rc=$?
+if [ "$rc" -eq 1 ]; then ok "strict: a human's branch is not exempt"; else bad "strict: human branch should fail" "rc=$rc $out"; fi
+
+g=$(strict_pr strict-backlog-itself '' '[]' 'chore(x): y')
+out=$(GH_FIXTURE="$g" PATH="$tmp/bin:$PATH" REPO="acme/backlog" BACKLOG_REPO="acme/backlog" bash "$script" --pr 3 2>&1); rc=$?
+if ! grep -qF 'links no feature' <<<"$out"; then ok "strict: a PR of the backlog repository itself is exempt"
+else bad "strict: backlog's own PR should be exempt" "rc=$rc $out"; fi
+
+g=$(fixture strict-audit '[{"number":1,"title":"v0.2.0 The gates hold","state":"open"}]' '[{"number":3,"pull_request":{},"state":"open"}]')
+jq -nc '{number:3,title:"chore(x): y",state:"OPEN",body:"",closingIssuesReferences:[],author:{login:"jigarkhwar",is_bot:false},headRefName:"feat/x",milestone:{title:"v0.2.0 The gates hold"}}' > "$g/pr.json"
+out=$(run_strict "$g"); rc=$?
+if [ "$rc" -eq 0 ] && grep -qF '! PR #3 links no feature of the backlog' <<<"$out"; then ok "strict audit: a PR without a feature is a warning, not an error"
+else bad "strict audit: should warn" "rc=$rc $out"; fi
+
+g=$(strict_pr strict-optional '' '[]' 'chore(x): y')
+out=$(run "$g" --pr 3); rc=$?
+if [ "$rc" -eq 0 ]; then ok "FEATURE_LINK=optional lets a PR without a feature pass"; else bad "optional should pass" "rc=$rc $out"; fi
+out=$(GH_FIXTURE="$g" PATH="$tmp/bin:$PATH" REPO="acme/thing" FEATURE_LINK=nonsense bash "$script" --pr 3 2>&1); rc=$?
+if [ "$rc" -eq 2 ]; then ok "an unknown FEATURE_LINK value is refused with exit 2"; else bad "nonsense should exit 2" "rc=$rc $out"; fi
 
 printf '\n%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]
