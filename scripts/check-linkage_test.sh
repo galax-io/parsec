@@ -36,6 +36,18 @@ emit() { if [ -n "$expr" ]; then jq -r "$expr"; else cat; fi; }
 # --slurp sees exactly what the real gh would give it.
 page() { case "$args" in *--slurp*) jq -c '[.]' < "$1" ;; *) cat "$1" ;; esac | emit; }
 
+# Every call logs the token it ran with. When a `backlog-hidden` fixture exists the backlog is private:
+# a call about it fails unless GH_TOKEN is the backlog token.
+printf '%s\t%s\n' "${GH_TOKEN:-}" "$args" >> "$GH_FIXTURE/calls.log"
+if [ -f "$GH_FIXTURE/backlog-hidden" ]; then
+  case "$args" in
+    *"acme/backlog"*) [ "${GH_TOKEN:-}" = backlog-secret ] || { echo "gh: Could not resolve to a Repository (HTTP 404)" >&2; exit 1; } ;;
+  esac
+fi
+case "$args" in
+  "api repos/acme/backlog "*) exit 0 ;;
+esac
+
 case "$args" in
   "pr view 77 "*) emit < "$GH_FIXTURE/pr77.json" ;;
   "pr view 99 "*) emit < "$GH_FIXTURE/pr99.json" ;;
@@ -355,6 +367,41 @@ out=$(run "$g" --pr 3); rc=$?
 if [ "$rc" -eq 0 ]; then ok "FEATURE_LINK=optional lets a PR without a feature pass"; else bad "optional should pass" "rc=$rc $out"; fi
 out=$(GH_FIXTURE="$g" PATH="$tmp/bin:$PATH" REPO="acme/thing" FEATURE_LINK=nonsense bash "$script" --pr 3 2>&1); rc=$?
 if [ "$rc" -eq 2 ]; then ok "an unknown FEATURE_LINK value is refused with exit 2"; else bad "nonsense should exit 2" "rc=$rc $out"; fi
+
+printf '\nthe private backlog is read with BACKLOG_READ_TOKEN\n'
+hidden_pr() { # name -> a PR whose only link is Part of a feature of a backlog the job token cannot read
+  local d; d=$(strict_pr "$1" 'Part of acme/backlog#30' '[]' 'chore(x): y'); bl_issue "$d" 30 'M1 — first run' "$BUSINESS"
+  : > "$d/backlog-hidden"; printf '%s' "$d"
+}
+g=$(hidden_pr token-hidden)
+out=$(run_strict "$g" --pr 3); rc=$?
+if [ "$rc" -eq 1 ] && grep -qF 'cannot read the backlog acme/backlog' <<<"$out" && grep -qF 'give the job BACKLOG_READ_TOKEN' <<<"$out" \
+   && ! grep -qF 'links no feature' <<<"$out"; then
+  ok "token: an unreadable backlog fails and names the missing token, not 'links no feature'"
+else bad "token: hidden backlog should name the token" "rc=$rc $out"; fi
+
+g=$(hidden_pr token-closing); jq '.body="" | .closingIssuesReferences=[{"number":30,"repository":{"name":"backlog","owner":{"login":"acme"}}}]' "$g/pr.json" > "$g/p2" && mv "$g/p2" "$g/pr.json"
+out=$(run_strict "$g" --pr 3); rc=$?
+if [ "$rc" -eq 1 ] && grep -qF 'give the job BACKLOG_READ_TOKEN' <<<"$out" && ! grep -qF 'its milestone is' <<<"$out"; then
+  ok "token: a closing link into an unreadable backlog names the token, not 'milestone is none'"
+else bad "token: hidden closing link should name the token" "rc=$rc $out"; fi
+
+g=$(hidden_pr token-given)
+out=$(BACKLOG_READ_TOKEN=backlog-secret GH_TOKEN=job-token run_strict "$g" --pr 3); rc=$?
+if [ "$rc" -eq 0 ] && grep -qF "✓ links $BL#30 (feature of business milestone" <<<"$out"; then ok "token: with BACKLOG_READ_TOKEN the feature is seen"
+else bad "token: backlog token should work" "rc=$rc $out"; fi
+if awk -F'\t' '{ b = index($2, "acme/backlog") > 0
+                  if (b && $1 != "backlog-secret") bad = 1       # a backlog call without the backlog token
+                  if (!b && $1 == "backlog-secret") bad = 1      # the backlog token on any other call
+                  if ($2 ~ /^pr view/ && $1 == "job-token") pr = 1 }
+                END { exit (bad || !pr) }' "$g/calls.log"; then
+  ok "token: the backlog token goes to backlog calls only; the job token reads the PR"
+else bad "token: tokens leaked across calls" "$(cat "$g/calls.log")"; fi
+
+g=$(strict_pr token-readable 'Part of acme/backlog#30' '[]' 'chore(x): y'); bl_issue "$g" 30 'M1 — first run' "$BUSINESS"
+out=$(GH_TOKEN=job-token run_strict "$g" --pr 3); rc=$?
+if [ "$rc" -eq 0 ] && ! grep -qF 'BACKLOG_READ_TOKEN' <<<"$out"; then ok "token: a readable backlog needs no token and is unchanged"
+else bad "token: readable backlog should be unchanged" "rc=$rc $out"; fi
 
 printf '\n%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]
