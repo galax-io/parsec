@@ -14,64 +14,33 @@
 
 <!--
   ACTION REQUIRED: Replace the content in this section with the technical details
-  for this feature. The defaults below are the parsec module's standing facts
-  (constitution: Quality Gates & Tooling). Keep them unless the feature changes them,
-  and fill every bracketed item or mark it NEEDS CLARIFICATION.
+  for the project. The structure here is presented in advisory capacity to guide
+  the iteration process.
 -->
 
-**Language/Version**: Go 1.25 (`go.mod` is authoritative)
+**Language/Version**: [e.g., Python 3.11, Swift 5.9, Rust 1.75 or NEEDS CLARIFICATION]
 
-**Primary Dependencies**: standard library only in `model/` and `gatling/`; no module is pre-approved anywhere (Principle IV). [Any module at all: name it here, justify it in research.md, ask first]
+**Primary Dependencies**: [e.g., FastAPI, UIKit, LLVM or NEEDS CLARIFICATION]
 
-**Storage**: N/A (artefacts are read through `io.Reader`; nothing is persisted) [or feature-specific]
+**Storage**: [if applicable, e.g., PostgreSQL, CoreData, files or N/A]
 
-**Testing**: stdlib `testing`, table-driven; golden corpus under `testdata/corpus/<tool>/<version>/`; `go test -race -shuffle=on ./...`; integration suite behind `-tags=integration`
+**Testing**: [e.g., pytest, XCTest, cargo test or NEEDS CLARIFICATION]
 
-**Engineering guidance**: the skills this change requires reading, and any it must not follow — see the constitution, Quality Gates & Tooling → Engineering Guidance (Skills). Name the required-reading rows this change triggers (exported identifiers → `golang-naming`, errors → `golang-error-handling`, tests → `golang-testing`, doc comments → `golang-documentation`, exported types → `golang-structs-interfaces`), any *consult* row whose occasion has arisen, and record in research.md every place a skill and this constitution disagreed. [Or: none triggered — say so and why]
+**Target Platform**: [e.g., Linux server, iOS 15+, WASM or NEEDS CLARIFICATION]
 
-**Target Platform**: any Go 1.25 target; consumed as a library by galaxio-cli, the comet sidecar and the Galaxio backend
+**Project Type**: [e.g., library/cli/web-service/mobile-app/compiler/desktop-app or NEEDS CLARIFICATION]
 
-**Project Type**: library (Go module `github.com/galax-io/parsec`)
+**Performance Goals**: [domain-specific, e.g., 1000 req/s, 10k lines/sec, 60 fps or NEEDS CLARIFICATION]
 
-**Performance Goals**: [decoder throughput and peak memory on the largest corpus file, e.g. "≥ 200 MB/s and < 64 MiB peak on a 2 GB simulation.log" or NEEDS CLARIFICATION]
+**Constraints**: [domain-specific, e.g., <200ms p95, <100MB memory, offline-capable or NEEDS CLARIFICATION]
 
-**Constraints**: streaming with bounded memory; chunked == whole-file; version-gated reads; [feature-specific constraints or NEEDS CLARIFICATION]
-
-**Scale/Scope**: [tool versions covered, artefact sizes, record kinds, e.g. "Gatling 3.11.5–3.12.x, logs up to 5 GB, 5 record kinds" or NEEDS CLARIFICATION]
+**Scale/Scope**: [domain-specific, e.g., 10k users, 1M LOC, 50 screens or NEEDS CLARIFICATION]
 
 ## Constitution Check
 
 *GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
 
-Source: `.specify/memory/constitution.md` — cite the version in force, and re-check when a feature amends it in its own branch. Mark each gate PASS, or FAIL with a row in
-Complexity Tracking. N/A is allowed only with a one-line reason.
-
-- [ ] **I. Canonical Model First** — new or changed result data lives in `model/` types; no
-      tool package exports a consumer-facing result type; tool packages import only
-      `model/` and `internal/`; everything the source cannot supply is declared through
-      `Capabilities`, never defaulted; **nothing here computes a count, a mean, a
-      percentile, a range or a series** — this module owns the definitions a consumer
-      computes from, not the arithmetic.
-- [ ] **II. Version-Gated, Streaming Decoders** — every artefact read passes the version gate
-      (refuse below range, decode with a warning above); the codec's range equals its corpus
-      coverage; `io.Reader` entry point with bounded memory and capped allocations; chunked
-      and whole-file reads agree; errors carry offsets; no panic/recover control flow.
-- [ ] **III. Golden-Corpus Testing** — corpus recordings from real runs listed for every
-      version touched, each captured with that run's own tool report (or the entry recording
-      that the tool version produced none); byte-for-byte and report-tolerance assertions planned with their
-      tolerances documented; coverage stays ≥ 90% (decoder packages) / 80% (overall); each
-      bug fixed gets a regression test; no mocks where a real artefact exists.
-- [ ] **IV. Minimal, Explicit Dependencies** — `model/` and `gatling/` stay stdlib-only; any
-      new module is named above, justified in research.md and approved before implementation.
-- [ ] **V. Compatibility-Sensitive Public API** — exported API additions and changes listed in
-      contracts/; breaking changes flagged in the spec and approved; deprecation path defined;
-      `CHANGELOG.md` entry planned; doc comment for every new exported identifier.
-- [ ] **VI. Idiomatic, Simple Go** — no abstraction without a current need; `.golangci.yml`
-      unchanged or the change justified; errors as values; no control flow by panic; the
-      required-reading skills for this change were read and any disagreement with this
-      constitution is recorded in research.md.
-- [ ] **Workflow** — feature assigned to a milestone; spec artifacts committed as
-      `docs(speckit): …` before implementation; each tracked issue maps to one green commit.
+[Gates determined based on constitution file]
 
 ## Project Structure
 
@@ -89,23 +58,50 @@ specs/[###-feature]/
 
 ### Source Code (repository root)
 <!--
-  ACTION REQUIRED: parsec is a single Go module with packages at the repository root
-  (constitution Principle I; AGENTS.md "Structure"). Keep only the packages this feature
-  touches, and expand them with the real files the feature adds or changes.
+  ACTION REQUIRED: Replace the placeholder tree below with the concrete layout
+  for this feature. Delete unused options and expand the chosen structure with
+  real paths (e.g., apps/admin, packages/something). The delivered plan must
+  not include Option labels.
 -->
 
 ```text
-model/                              # canonical result types and Capabilities
-gatling/                            # text + binary simulation.log codecs, version gate
-gatling/run/                        # finding which run to read
-jmeter/  k6/  locust/  phout/       # one adapter package per tool, added by milestone
-internal/                           # helpers shared across packages; not public API
-testdata/corpus/<tool>/<version>/   # golden artefacts recorded from real runs
-<pkg>/*_test.go                     # table-driven tests beside the code they cover
+# [REMOVE IF UNUSED] Option 1: Single project (DEFAULT)
+src/
+├── models/
+├── services/
+├── cli/
+└── lib/
+
+tests/
+├── contract/
+├── integration/
+└── unit/
+
+# [REMOVE IF UNUSED] Option 2: Web application (when "frontend" + "backend" detected)
+backend/
+├── src/
+│   ├── models/
+│   ├── services/
+│   └── api/
+└── tests/
+
+frontend/
+├── src/
+│   ├── components/
+│   ├── pages/
+│   └── services/
+└── tests/
+
+# [REMOVE IF UNUSED] Option 3: Mobile + API (when "iOS/Android" detected)
+api/
+└── [same as backend above]
+
+ios/ or android/
+└── [platform-specific structure: feature modules, UI flows, platform tests]
 ```
 
-**Structure Decision**: [Name the packages this feature adds or changes, the corpus
-directories it records, and any new `internal/` package with the reason it is not public]
+**Structure Decision**: [Document the selected structure and reference the real
+directories captured above]
 
 ## Complexity Tracking
 
@@ -113,5 +109,5 @@ directories it records, and any new `internal/` package with the reason it is no
 
 | Violation | Why Needed | Simpler Alternative Rejected Because |
 |-----------|------------|-------------------------------------|
-| [e.g., a third-party module anywhere in the module] | [current need] | [why the standard library is insufficient] |
-| [e.g., exported tool-specific result type] | [specific problem] | [why a model/ type plus Capabilities cannot express it] |
+| [e.g., 4th project] | [current need] | [why 3 projects insufficient] |
+| [e.g., Repository pattern] | [specific problem] | [why direct DB access insufficient] |

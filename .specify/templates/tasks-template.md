@@ -9,7 +9,7 @@ description: "Task list template for feature implementation"
 
 **Prerequisites**: plan.md (required), spec.md (required for user stories), research.md, data-model.md, contracts/
 
-**Tests**: Test tasks are REQUIRED (constitution Principle III, Golden-Corpus Testing). Every user story phase lists its corpus, equivalence and tolerance tests before its implementation tasks, and every bug fix ships a regression test. Tests are written first and MUST fail before the implementation task starts.
+**Tests**: The examples below include test tasks. Tests are OPTIONAL - only include them if explicitly requested in the feature specification.
 
 **Organization**: Tasks are grouped by user story to enable independent implementation and testing of each story.
 
@@ -21,12 +21,10 @@ description: "Task list template for feature implementation"
 
 ## Path Conventions
 
-parsec is a single Go module with packages at the repository root (see plan.md "Source Code"):
-
-- **Packages**: `model/`, `gatling/`, one `<tool>/` package per adapter, `internal/` for shared non-public helpers
-- **Tests**: `<pkg>/<file>_test.go` beside the code; table-driven on stdlib `testing`
-- **Golden corpus**: `testdata/corpus/<tool>/<version>/`, recorded from real runs with that run's own tool report beside it; a hand-edited fixture says so in its name
-- Paths below are examples for a Gatling decoder story - adjust based on plan.md structure
+- **Single project**: `src/`, `tests/` at repository root
+- **Web app**: `backend/src/`, `frontend/src/`
+- **Mobile**: `api/src/`, `ios/src/` or `android/src/`
+- Paths shown below assume single project - adjust based on plan.md structure
 
 <!--
   ============================================================================
@@ -49,11 +47,11 @@ parsec is a single Go module with packages at the repository root (see plan.md "
 
 ## Phase 1: Setup (Shared Infrastructure)
 
-**Purpose**: Package skeleton and golden corpus for this feature
+**Purpose**: Project initialization and basic structure
 
-- [ ] T001 Create the package directories named in plan.md (e.g. gatling/, testdata/corpus/gatling/3.12.1/)
-- [ ] T002 Record the golden corpus for every version in scope into testdata/corpus/<tool>/<version>/ with the tool's own report beside it — unrecoverable later, so it is captured now or never (Principle III)
-- [ ] T003 [P] Confirm .golangci.yml needs no change for this feature; if it does, justify it in plan.md Complexity Tracking
+- [ ] T001 Create project structure per implementation plan
+- [ ] T002 Initialize [language] project with [framework] dependencies
+- [ ] T003 [P] Configure linting and formatting tools
 
 ---
 
@@ -65,11 +63,12 @@ parsec is a single Go module with packages at the repository root (see plan.md "
 
 Examples of foundational tasks (adjust based on your project):
 
-- [ ] T004 Define the model types and Capabilities every story depends on in model/<file>.go
-- [ ] T005 [P] Implement the version gate (refuse below range, warn above) in <tool>/version.go
-- [ ] T006 [P] Define error types that carry byte offset or line number in <tool>/errors.go
-- [ ] T007 Add the io.Reader-based decoder skeleton with bounded buffers and allocation caps in <tool>/decoder.go
-- [ ] T008 Add the benchmark harness over the largest corpus file in <tool>/decoder_bench_test.go
+- [ ] T004 Setup database schema and migrations framework
+- [ ] T005 [P] Implement authentication/authorization framework
+- [ ] T006 [P] Setup API routing and middleware structure
+- [ ] T007 Create base models/entities that all stories depend on
+- [ ] T008 Configure error handling and logging infrastructure
+- [ ] T009 Setup environment configuration management
 
 **Checkpoint**: Foundation ready - user story implementation can now begin in parallel
 
@@ -81,20 +80,21 @@ Examples of foundational tasks (adjust based on your project):
 
 **Independent Test**: [How to verify this story works on its own]
 
-### Tests for User Story 1 (REQUIRED - write first, MUST fail before implementation) ⚠️
+### Tests for User Story 1 (OPTIONAL - only if tests requested) ⚠️
 
-- [ ] T009 [P] [US1] Golden test: decode testdata/corpus/<tool>/<version>/ and compare byte for byte with the recorded record stream in <tool>/decoder_test.go
-- [ ] T010 [P] [US1] Equivalence test: chunked reads == whole-file read for every corpus file in <tool>/decoder_chunk_test.go
-- [ ] T011 [P] [US1] Version-gate test: below range refused with both versions in the error, unknown newer decodes with a warning in <tool>/version_test.go
-- [ ] T012 [US1] Tolerance test: counts folded from the decoded records against the tool's own report, within the documented tolerance, in <tool>/<file>_test.go — the test computes them, the library does not
+> **NOTE: Write these tests FIRST, ensure they FAIL before implementation**
+
+- [ ] T010 [P] [US1] Contract test for [endpoint] in tests/contract/test_[name].py
+- [ ] T011 [P] [US1] Integration test for [user journey] in tests/integration/test_[name].py
 
 ### Implementation for User Story 1
 
-- [ ] T013 [P] [US1] Add [Entity1] to model/<file>.go with doc comments
-- [ ] T014 [P] [US1] Declare what this source cannot provide through Capabilities in <tool>/capabilities.go
-- [ ] T015 [US1] Implement record decoding for [record kinds] in <tool>/decoder.go (depends on T013, T014)
-- [ ] T016 [US1] Wire malformed-input errors with offsets and the allocation caps in <tool>/decoder.go
-- [ ] T017 [US1] Doc comments for every new exported identifier; CHANGELOG.md entry under Unreleased
+- [ ] T012 [P] [US1] Create [Entity1] model in src/models/[entity1].py
+- [ ] T013 [P] [US1] Create [Entity2] model in src/models/[entity2].py
+- [ ] T014 [US1] Implement [Service] in src/services/[service].py (depends on T012, T013)
+- [ ] T015 [US1] Implement [endpoint/feature] in src/[location]/[file].py
+- [ ] T016 [US1] Add validation and error handling
+- [ ] T017 [US1] Add logging for user story 1 operations
 
 **Checkpoint**: At this point, User Story 1 should be fully functional and testable independently
 
@@ -106,16 +106,16 @@ Examples of foundational tasks (adjust based on your project):
 
 **Independent Test**: [How to verify this story works on its own]
 
-### Tests for User Story 2 (REQUIRED - write first, MUST fail before implementation) ⚠️
+### Tests for User Story 2 (OPTIONAL - only if tests requested) ⚠️
 
-- [ ] T018 [P] [US2] Golden test for [version or format] in <tool>/<file>_test.go
-- [ ] T019 [P] [US2] Equivalence or tolerance test for [scenario] in <pkg>/<file>_test.go
+- [ ] T018 [P] [US2] Contract test for [endpoint] in tests/contract/test_[name].py
+- [ ] T019 [P] [US2] Integration test for [user journey] in tests/integration/test_[name].py
 
 ### Implementation for User Story 2
 
-- [ ] T020 [P] [US2] Add [Entity] to model/<file>.go
-- [ ] T021 [US2] Implement [codec or aggregation] in <pkg>/<file>.go
-- [ ] T022 [US2] Extend Capabilities or the version gate for [scope] in <tool>/<file>.go
+- [ ] T020 [P] [US2] Create [Entity] model in src/models/[entity].py
+- [ ] T021 [US2] Implement [Service] in src/services/[service].py
+- [ ] T022 [US2] Implement [endpoint/feature] in src/[location]/[file].py
 - [ ] T023 [US2] Integrate with User Story 1 components (if needed)
 
 **Checkpoint**: At this point, User Stories 1 AND 2 should both work independently
@@ -128,16 +128,16 @@ Examples of foundational tasks (adjust based on your project):
 
 **Independent Test**: [How to verify this story works on its own]
 
-### Tests for User Story 3 (REQUIRED - write first, MUST fail before implementation) ⚠️
+### Tests for User Story 3 (OPTIONAL - only if tests requested) ⚠️
 
-- [ ] T024 [P] [US3] Golden test for [version or format] in <tool>/<file>_test.go
-- [ ] T025 [P] [US3] Regression or tolerance test for [scenario] in <pkg>/<file>_test.go
+- [ ] T024 [P] [US3] Contract test for [endpoint] in tests/contract/test_[name].py
+- [ ] T025 [P] [US3] Integration test for [user journey] in tests/integration/test_[name].py
 
 ### Implementation for User Story 3
 
-- [ ] T026 [P] [US3] Add [Entity] to model/<file>.go
-- [ ] T027 [US3] Implement [codec or aggregation] in <pkg>/<file>.go
-- [ ] T028 [US3] Extend Capabilities or the version gate for [scope] in <tool>/<file>.go
+- [ ] T026 [P] [US3] Create [Entity] model in src/models/[entity].py
+- [ ] T027 [US3] Implement [Service] in src/services/[service].py
+- [ ] T028 [US3] Implement [endpoint/feature] in src/[location]/[file].py
 
 **Checkpoint**: All user stories should now be independently functional
 
@@ -151,11 +151,11 @@ Examples of foundational tasks (adjust based on your project):
 
 **Purpose**: Improvements that affect multiple user stories
 
-- [ ] TXXX [P] CHANGELOG.md entries complete under Unreleased (Keep a Changelog)
-- [ ] TXXX [P] godoc review: every exported identifier documented; decoders state the versions they accept
-- [ ] TXXX Coverage check: ≥ 90% decoder packages, ≥ 80% overall (go test -cover ./...); numbers go in the PR description
-- [ ] TXXX Benchmark on the largest corpus file; record throughput and peak memory in plan.md
-- [ ] TXXX Verify model/ and gatling/ are still stdlib-only (go list -deps) and go mod tidy is clean
+- [ ] TXXX [P] Documentation updates in docs/
+- [ ] TXXX Code cleanup and refactoring
+- [ ] TXXX Performance optimization across all stories
+- [ ] TXXX [P] Additional unit tests (if requested) in tests/unit/
+- [ ] TXXX Security hardening
 - [ ] TXXX Run quickstart.md validation
 
 ---
@@ -179,9 +179,9 @@ Examples of foundational tasks (adjust based on your project):
 
 ### Within Each User Story
 
-- Tests MUST be written and FAIL before implementation
-- Model types before decoders
-- Decoders before anything that folds their output
+- Tests (if included) MUST be written and FAIL before implementation
+- Models before services
+- Services before endpoints
 - Core implementation before integration
 - Story complete before moving to next priority
 
@@ -191,7 +191,7 @@ Examples of foundational tasks (adjust based on your project):
 - All Foundational tasks marked [P] can run in parallel (within Phase 2)
 - Once Foundational phase completes, all user stories can start in parallel (if team capacity allows)
 - All tests for a user story marked [P] can run in parallel
-- Model types within a story marked [P] can run in parallel
+- Models within a story marked [P] can run in parallel
 - Different user stories can be worked on in parallel by different team members
 
 ---
@@ -199,14 +199,13 @@ Examples of foundational tasks (adjust based on your project):
 ## Parallel Example: User Story 1
 
 ```bash
-# Launch all tests for User Story 1 together:
-Task: "Golden test for testdata/corpus/gatling/3.12.1/ in gatling/decoder_test.go"
-Task: "Chunked vs whole-file equivalence test in gatling/decoder_chunk_test.go"
-Task: "Version-gate test in gatling/version_test.go"
+# Launch all tests for User Story 1 together (if tests requested):
+Task: "Contract test for [endpoint] in tests/contract/test_[name].py"
+Task: "Integration test for [user journey] in tests/integration/test_[name].py"
 
-# Launch all model work for User Story 1 together:
-Task: "Add [Entity1] to model/sample.go"
-Task: "Declare Capabilities in gatling/capabilities.go"
+# Launch all models for User Story 1 together:
+Task: "Create [Entity1] model in src/models/[entity1].py"
+Task: "Create [Entity2] model in src/models/[entity2].py"
 ```
 
 ---
@@ -248,6 +247,6 @@ With multiple developers:
 - [Story] label maps task to specific user story for traceability
 - Each user story should be independently completable and testable
 - Verify tests fail before implementing
-- One tracked issue = one semantic commit, green on its own (go build ./... && go test ./...)
+- Commit after each task or logical group
 - Stop at any checkpoint to validate story independently
 - Avoid: vague tasks, same file conflicts, cross-story dependencies that break independence
