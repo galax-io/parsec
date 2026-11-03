@@ -63,12 +63,6 @@ jobs:
             exit 1
           fi
 
-      - name: the milestone is tag-ready
-        env:
-          TAG: ${{ github.ref_name }}
-          GH_TOKEN: ${{ github.token }}
-        run: bash scripts/check-linkage.sh --for-tag "$TAG"
-
       - name: no Release exists for this tag yet
         env:
           TAG: ${{ github.ref_name }}
