@@ -2,7 +2,11 @@ version: 2
 updates:
   - package-ecosystem: gomod
     directory: /
-    schedule: { interval: weekly, day: friday }
+    schedule:
+      interval: weekly
+      day: saturday
+      time: "01:00"
+      timezone: Etc/UTC
     groups:
       go-minor-patch:
         update-types: [minor, patch]
@@ -13,7 +17,11 @@ updates:
   # not the tags, and a pull request from it moves a 40-character hash.
   - package-ecosystem: github-actions
     directory: /
-    schedule: { interval: weekly, day: friday }
+    schedule:
+      interval: weekly
+      day: saturday
+      time: "01:20"
+      timezone: Etc/UTC
     groups:
       actions:
         patterns: ['*']
