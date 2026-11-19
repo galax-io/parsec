@@ -69,7 +69,7 @@ Scope: the files directly in DIR. A composite action's own `action.yml` elsewher
 tree is not read by this gate, and `uses: ./.github/actions/...` is exempt by rule 1, so
 a local composite action is unpinned territory. Say so before adding one.
 
-Requires python3 with PyYAML, which is what parsing costs. verify.yml installs it pinned.
+Requires uv, which runs the parser with PyYAML pinned: that is what parsing costs.
 
 Usage:
   scripts/check-pins.sh [--dir DIR]
@@ -107,17 +107,17 @@ shopt -u nullglob
 
 [ ${#files[@]} -gt 0 ] || { echo "check-pins: no workflow found in $DIR" >&2; exit 2; }
 
-command -v python3 > /dev/null 2>&1 \
-  || { echo "check-pins: python3 is needed to parse the workflows" >&2; exit 2; }
+command -v uv > /dev/null 2>&1 \
+  || { echo "check-pins: uv is needed to parse the workflows (https://docs.astral.sh/uv/)" >&2; exit 2; }
 
-python3 -c 'import yaml' 2>/dev/null \
-  || { echo "check-pins: PyYAML is needed to parse the workflows (pip install PyYAML)" >&2; exit 2; }
+uv run --no-project --with 'pyyaml==6.0.3' python -I -c 'import yaml' 2>/dev/null \
+  || { echo "check-pins: uv could not provide PyYAML to parse the workflows" >&2; exit 2; }
 
 # The checker prints its own findings, so that a workflow line containing a tab or a
 # newline cannot forge or split a record on the way back through the shell. It exits 0
 # or 1, and the summary line below is the only thing this file adds to its verdict.
 status=0
-python3 - "${files[@]}" <<'PYEOF' || status=$?
+uv run --no-project --with 'pyyaml==6.0.3' python -I - "${files[@]}" <<'PYEOF' || status=$?
 import re
 import sys
 

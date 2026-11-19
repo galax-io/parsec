@@ -61,16 +61,17 @@ jobs:
         run: go vet ./...
       - name: go build
         run: go build ./...
-      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
-        with:
-          python-version: "3.13"
-      - name: install the workflow parser
+      - name: Set up uv
         # check-pins.sh reads the parsed YAML rather than the lines, because a line
         # matcher cannot tell a `uses:` key from the same text inside a scalar — it
         # refused a step whose name mentioned one and passed the explicit-key spelling
-        # of a real one. Pinned for the reason the nfr job pins its validator: a parser
-        # that changes under us turns a green gate red without a change to what it checks.
-        run: pip install --disable-pip-version-check 'PyYAML==6.0.3'
+        # of a real one. It runs the parser through uv with PyYAML pinned, for the reason
+        # the nfr job pins its validator: a parser that changes under us turns a green
+        # gate red without a change to what it checks.
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: "0.13.9"
+          enable-cache: false
       - name: the process material stays out of the module zip
         # Three go.mod sentinels keep specs/, .specify/ and .claude/ out of a
         # consumer's download — 62% of it. .specify/ is copier-managed and .claude/ is
@@ -190,13 +191,14 @@ jobs:
       MIRROR: specs/003-canonical-model/contracts/nfr.yaml
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+      - name: Set up uv
+        # The validator is pinned where it runs, in the step below, for the same
+        # reason golangci-lint is: a validator that changes under us turns a green
+        # gate red without a change to what it checks.
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
-          python-version: "3.13"
-      - name: install the validator
-        # Pinned for the same reason golangci-lint is: a validator that changes
-        # under us turns a green gate red without a change to what it checks.
-        run: pip install --disable-pip-version-check 'jsonschema==4.26.0' 'PyYAML==6.0.3'
+          version: "0.13.9"
+          enable-cache: false
       - name: fetch the published schema
         run: |
           set -euo pipefail
@@ -216,7 +218,8 @@ jobs:
         run: |
           set -euo pipefail
           test -f "$DOCUMENT" || { echo "no document at $DOCUMENT"; exit 1; }
-          python3 - "$DOCUMENT" <<'PYEOF'
+          uv run --no-project --with 'jsonschema==4.26.0' --with 'PyYAML==6.0.3' \
+            python -I - "$DOCUMENT" <<'PYEOF'
           import json, sys
           import yaml
           from jsonschema import Draft202012Validator

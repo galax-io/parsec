@@ -5,7 +5,7 @@
 # Hermetic: every case writes a synthetic workflow directory, so nothing here reads the
 # repository's own workflows or touches the network.
 #
-# It does need what the gate needs. Without PyYAML every workflow case reports the gate's
+# It does need what the gate needs. Without uv, and the PyYAML it provides, every workflow case reports the gate's
 # own exit 2, and the suite printed 37 failures for one missing package — which reads as a
 # broken gate rather than an unmet prerequisite, on the loop AGENTS.md documents as the
 # local gate. Said once, here, instead.
@@ -15,9 +15,9 @@ set -uo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 script="$here/check-pins.sh"
 
-if ! command -v python3 > /dev/null 2>&1 || ! python3 -c 'import yaml' 2>/dev/null; then
+if ! command -v uv > /dev/null 2>&1 || ! uv run --no-project --with 'pyyaml==6.0.3' python -I -c 'import yaml' 2>/dev/null; then
   echo "check-pins_test: skipped — check-pins.sh parses the workflows, so this needs" >&2
-  echo "                 python3 with PyYAML (pip install PyYAML)" >&2
+  echo "                 uv, which provides PyYAML (https://docs.astral.sh/uv/)" >&2
   exit 0
 fi
 tmp="$(mktemp -d)"
@@ -703,7 +703,7 @@ out=$(bash "$script" --dir "$d" 2>&1); rc=$?
 # every file is walked, the findings of the files before it were lost with it.
 d="$(mktemp -d "$tmp/deep.XXXXXX")"
 printf 'jobs:\n  a:\n    steps:\n      - uses: owner/unpinned@v4\n' > "$d/aaa.yml"
-python3 -c "
+uv run --no-project python -I -c "
 import sys
 open(sys.argv[1],'w').write('jobs:\n  build:\n    steps:\n      - name: '+'['*2000+']'*2000+'\n')
 " "$d/zzz.yml"
