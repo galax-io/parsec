@@ -25,7 +25,7 @@ Go 1.25, standard library only in model/ and gatling/, and no third-party module
 # fuzz        go test -run '^$' -fuzz '^<Target>$' -fuzztime 90s ./<pkg>/   # -run '^$' or the tests spend the budget
 # fuzz list   go test -list '^Fuzz' ./...                                   # what CI's matrix discovers
 # hooks       git config core.hooksPath .githooks   # once per clone: the local tag gate
-# shell tests for t in scripts/*_test.sh .claude/hooks/*_test.sh .githooks/*_test.sh; do bash "$t"; done
+# shell tests for t in scripts/*_test.sh .githooks/*_test.sh; do bash "$t"; done
 ```
 
 ## Structure

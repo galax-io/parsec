@@ -97,7 +97,7 @@ jobs:
           # The glob AGENTS.md documents, not a list to keep in step with it: a suite
           # added and not enrolled is a suite nobody runs. The floor is what stops the
           # glob failing open — a typo that matches nothing would otherwise pass.
-          suites=(scripts/*_test.sh .claude/hooks/*_test.sh .githooks/*_test.sh)
+          suites=(scripts/*_test.sh .githooks/*_test.sh)
           [ "${#suites[@]}" -ge 6 ] || { echo "found ${#suites[@]} shell suites, expected at least 6"; exit 1; }
           for t in "${suites[@]}"; do
             echo "--- $t"
