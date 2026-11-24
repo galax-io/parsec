@@ -24,9 +24,8 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      # A permissions block sets every scope it does not name to none, and
-      # check-linkage.sh calls the issues and pull-request APIs. Without these it
-      # would refuse every release with "Resource not accessible by integration".
+      # A permissions block sets every scope it does not name to none; the guard
+      # reads the issues and pull-request APIs.
       issues: read
       pull-requests: read
     steps:
